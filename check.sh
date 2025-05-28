@@ -20,6 +20,8 @@
 set -eu -o pipefail
 
 readonly SHELL_FILES=(check.sh)
+# Explicitly list markdown files to lint, excluding uncommitted LLM scratch/memory files
+readonly MARKDOWN_FILES=(CLAUDE.md)
 
 ERRORS=0
 SHELL_SYNTAX_FAILED=0
@@ -58,21 +60,21 @@ fi
 # Markdown
 
 echo -n "Checking Markdown files... "
-if ls ./*.md >/dev/null 2>&1; then
-	echo "$(echo ./*.md) "
-	if mdl --no-verbose ./*.md; then
+if [ ${#MARKDOWN_FILES[@]} -gt 0 ]; then
+	echo "${MARKDOWN_FILES[*]} "
+	if mdl --no-verbose "${MARKDOWN_FILES[@]}"; then
 		echo "OK!"
 	else
 		echo "mdl check failed"
 		ERRORS=$((ERRORS + 1))
 	fi
 else
-	echo "No markdown files found yet"
+	echo "No markdown files configured"
 fi
 
 echo -n "Checking Markdown formatting... "
-if ls ./*.md >/dev/null 2>&1; then
-	if prettier --log-level warn --check ./*.md; then
+if [ ${#MARKDOWN_FILES[@]} -gt 0 ]; then
+	if prettier --log-level warn --check "${MARKDOWN_FILES[@]}"; then
 		echo "OK!"
 	else
 		echo "prettier check for Markdown failed"
@@ -83,8 +85,8 @@ else
 fi
 
 echo -n "Checking terminology... "
-if ls ./*.md >/dev/null 2>&1; then
-	if textlint --rule terminology ./*.md; then
+if [ ${#MARKDOWN_FILES[@]} -gt 0 ]; then
+	if textlint --rule terminology "${MARKDOWN_FILES[@]}"; then
 		echo "OK!"
 	else
 		echo "textlint check failed"
