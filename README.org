@@ -1,0 +1,22 @@
+#+TITLE: org-mcp
+#+AUTHOR: org-mcp contributors
+
+* Overview
+
+org-mcp is an Emacs package that implements a Model Context Protocol (MCP) server for Org-mode. It enables AI assistants and other MCP clients to interact with your Org files through a secure, structured API.
+
+* Installation
+
+TODO: Installation instructions
+
+* Usage
+
+TODO: Basic usage examples
+
+* Contributing
+
+TODO: Contribution guidelines
+
+* License
+
+GPLv3

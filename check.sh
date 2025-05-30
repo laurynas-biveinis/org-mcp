@@ -6,6 +6,7 @@
 #
 # Linters / tests / autoformatters and their dependencies:
 #
+# - Org: call Emacs org-lint on Org files
 # - Shell:
 #   - Check syntax with bash -n
 #   - Do shellcheck static analysis
@@ -19,12 +20,35 @@
 
 set -eu -o pipefail
 
+readonly ORG_FILES='"README.org"'
 readonly SHELL_FILES=(check.sh)
 # Explicitly list markdown files to lint, excluding uncommitted LLM scratch/memory files
 readonly MARKDOWN_FILES=(CLAUDE.md)
 
+readonly EMACS="emacs -Q --batch"
+
 ERRORS=0
 SHELL_SYNTAX_FAILED=0
+
+# Org
+
+echo -n "Checking org files... $(echo "$ORG_FILES" | tr -d '"') "
+if $EMACS --eval "(require 'org)" --eval "(require 'org-lint)" \
+	--eval "(let ((all-checks-passed t))
+             (dolist (file '($ORG_FILES) all-checks-passed)
+               (with-temp-buffer
+                 (insert-file-contents file)
+                 (org-mode)
+                 (let ((results (org-lint)))
+                   (when results
+                     (message \"Found issues in %s: %S\" file results)
+                     (setq all-checks-passed nil)))))
+             (unless all-checks-passed (kill-emacs 1)))"; then
+	echo "OK!"
+else
+	echo "org files check failed"
+	ERRORS=$((ERRORS + 1))
+fi
 
 # Shell
 
