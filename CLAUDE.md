@@ -13,6 +13,7 @@ Emacs Org-mode and the Model Context Protocol (MCP).
 **IMPORTANT**: This project strictly follows Test-Driven Development (TDD)
 with the smallest possible iteration steps:
 
+1. Write user-facing documentation for the feature in README.org
 1. Write a failing test for the smallest piece of functionality
 1. Run `./check.sh` to verify the test fails
 1. Write the minimal code to make the test pass
