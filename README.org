@@ -11,7 +11,37 @@ TODO: Installation instructions
 
 * Usage
 
-TODO: Basic usage examples
+** Registering with an MCP Client
+
+After =mcp-server-lib= has been properly installed (including =M-x mcp-server-lib-install=), register =org-mcp= with your MCP client:
+
+#+begin_src bash
+claude mcp add -s user -t stdio org-mcp -- ~/.emacs.d/emacs-mcp-stdio.sh --init-function=org-mcp-enable --stop-function=org-mcp-disable
+#+end_src
+
+Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib-start=. Stop it with =M-x mcp-server-lib-stop= when done.
+
+** Available MCP Tools
+
+*** org-get-todo-config
+- *Description:* Get TODO keyword configuration for understanding task states
+- *Parameters:* None
+- *Returns:* JSON object with =sequences=, =todoStates=, =doneStates=, and =semantics=
+
+Example response:
+#+begin_src json
+{
+  "sequences": [["TODO", "NEXT", "|", "DONE", "CANCELLED"]],
+  "todoStates": ["TODO", "NEXT"],
+  "doneStates": ["DONE", "CANCELLED"],
+  "semantics": [
+    {"state": "TODO", "type": "todo", "isFinal": false},
+    {"state": "NEXT", "type": "todo", "isFinal": false},
+    {"state": "DONE", "type": "done", "isFinal": true},
+    {"state": "CANCELLED", "type": "done", "isFinal": true}
+  ]
+}
+#+end_src
 
 * Contributing
 

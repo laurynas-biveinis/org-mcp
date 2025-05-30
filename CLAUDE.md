@@ -14,7 +14,7 @@ Emacs Org-mode and the Model Context Protocol (MCP).
 with the smallest possible iteration steps:
 
 1. Write user-facing documentation for the feature in README.org
-1. Write a failing test for the smallest piece of functionality
+1. Write ONE failing test for the smallest piece of functionality
 1. Run `./check.sh` to verify the test fails
 1. Write the minimal code to make the test pass
 1. Run `./check.sh` to verify the test passes
@@ -23,7 +23,8 @@ with the smallest possible iteration steps:
 1. Repeat with the next small increment
 
 Each iteration should be as small as possible - test and implement one tiny
-behavior at a time.
+behavior at a time. NEVER write multiple tests at once - always implement
+one test completely before writing the next test.
 
 **IMPORTANT**: Always fix linting errors properly. Never suppress linter
 warnings or errors with configuration files unless explicitly instructed by
