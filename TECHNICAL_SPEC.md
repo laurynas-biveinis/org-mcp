@@ -212,14 +212,6 @@ Extract property drawer contents for a headline.
 
 **Returns:** Object with property key-value pairs
 
-#### org-list-allowed-files
-
-List all org files that the server is configured to access.
-
-**Parameters:** None
-
-**Returns:** Array of file paths (strings) that are in the allowed files whitelist
-
 #### org-get-todo-config
 
 Get the TODO keyword configuration for understanding task states.
@@ -281,7 +273,6 @@ org://config/todo-states            → TODO configuration (global)
    - Create org-mcp.el with basic structure
    - Implement security validation for allowed files
    - Implement `org-get-todo-config` tool (no file access needed)
-   - Implement `org-list-allowed-files` tool (returns whitelist)
    - Implement `org-search-headlines` tool using existing mcp-server-lib
    - Test basic tool functionality manually
 
