@@ -1,0 +1,5 @@
+*.elc
+*~
+/.DS_Store
+org-mcp-autoloads.el
+.claude/
