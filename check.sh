@@ -44,7 +44,7 @@ readonly EMACS="emacs -Q --batch"
 
 # Elisp packages in ELPA
 readonly MCP_SERVER_LIB="mcp-server-lib"
-readonly ELISP_AUTOFMT="elisp-autofmt-20250421.1112"
+readonly ELISP_AUTOFMT="elisp-autofmt-20250611.40"
 readonly ELISP_LINT="elisp-lint-20220419.252"
 readonly PACKAGE_LINT="package-lint-0.26"
 readonly DASH="dash-20250312.1307"
