@@ -26,19 +26,22 @@ Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib
 *** org-get-todo-config
 - *Description:* Get TODO keyword configuration for understanding task states
 - *Parameters:* None
-- *Returns:* JSON object with =sequences=, =todoStates=, =doneStates=, and =semantics=
+- *Returns:* JSON object with =sequences= and =semantics=
 
 Example response:
 #+begin_src json
 {
-  "sequences": [["TODO", "NEXT", "|", "DONE", "CANCELLED"]],
-  "todoStates": ["TODO", "NEXT"],
-  "doneStates": ["DONE", "CANCELLED"],
+  "sequences": [
+    {
+      "type": "sequence",
+      "keywords": ["TODO", "NEXT", "|", "DONE", "CANCELLED"]
+    }
+  ],
   "semantics": [
-    {"state": "TODO", "type": "todo", "isFinal": false},
-    {"state": "NEXT", "type": "todo", "isFinal": false},
-    {"state": "DONE", "type": "done", "isFinal": true},
-    {"state": "CANCELLED", "type": "done", "isFinal": true}
+    {"state": "TODO", "isFinal": false, "sequenceType": "sequence"},
+    {"state": "NEXT", "isFinal": false, "sequenceType": "sequence"},
+    {"state": "DONE", "isFinal": true, "sequenceType": "sequence"},
+    {"state": "CANCELLED", "isFinal": true, "sequenceType": "sequence"}
   ]
 }
 #+end_src

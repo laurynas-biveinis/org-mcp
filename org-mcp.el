@@ -36,11 +36,32 @@
 
 (defun org-mcp--tool-get-todo-config ()
   "Return the TODO keyword configuration."
-  ;; Minimal implementation that returns empty config
-  '((sequences . [])
-    (todoStates . [])
-    (doneStates . [])
-    (semantics . [])))
+  (let ((seq-list '())
+        (sem-list '()))
+    (dolist (seq org-todo-keywords)
+      (let* ((type (car seq))
+             (keywords (cdr seq))
+             (type-str (symbol-name type))
+             (keyword-vec [])
+             (before-bar t))
+        (dolist (kw keywords)
+          (if (string= kw "|")
+              (setq before-bar nil)
+            ;; Check if this is the last keyword and no "|" seen
+            (let ((is-last-no-bar
+                   (and before-bar (equal kw (car (last keywords))))))
+              (when is-last-no-bar
+                (setq keyword-vec (vconcat keyword-vec ["|"])))
+              (push `((state . ,kw)
+                      (isFinal
+                       . ,(or is-last-no-bar (not before-bar)))
+                      (sequenceType . ,type-str))
+                    sem-list)))
+          (setq keyword-vec (vconcat keyword-vec (vector kw))))
+        (push
+         `((type . ,type-str) (keywords . ,keyword-vec)) seq-list)))
+    `((sequences . ,(vconcat (nreverse seq-list)))
+      (semantics . ,(vconcat (nreverse sem-list))))))
 
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
