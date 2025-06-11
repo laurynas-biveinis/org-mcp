@@ -161,5 +161,69 @@ EXPECTED-TYPE is the sequence type."
     (org-mcp-test--check-semantic
      (aref semantics 2) "ENHANCEMENT" t "type")))
 
+(ert-deftest org-mcp-test-tool-list-allowed-files-empty ()
+  "Test org-list-allowed-files with empty allowed files list."
+  (let ((org-mcp-allowed-files nil))
+    (let ((result (org-mcp--tool-list-allowed-files)))
+      (should (vectorp result))
+      (should (= (length result) 0)))))
+
+(ert-deftest org-mcp-test-tool-list-allowed-files-non-empty ()
+  "Test org-list-allowed-files with non-empty allowed files list."
+  (let ((org-mcp-allowed-files
+         '("~/org/projects.org"
+           "~/org/todo.org"
+           "/absolute/path/notes.org")))
+    (let ((result (org-mcp--tool-list-allowed-files)))
+      (should (vectorp result))
+      (should (= (length result) 3))
+      ;; Paths should be expanded
+      (should
+       (equal
+        (aref result 0) (expand-file-name "~/org/projects.org")))
+      (should
+       (equal (aref result 1) (expand-file-name "~/org/todo.org")))
+      (should (equal (aref result 2) "/absolute/path/notes.org")))))
+
+(ert-deftest org-mcp-test-tool-list-allowed-files-string-config ()
+  "Test org-list-allowed-files when misconfigured as string."
+  (let ((org-mcp-allowed-files "~/org/projects.org"))
+    (should-error (org-mcp--tool-list-allowed-files) :type 'error)))
+
+(ert-deftest
+    org-mcp-test-tool-list-allowed-files-non-string-elements
+    ()
+  "Test org-list-allowed-files with non-string elements in list."
+  (let ((org-mcp-allowed-files
+         '("~/org/todo.org" nil 42 "~/org/notes.org")))
+    (should-error (org-mcp--tool-list-allowed-files) :type 'error)))
+
+(ert-deftest org-mcp-test-tool-list-allowed-files-empty-strings ()
+  "Test org-list-allowed-files with empty strings in list."
+  (let ((org-mcp-allowed-files
+         '("~/org/todo.org" "" "~/org/notes.org")))
+    (should-error (org-mcp--tool-list-allowed-files) :type 'error)))
+
+(ert-deftest org-mcp-test-tool-list-allowed-files-path-expansion ()
+  "Test that org-list-allowed-files expands file paths."
+  (let ((org-mcp-allowed-files
+         '("~/org/todo.org"
+           "./relative.org"
+           "/absolute/path/../notes.org")))
+    (let ((result (org-mcp--tool-list-allowed-files)))
+      (should (vectorp result))
+      (should (= (length result) 3))
+      ;; ~ should be expanded to home directory
+      (should
+       (string-prefix-p (expand-file-name "~") (aref result 0)))
+      (should (string-suffix-p "/org/todo.org" (aref result 0)))
+      ;; ./ should be expanded to current directory
+      (should
+       (string-prefix-p
+        (expand-file-name default-directory) (aref result 1)))
+      (should (string-suffix-p "relative.org" (aref result 1)))
+      ;; .. should be resolved
+      (should (equal (aref result 2) "/absolute/notes.org")))))
+
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

@@ -23,6 +23,26 @@ Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib
 
 ** Available MCP Tools
 
+*** org-list-allowed-files
+- *Description:* List all Org files that the server is configured to access
+- *Parameters:* None
+- *Returns:* Array of expanded absolute file paths from the allowed files whitelist
+
+Example response:
+#+begin_src json
+[
+  "/Users/username/org/projects.org",
+  "/Users/username/org/todo.org",
+  "/Users/username/org/notes.org"
+]
+#+end_src
+
+Note: File paths are expanded using =expand-file-name=, which:
+- Expands =~= to the home directory
+- Resolves relative paths to absolute paths
+- Normalizes =..= and =.= components
+- Validates path syntax (invalid paths will cause an error)
+
 *** org-get-todo-config
 - *Description:* Get TODO keyword configuration for understanding task states
 - *Parameters:* None
