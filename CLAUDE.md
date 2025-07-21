@@ -5,8 +5,8 @@ with code in this repository.
 
 ## Project Overview
 
-This repository is for org-mcp, which appears to be an integration between
-Emacs Org-mode and the Model Context Protocol (MCP).
+This repository is for org-mcp, which is an integration between Emacs Org-mode
+and the Model Context Protocol (MCP).
 
 ## Development Methodology
 
@@ -29,6 +29,15 @@ one test completely before writing the next test.
 **IMPORTANT**: Always fix linting errors properly. Never suppress linter
 warnings or errors with configuration files unless explicitly instructed by
 the user. Fix the actual issues in the code/documentation.
+
+**IMPORTANT**: Follow the DRY (Don't Repeat Yourself) principle. Extract
+common functionality into reusable functions or modules. If you find yourself
+writing similar code multiple times, refactor it into a shared component.
+
+**IMPORTANT**: Apply the YAGNI (You Aren't Gonna Need It) principle. Only
+implement features that are currently needed. Avoid adding functionality
+"just in case" or for potential future use. Keep the codebase simple and
+focused on current requirements.
 
 ## Development Setup
 
@@ -56,3 +65,8 @@ When implementing MCP functionality:
 - Follow the MCP specification for server/client communication
 - Consider using JSON-RPC for protocol implementation
 - Ensure proper error handling for network communication
+
+## Testing Guidelines
+
+- Test MAY NOT call any internal APIs or access internal variables of this
+  package, or those of any dependencies
