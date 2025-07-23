@@ -1,47 +1,22 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working
-with code in this repository.
+with code in this repository. These guidelines build on the common user's
+guidelines at ~/.claude/CLAUDE.md locally or
+https://raw.githubusercontent.com/laurynas-biveinis/dotfiles/refs/heads/master/ai/.claude/CLAUDE.md
+online.
 
 ## Project Overview
 
 This repository is for org-mcp, which is an integration between Emacs Org-mode
 and the Model Context Protocol (MCP).
 
+This is an Elisp project, and should follow user's Elisp guidelines at
+@~/.claude/CLAUDE-elisp.md.
+
+User-facing documentation is in README.org.
+
 ## Development Methodology
-
-**IMPORTANT**: This project strictly follows Test-Driven Development (TDD)
-with the smallest possible iteration steps:
-
-1. Write user-facing documentation for the feature in README.org
-1. Write ONE failing test for the smallest piece of functionality
-1. Run `./check.sh` to verify the test fails
-1. Write the minimal code to make the test pass
-1. Run `./check.sh` to verify the test passes
-1. Refactor if needed
-1. Run `./check.sh` to ensure tests still pass
-1. Repeat with the next small increment
-
-Each iteration should be as small as possible - test and implement one tiny
-behavior at a time. NEVER write multiple tests at once - always implement
-one test completely before writing the next test.
-
-**IMPORTANT**: Always fix linting errors properly. Never suppress linter
-warnings or errors with configuration files unless explicitly instructed by
-the user. Fix the actual issues in the code/documentation.
-
-**IMPORTANT**: Follow the DRY (Don't Repeat Yourself) principle. Extract
-common functionality into reusable functions or modules. If you find yourself
-writing similar code multiple times, refactor it into a shared component.
-
-**IMPORTANT**: Apply the YAGNI (You Aren't Gonna Need It) principle. Only
-implement features that are currently needed. Avoid adding functionality
-"just in case" or for potential future use. Keep the codebase simple and
-focused on current requirements.
-
-## Development Setup
-
-Since this is a new project, the following setup steps will likely be needed:
 
 ### Emacs Lisp Development
 
