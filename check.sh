@@ -43,7 +43,8 @@ readonly MARKDOWN_FILES=(CLAUDE.md)
 readonly EMACS="emacs -Q --batch"
 
 # Elisp packages in ELPA
-readonly MCP_SERVER_LIB="mcp-server-lib"
+MCP_SERVER_LIB=$(find ~/.emacs.d/elpa -maxdepth 1 -name "mcp-server-lib-*" -type d 2>/dev/null | head -1 | xargs -r basename)
+readonly MCP_SERVER_LIB
 readonly ELISP_AUTOFMT="elisp-autofmt-20250611.40"
 readonly ELISP_LINT="elisp-lint-20220419.252"
 readonly PACKAGE_LINT="package-lint-0.26"
