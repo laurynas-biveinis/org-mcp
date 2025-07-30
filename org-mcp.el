@@ -34,6 +34,14 @@
 (require 'mcp-server-lib)
 (require 'org)
 
+(defcustom org-mcp-allowed-files nil
+  "List of Org files that can be accessed via MCP.
+Each element should be a file path (absolute or relative).
+Relative paths are expanded relative to `default-directory'.
+For security, only files in this list can be accessed by MCP clients."
+  :type '(repeat file)
+  :group 'org-mcp)
+
 (defun org-mcp--tool-get-todo-config ()
   "Return the TODO keyword configuration."
   (let ((seq-list '())
@@ -63,17 +71,39 @@
     `((sequences . ,(vconcat (nreverse seq-list)))
       (semantics . ,(vconcat (nreverse sem-list))))))
 
+(defun org-mcp--read-file-resource (file-path)
+  "Read and return the contents of FILE-PATH."
+  (with-temp-buffer
+    (insert-file-contents file-path)
+    (buffer-string)))
+
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
   (mcp-server-lib-register-tool
    #'org-mcp--tool-get-todo-config
    :id "org-get-todo-config"
    :description "Get TODO keyword configuration for task states"
-   :read-only t))
+   :read-only t)
+  ;; Register resources for allowed files
+  (dolist (file org-mcp-allowed-files)
+    (let ((basename (file-name-nondirectory file))
+          (full-path (expand-file-name file)))
+      (mcp-server-lib-register-resource
+       (format "org://%s" basename)
+       (lambda () (org-mcp--read-file-resource full-path))
+       :name basename
+       :description
+       (format "Org file: %s" full-path)
+       :mime-type "text/plain"))))
 
 (defun org-mcp-disable ()
   "Disable the org-mcp server."
-  (mcp-server-lib-unregister-tool "org-get-todo-config"))
+  (mcp-server-lib-unregister-tool "org-get-todo-config")
+  ;; Unregister resources for allowed files
+  (dolist (file org-mcp-allowed-files)
+    (let ((basename (file-name-nondirectory file)))
+      (mcp-server-lib-unregister-resource
+       (format "org://%s" basename)))))
 
 (provide 'org-mcp)
 ;;; org-mcp.el ends here

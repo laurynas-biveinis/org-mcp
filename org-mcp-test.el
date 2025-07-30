@@ -8,6 +8,9 @@
 
 (require 'ert)
 (require 'org-mcp)
+(require 'mcp-server-lib-commands)
+(require 'mcp-server-lib-ert)
+(require 'json)
 
 (defmacro org-mcp-test--with-enabled (&rest body)
   "Run BODY with org-mcp enabled, ensuring cleanup."
@@ -15,9 +18,22 @@
   `(progn
      (org-mcp-enable)
      (unwind-protect
-         (progn
-           ,@body)
+         (mcp-server-lib-ert-with-server :tools t :resources t ,@body)
        (org-mcp-disable))))
+
+(defmacro org-mcp-test--with-temp-org-file (var content &rest body)
+  "Create a temporary Org file, execute BODY, and ensure cleanup.
+VAR is the variable to bind the temp file path to.
+CONTENT is the initial content to write to the file."
+  (declare (indent 2) (debug (symbolp form body)))
+  `(let (,var)
+     (unwind-protect
+         (progn
+           (setq ,var
+                 (make-temp-file "org-mcp-test" nil ".org" ,content))
+           ,@body)
+       (when ,var
+         (delete-file ,var)))))
 
 (defun org-mcp-test--check-sequence
     (seq expected-type expected-keywords)
@@ -160,6 +176,70 @@ EXPECTED-TYPE is the sequence type."
      (aref semantics 1) "FEATURE" nil "type")
     (org-mcp-test--check-semantic
      (aref semantics 2) "ENHANCEMENT" t "type")))
+
+
+(ert-deftest org-mcp-test-file-resource-in-list ()
+  "Test that allowed files appear as resources in resources/list."
+  (let ((org-mcp-allowed-files '("test.org")))
+    (org-mcp-test--with-enabled
+      (let ((resources (mcp-server-lib-ert-get-resource-list)))
+        ;; Check that we have exactly one resource
+        (should (= (length resources) 1))
+        ;; Check that it's the allowed file
+        (should
+         (equal
+          (alist-get 'uri (aref resources 0)) "org://test.org"))))))
+
+(ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
+  "Test that resources are unregistered after `org-mcp-disable'."
+  (let ((org-mcp-allowed-files '("test.org")))
+    ;; Enable then disable
+    (org-mcp-enable)
+    (org-mcp-disable)
+    ;; Start server and check resources
+    (mcp-server-lib-ert-with-server
+     :tools nil
+     :resources nil
+     (let ((resources (mcp-server-lib-ert-get-resource-list)))
+       ;; Check that the resource list is empty
+       (should (= (length resources) 0))))))
+
+(ert-deftest org-mcp-test-file-resource-read ()
+  "Test that reading a resource returns file content."
+  (let ((test-content "* Test Heading\nThis is test content."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file)))
+        (org-mcp-test--with-enabled
+          (let* ((basename (file-name-nondirectory test-file))
+                 (uri (format "org://%s" basename)))
+            (mcp-server-lib-ert-verify-resource-read
+             uri
+             `((uri . ,uri)
+               (text . ,test-content)
+               (mimeType . "text/plain")))))))))
+
+(ert-deftest org-mcp-test-file-not-in-allowed-list-returns-error ()
+  "Test that reading a file not in allowed list returns an error."
+  (org-mcp-test--with-temp-org-file allowed-file "Allowed content"
+    (org-mcp-test--with-temp-org-file forbidden-file
+        "Forbidden content"
+      (let ((org-mcp-allowed-files (list allowed-file)))
+        (org-mcp-test--with-enabled
+          ;; Try to read the forbidden file
+          (let* ((basename (file-name-nondirectory forbidden-file))
+                 (uri (format "org://%s" basename))
+                 (request
+                  (mcp-server-lib-create-resources-read-request uri))
+                 (response-json
+                  (mcp-server-lib-process-jsonrpc request))
+                 (response
+                  (json-parse-string response-json
+                                     :object-type 'alist)))
+            ;; Should get an error response
+            (mcp-server-lib-ert-check-error-object
+             response
+             mcp-server-lib-jsonrpc-error-invalid-params
+             (format "Resource not found: %s" uri))))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
