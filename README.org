@@ -21,6 +21,24 @@ claude mcp add -s user -t stdio org-mcp -- ~/.emacs.d/emacs-mcp-stdio.sh --init-
 
 Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib-start=. Stop it with =M-x mcp-server-lib-stop= when done.
 
+** Available MCP Resources
+
+*** org://{file}
+- *Description:* Access the raw content of an allowed Org file
+- *URI Pattern:* =org://{filename}= where filename is the base name of the file
+- *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files=
+- *Returns:* Plain text content of the Org file
+
+Example:
+#+begin_example
+# Configure allowed files in Emacs:
+(setq org-mcp-allowed-files '("~/org/projects.org" "~/org/tasks.org"))
+
+# Access via MCP:
+URI: org://projects.org
+Returns: Full content of ~/org/projects.org
+#+end_example
+
 ** Available MCP Tools
 
 *** org-get-todo-config
