@@ -23,7 +23,7 @@ Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib
 
 ** Available MCP Resources
 
-*** org://{file}
+*** org://{filename}
 - *Description:* Access the raw content of an allowed Org file
 - *URI Pattern:* =org://{filename}= where filename is the base name of the file
 - *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files=
@@ -37,6 +37,48 @@ Example:
 # Access via MCP:
 URI: org://projects.org
 Returns: Full content of ~/org/projects.org
+#+end_example
+
+*** org-outline://{filename}
+- *Description:* Get the hierarchical structure of an Org file
+- *URI Pattern:* =org-outline://{filename}= where filename is the base name of the file
+- *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files=
+- *Returns:* JSON representation of the document structure with headings and their levels
+
+Example:
+#+begin_example
+# Access via MCP:
+URI: org-outline://projects.org
+Returns: JSON structure like:
+{
+  "headings": [
+    {
+      "title": "Project Alpha",
+      "level": 1,
+      "children": [
+        {"title": "Requirements", "level": 2, "children": []},
+        {"title": "Implementation", "level": 2, "children": []}
+      ]
+    }
+  ]
+}
+#+end_example
+
+*** org-headline://{filename}/{path}
+- *Description:* Access the content of a specific headline by its path
+- *URI Pattern:* =org-headline://{filename}/{path}= where path is URL-encoded headline titles separated by =/=
+- *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files=
+- *Returns:* Plain text content of the specified headline section including all subheadings
+
+Example:
+#+begin_example
+# Access a top-level headline:
+URI: org-headline://projects.org/Project%20Alpha
+Returns: Content of "Project Alpha" heading and all its subheadings
+
+# Access a nested headline:
+URI: org-headline://projects.org/Project%20Alpha/Requirements
+Returns: Content of "Requirements" under "Project Alpha"
 #+end_example
 
 ** Available MCP Tools

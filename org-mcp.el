@@ -33,6 +33,7 @@
 
 (require 'mcp-server-lib)
 (require 'org)
+(require 'url-util)
 
 (defcustom org-mcp-allowed-files nil
   "List of Org files that can be accessed via MCP.
@@ -177,6 +178,66 @@ PARAMS is an alist containing the filename parameter."
          (allowed-file (org-mcp--validate-file-access filename)))
     (org-mcp--read-file-resource (expand-file-name allowed-file))))
 
+(defun org-mcp--handle-headline-resource (params)
+  "Handler for org-headline://{filename} template.
+PARAMS is an alist containing the filename parameter.
+The filename parameter includes both file and headline path."
+  (let* ((full-path (alist-get "filename" params nil nil #'string=)))
+    ;; Split filename and headline path
+    (if (string-match "^\\([^/]+\\)/\\(.+\\)$" full-path)
+        (let* ((filename (match-string 1 full-path))
+               (headline-path-str (match-string 2 full-path))
+               (allowed-file (org-mcp--validate-file-access filename))
+               ;; Parse the path (URL-encoded headline path)
+               (decoded-path (url-unhex-string headline-path-str))
+               (headline-path (split-string decoded-path "/"))
+               (content
+                (org-mcp--get-headline-content
+                 (expand-file-name allowed-file) headline-path)))
+          (unless content
+            (mcp-server-lib-resource-signal-error
+             mcp-server-lib-jsonrpc-error-invalid-params
+             (format "Headline not found: %s"
+                     (car (last headline-path)))))
+          content)
+      (mcp-server-lib-resource-signal-error
+       mcp-server-lib-jsonrpc-error-invalid-params
+       "Invalid headline resource format"))))
+
+(defun org-mcp--get-headline-content (file-path headline-path)
+  "Get content for headline at HEADLINE-PATH in FILE-PATH.
+HEADLINE-PATH is a list of headline titles to traverse.
+Returns the content string or nil if not found."
+  (with-temp-buffer
+    (insert-file-contents file-path)
+    (org-mode)
+    (goto-char (point-min))
+    ;; Find the headline by traversing the path
+    (catch 'not-found
+      (dolist (target-title headline-path)
+        (let ((found nil))
+          ;; Search for the headline at the current level
+          (while (and (not found) (re-search-forward "^\\*+ " nil t))
+            (let ((title (org-get-heading t t t t)))
+              (when (string= title target-title)
+                (setq found t))))
+          (unless found
+            ;; Headline not found, return nil
+            (throw 'not-found nil))))
+      ;; All parts of path found, extract content
+      (org-mcp--extract-headline-content))))
+
+(defun org-mcp--extract-headline-content ()
+  "Extract content of current headline including the headline itself.
+Point should be at the headline."
+  (let ((start (line-beginning-position)))
+    (org-end-of-subtree t t)
+    ;; Remove trailing newline if present
+    (when (and (> (point) start) (= (char-before) ?\n))
+      (backward-char))
+    (buffer-substring-no-properties start (point))))
+
+
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
   (mcp-server-lib-register-tool
@@ -196,14 +257,21 @@ PARAMS is an alist containing the filename parameter."
    #'org-mcp--handle-outline-resource
    :name "Org file outline"
    :description "Hierarchical structure of an Org file"
-   :mime-type "application/json"))
+   :mime-type "application/json")
+  (mcp-server-lib-register-resource
+   "org-headline://{filename}"
+   #'org-mcp--handle-headline-resource
+   :name "Org headline content"
+   :description "Content of a specific Org headline by path"
+   :mime-type "text/plain"))
 
 (defun org-mcp-disable ()
   "Disable the org-mcp server."
   (mcp-server-lib-unregister-tool "org-get-todo-config")
   ;; Unregister template resources
   (mcp-server-lib-unregister-resource "org://{filename}")
-  (mcp-server-lib-unregister-resource "org-outline://{filename}"))
+  (mcp-server-lib-unregister-resource "org-outline://{filename}")
+  (mcp-server-lib-unregister-resource "org-headline://{filename}"))
 
 (provide 'org-mcp)
 ;;; org-mcp.el ends here

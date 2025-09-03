@@ -184,17 +184,18 @@ EXPECTED-TYPE is the sequence type."
     (org-mcp-test--with-enabled
       (let ((templates
              (mcp-server-lib-ert-get-resource-templates-list)))
-        ;; Check that we have two templates now
-        (should (= (length templates) 2))
-        ;; Check that we have both templates
+        ;; Check that we have three templates now
+        (should (= (length templates) 3))
+        ;; Check that we have all templates
         (let ((template-uris
                (mapcar
                 (lambda (template)
                   (alist-get 'uriTemplate template))
                 (append templates nil))))
           (should (member "org://{filename}" template-uris))
+          (should (member "org-outline://{filename}" template-uris))
           (should
-           (member "org-outline://{filename}" template-uris)))))))
+           (member "org-headline://{filename}" template-uris)))))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
@@ -310,6 +311,79 @@ Very deep content."))
              response
              mcp-server-lib-jsonrpc-error-invalid-params
              (format "File not in allowed list: %s" basename))))))))
+
+(ert-deftest org-mcp-test-headline-resource-returns-content ()
+  "Test that headline resource returns specific headline content."
+  (let ((test-content
+         "* First Section
+Some content in first section.
+** Subsection 1.1
+Content of subsection 1.1.
+** Subsection 1.2
+Content of subsection 1.2.
+* Second Section
+Content in second section.
+** Subsection 2.1
+Content of subsection 2.1."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file)))
+        (org-mcp-test--with-enabled
+          ;; Test getting a top-level headline
+          (let* ((basename (file-name-nondirectory test-file))
+                 (uri
+                  (format "org-headline://%s/First%%20Section"
+                          basename)))
+            (mcp-server-lib-ert-verify-resource-read
+             uri
+             `((uri . ,uri)
+               (text
+                .
+                ,(concat
+                  "* First Section\n"
+                  "Some content in first section.\n"
+                  "** Subsection 1.1\n"
+                  "Content of subsection 1.1.\n"
+                  "** Subsection 1.2\n"
+                  "Content of subsection 1.2."))
+               (mimeType . "text/plain"))))
+          ;; Test getting a nested headline
+          (let* ((basename (file-name-nondirectory test-file))
+                 (uri
+                  (format (concat
+                           "org-headline://%s/"
+                           "First%%20Section/Subsection%%201.1")
+                          basename)))
+            (mcp-server-lib-ert-verify-resource-read
+             uri
+             `((uri . ,uri)
+               (text
+                .
+                ,(concat
+                  "** Subsection 1.1\n" "Content of subsection 1.1."))
+               (mimeType . "text/plain")))))))))
+
+(ert-deftest org-mcp-test-headline-resource-not-found ()
+  "Test headline resource error for non-existent headline."
+  (let ((test-content "* Existing Section\nSome content."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file)))
+        (org-mcp-test--with-enabled
+          (let* ((basename (file-name-nondirectory test-file))
+                 (uri
+                  (format "org-headline://%s/Nonexistent" basename))
+                 (request
+                  (mcp-server-lib-create-resources-read-request uri))
+                 (response-json
+                  (mcp-server-lib-process-jsonrpc request))
+                 (response
+                  (json-parse-string response-json
+                                     :object-type 'alist)))
+            ;; Should get an error response
+            (mcp-server-lib-ert-check-error-object
+             response
+             mcp-server-lib-jsonrpc-error-invalid-params
+             "Headline not found: Nonexistent")))))))
+
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
