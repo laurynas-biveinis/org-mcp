@@ -33,6 +33,7 @@
 
 (require 'mcp-server-lib)
 (require 'org)
+(require 'org-id)
 (require 'url-util)
 
 (defcustom org-mcp-allowed-files nil
@@ -238,6 +239,42 @@ Point should be at the headline."
     (buffer-substring-no-properties start (point))))
 
 
+(defun org-mcp--handle-id-resource (params)
+  "Handler for org-id://{uuid} template.
+PARAMS is an alist containing the uuid parameter."
+  (let* ((id (alist-get "uuid" params nil nil #'string=))
+         ;; Use org-id-find-id-file to get the file path
+         (file-path (org-id-find-id-file id)))
+    (unless file-path
+      (mcp-server-lib-resource-signal-error
+       mcp-server-lib-jsonrpc-error-invalid-params
+       (format "ID not found: %s" id)))
+    ;; Validate that the file is in allowed list
+    (let ((allowed-file
+           (org-mcp--find-allowed-file
+            (file-name-nondirectory file-path))))
+      (unless allowed-file
+        (mcp-server-lib-resource-signal-error
+         mcp-server-lib-jsonrpc-error-invalid-params
+         (format "File not in allowed list: %s"
+                 (file-name-nondirectory file-path))))
+      ;; Get the content
+      (org-mcp--get-content-by-id
+       (expand-file-name allowed-file) id))))
+
+(defun org-mcp--get-content-by-id (file-path id)
+  "Get content for org node with ID in FILE-PATH.
+Returns the content string or nil if not found."
+  (with-temp-buffer
+    (insert-file-contents file-path)
+    (org-mode)
+    (goto-char (point-min))
+    ;; Find the headline with this ID
+    (let ((pos (org-find-property "ID" id)))
+      (when pos
+        (goto-char pos)
+        (org-mcp--extract-headline-content)))))
+
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
   (mcp-server-lib-register-tool
@@ -263,6 +300,12 @@ Point should be at the headline."
    #'org-mcp--handle-headline-resource
    :name "Org headline content"
    :description "Content of a specific Org headline by path"
+   :mime-type "text/plain")
+  (mcp-server-lib-register-resource
+   "org-id://{uuid}"
+   #'org-mcp--handle-id-resource
+   :name "Org node by ID"
+   :description "Content of an Org node by its ID"
    :mime-type "text/plain"))
 
 (defun org-mcp-disable ()
@@ -271,7 +314,8 @@ Point should be at the headline."
   ;; Unregister template resources
   (mcp-server-lib-unregister-resource "org://{filename}")
   (mcp-server-lib-unregister-resource "org-outline://{filename}")
-  (mcp-server-lib-unregister-resource "org-headline://{filename}"))
+  (mcp-server-lib-unregister-resource "org-headline://{filename}")
+  (mcp-server-lib-unregister-resource "org-id://{uuid}"))
 
 (provide 'org-mcp)
 ;;; org-mcp.el ends here

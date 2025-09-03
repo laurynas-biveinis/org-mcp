@@ -184,8 +184,8 @@ EXPECTED-TYPE is the sequence type."
     (org-mcp-test--with-enabled
       (let ((templates
              (mcp-server-lib-ert-get-resource-templates-list)))
-        ;; Check that we have three templates now
-        (should (= (length templates) 3))
+        ;; Check that we have four templates now
+        (should (= (length templates) 4))
         ;; Check that we have all templates
         (let ((template-uris
                (mapcar
@@ -194,8 +194,8 @@ EXPECTED-TYPE is the sequence type."
                 (append templates nil))))
           (should (member "org://{filename}" template-uris))
           (should (member "org-outline://{filename}" template-uris))
-          (should
-           (member "org-headline://{filename}" template-uris)))))))
+          (should (member "org-headline://{filename}" template-uris))
+          (should (member "org-id://{uuid}" template-uris)))))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
@@ -384,6 +384,90 @@ Content of subsection 2.1."))
              mcp-server-lib-jsonrpc-error-invalid-params
              "Headline not found: Nonexistent")))))))
 
+
+(ert-deftest org-mcp-test-id-resource-returns-content ()
+  "Test that ID resource returns content for valid ID."
+  (let ((test-content
+         (concat
+          "* Section with ID\n"
+          ":PROPERTIES:\n"
+          ":ID: 12345678-abcd-efgh-ijkl-1234567890ab\n"
+          ":END:\n"
+          "Content of section with ID.")))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-id-locations-file nil)) ; Prevent saving ID locations
+        ;; Manually register the ID location
+        (setq org-id-locations (make-hash-table :test 'equal))
+        (puthash
+         "12345678-abcd-efgh-ijkl-1234567890ab"
+         test-file
+         org-id-locations)
+        (org-mcp-test--with-enabled
+          (let ((uri
+                 "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
+            (mcp-server-lib-ert-verify-resource-read
+             uri
+             `((uri . ,uri)
+               (text . ,test-content)
+               (mimeType . "text/plain")))))))))
+
+(ert-deftest org-mcp-test-id-resource-not-found ()
+  "Test ID resource error for non-existent ID."
+  (let ((test-content "* Section without ID\nNo ID here."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-id-locations-file nil)
+            (org-id-locations nil)) ; Make sure no IDs are registered
+        (org-mcp-test--with-enabled
+          (let* ((uri "org-id://nonexistent-id-12345")
+                 (request
+                  (mcp-server-lib-create-resources-read-request
+                   uri))
+                 (response-json
+                  (mcp-server-lib-process-jsonrpc request))
+                 (response
+                  (json-parse-string
+                   response-json
+                   :object-type 'alist)))
+            ;; Should get an error response
+            (mcp-server-lib-ert-check-error-object
+             response
+             mcp-server-lib-jsonrpc-error-invalid-params
+             "ID not found: nonexistent-id-12345")))))))
+
+(ert-deftest org-mcp-test-id-resource-file-not-allowed ()
+  "Test ID resource validates file is in allowed list."
+  ;; Create two files - one allowed, one not
+  (org-mcp-test--with-temp-org-file allowed-file "* Allowed\n"
+    (org-mcp-test--with-temp-org-file other-file
+        (concat
+         "* Section with ID\n"
+         ":PROPERTIES:\n"
+         ":ID: test-id-789\n"
+         ":END:\n"
+         "This file is not in allowed list.")
+      (let ((org-mcp-allowed-files (list allowed-file))
+            (org-id-locations-file nil)) ; Prevent saving ID locations
+        ;; Manually register the ID location
+        (setq org-id-locations (make-hash-table :test 'equal))
+        (puthash "test-id-789" other-file org-id-locations)
+        (org-mcp-test--with-enabled
+          (let* ((uri "org-id://test-id-789")
+                 (request
+                  (mcp-server-lib-create-resources-read-request
+                   uri))
+                 (response-json
+                  (mcp-server-lib-process-jsonrpc request))
+                 (response
+                  (json-parse-string
+                   response-json
+                   :object-type 'alist)))
+            ;; Should get an error for file not allowed
+            (mcp-server-lib-ert-check-error-object
+             response mcp-server-lib-jsonrpc-error-invalid-params
+             (format "File not in allowed list: %s"
+                     (file-name-nondirectory other-file)))))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

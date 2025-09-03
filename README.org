@@ -81,6 +81,26 @@ URI: org-headline://projects.org/Project%20Alpha/Requirements
 Returns: Content of "Requirements" under "Project Alpha"
 #+end_example
 
+*** org-id://\{uuid\}
+- *Description:* Access Org node content by its unique ID property
+- *URI Pattern:* =org-id://{uuid}= where uuid is the value of an ID property
+- *Configuration:* The file containing the ID must be in =org-mcp-allowed-files=
+- *Returns:* Plain text content of the headline with the specified ID, including all subheadings
+
+Example:
+#+begin_example
+# Org file with ID property:
+* Project Meeting Notes
+:PROPERTIES:
+:ID: 550e8400-e29b-41d4-a716-446655440000
+:END:
+Meeting content here...
+
+# Access via MCP:
+URI: org-id://550e8400-e29b-41d4-a716-446655440000
+Returns: Content of "Project Meeting Notes" section
+#+end_example
+
 ** Available MCP Tools
 
 *** org-get-todo-config
