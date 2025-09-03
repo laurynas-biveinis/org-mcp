@@ -184,13 +184,17 @@ EXPECTED-TYPE is the sequence type."
     (org-mcp-test--with-enabled
       (let ((templates
              (mcp-server-lib-ert-get-resource-templates-list)))
-        ;; Check that we have exactly one template
-        (should (= (length templates) 1))
-        ;; Check that it's the file template
-        (should
-         (equal
-          (alist-get 'uriTemplate (aref templates 0))
-          "org://{filename}"))))))
+        ;; Check that we have two templates now
+        (should (= (length templates) 2))
+        ;; Check that we have both templates
+        (let ((template-uris
+               (mapcar
+                (lambda (template)
+                  (alist-get 'uriTemplate template))
+                (append templates nil))))
+          (should (member "org://{filename}" template-uris))
+          (should
+           (member "org-outline://{filename}" template-uris)))))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
@@ -219,6 +223,70 @@ EXPECTED-TYPE is the sequence type."
              `((uri . ,uri)
                (text . ,test-content)
                (mimeType . "text/plain")))))))))
+
+(ert-deftest org-mcp-test-outline-resource-returns-structure ()
+  "Test that outline resource returns document structure."
+  (let ((test-content
+         "* First Section
+Some content here.
+** Subsection 1.1
+More content.
+** Subsection 1.2
+Even more content.
+* Second Section
+Content of second section.
+*** Deep subsection
+Very deep content."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file)))
+        (org-mcp-test--with-enabled
+          (let* ((basename (file-name-nondirectory test-file))
+                 (uri (format "org-outline://%s" basename))
+                 (request
+                  (mcp-server-lib-create-resources-read-request uri))
+                 (response-json
+                  (mcp-server-lib-process-jsonrpc request))
+                 (response
+                  (json-parse-string response-json
+                                     :object-type 'alist))
+                 (result (alist-get 'result response))
+                 (contents (alist-get 'contents result)))
+            ;; Check if we have an error instead of result
+            (when (alist-get 'error response)
+              (error
+               "Resource request failed: %s"
+               (alist-get 'message (alist-get 'error response))))
+            (let* ((outline-json (alist-get 'text (aref contents 0)))
+                   (outline
+                    (json-parse-string outline-json
+                                       :object-type 'alist))
+                   (headings (alist-get 'headings outline)))
+              ;; Check we have the right number of top-level headings
+              (should (= (length headings) 2))
+              ;; Check first heading
+              (let ((first (aref headings 0)))
+                (should
+                 (equal (alist-get 'title first) "First Section"))
+                (should (= (alist-get 'level first) 1))
+                ;; Check children of first heading
+                (let ((children (alist-get 'children first)))
+                  (should (= (length children) 2))
+                  (should
+                   (equal
+                    (alist-get 'title (aref children 0))
+                    "Subsection 1.1"))
+                  (should
+                   (equal
+                    (alist-get 'title (aref children 1))
+                    "Subsection 1.2"))))
+              ;; Check second heading
+              (let ((second (aref headings 1)))
+                (should
+                 (equal (alist-get 'title second) "Second Section"))
+                (should (= (alist-get 'level second) 1))
+                ;; Deep subsection is empty (level 3 under level 1)
+                (should
+                 (= (length (alist-get 'children second)) 0))))))))))
 
 (ert-deftest org-mcp-test-file-not-in-allowed-list-returns-error ()
   "Test that reading a file not in allowed list returns an error."
