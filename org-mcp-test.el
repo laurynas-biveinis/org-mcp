@@ -178,17 +178,19 @@ EXPECTED-TYPE is the sequence type."
      (aref semantics 2) "ENHANCEMENT" t "type")))
 
 
-(ert-deftest org-mcp-test-file-resource-in-list ()
-  "Test that allowed files appear as resources in resources/list."
+(ert-deftest org-mcp-test-file-resource-template-in-list ()
+  "Test that file template appears in resources/templates/list."
   (let ((org-mcp-allowed-files '("test.org")))
     (org-mcp-test--with-enabled
-      (let ((resources (mcp-server-lib-ert-get-resource-list)))
-        ;; Check that we have exactly one resource
-        (should (= (length resources) 1))
-        ;; Check that it's the allowed file
+      (let ((templates
+             (mcp-server-lib-ert-get-resource-templates-list)))
+        ;; Check that we have exactly one template
+        (should (= (length templates) 1))
+        ;; Check that it's the file template
         (should
          (equal
-          (alist-get 'uri (aref resources 0)) "org://test.org"))))))
+          (alist-get 'uriTemplate (aref templates 0))
+          "org://{filename}"))))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
@@ -239,7 +241,7 @@ EXPECTED-TYPE is the sequence type."
             (mcp-server-lib-ert-check-error-object
              response
              mcp-server-lib-jsonrpc-error-invalid-params
-             (format "Resource not found: %s" uri))))))))
+             (format "File not in allowed list: %s" basename))))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

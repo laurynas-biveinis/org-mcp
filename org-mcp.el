@@ -5,7 +5,7 @@
 ;; Author: org-mcp contributors
 ;; Keywords: tools, convenience
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "27.1") (mcp-server-lib "0.1.0"))
+;; Package-Requires: ((emacs "27.1") (mcp-server-lib "0.2.0"))
 ;; Homepage: https://github.com/laurynas-biveinis/org-mcp
 
 ;; This program is free software; you can redistribute it and/or
@@ -77,6 +77,26 @@ For security, only files in this list can be accessed by MCP clients."
     (insert-file-contents file-path)
     (buffer-string)))
 
+(defun org-mcp--file-matches-p (filename file)
+  "Check if FILENAME matches FILE by basename or full path."
+  (let ((basename (file-name-nondirectory file)))
+    (or (string= filename file) (string= filename basename))))
+
+(defun org-mcp--handle-file-resource (params)
+  "Handler for org://{filename} template.
+PARAMS is an alist containing the filename parameter."
+  (let* ((filename (alist-get "filename" params nil nil #'string=))
+         (allowed-file nil))
+    ;; Find matching file in allowed list
+    (dolist (file org-mcp-allowed-files)
+      (when (org-mcp--file-matches-p filename file)
+        (setq allowed-file file)))
+    (unless allowed-file
+      (mcp-server-lib-resource-signal-error
+       mcp-server-lib-jsonrpc-error-invalid-params
+       (format "File not in allowed list: %s" filename)))
+    (org-mcp--read-file-resource (expand-file-name allowed-file))))
+
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
   (mcp-server-lib-register-tool
@@ -84,26 +104,19 @@ For security, only files in this list can be accessed by MCP clients."
    :id "org-get-todo-config"
    :description "Get TODO keyword configuration for task states"
    :read-only t)
-  ;; Register resources for allowed files
-  (dolist (file org-mcp-allowed-files)
-    (let ((basename (file-name-nondirectory file))
-          (full-path (expand-file-name file)))
-      (mcp-server-lib-register-resource
-       (format "org://%s" basename)
-       (lambda () (org-mcp--read-file-resource full-path))
-       :name basename
-       :description
-       (format "Org file: %s" full-path)
-       :mime-type "text/plain"))))
+  ;; Register template resource for all org files
+  (mcp-server-lib-register-resource
+   "org://{filename}"
+   #'org-mcp--handle-file-resource
+   :name "Org file"
+   :description "Raw Org file content"
+   :mime-type "text/plain"))
 
 (defun org-mcp-disable ()
   "Disable the org-mcp server."
   (mcp-server-lib-unregister-tool "org-get-todo-config")
-  ;; Unregister resources for allowed files
-  (dolist (file org-mcp-allowed-files)
-    (let ((basename (file-name-nondirectory file)))
-      (mcp-server-lib-unregister-resource
-       (format "org://%s" basename)))))
+  ;; Unregister template resource
+  (mcp-server-lib-unregister-resource "org://{filename}"))
 
 (provide 'org-mcp)
 ;;; org-mcp.el ends here
