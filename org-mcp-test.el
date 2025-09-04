@@ -63,6 +63,32 @@ EXPECTED-TYPE is the sequence type."
              (semantics (cdr (assoc 'semantics result))))
          ,@body))))
 
+(defun org-mcp-test--verify-file-content (file-path expected-regexp)
+  "Check that FILE-PATH contain text matching EXPECTED-REGEXP."
+  (with-temp-buffer
+    (insert-file-contents file-path)
+    (goto-char (point-min))
+    (should (re-search-forward expected-regexp nil t))))
+
+(defun org-mcp-test--update-and-verify-todo
+    (resource-uri
+     current-state new-state expected-previous expected-new)
+  "Update TODO state and verify the result.
+RESOURCE-URI is the URI to update.
+CURRENT-STATE is the current TODO state.
+NEW-STATE is the new TODO state.
+EXPECTED-PREVIOUS is the expected previous state in result.
+EXPECTED-NEW is the expected new state in result."
+  (let ((result
+         (org-mcp--tool-update-todo-state
+          resource-uri current-state new-state)))
+    ;; Check result
+    (should (equal (alist-get 'success result) t))
+    (should
+     (equal (alist-get 'previousState result) expected-previous))
+    (should (equal (alist-get 'newState result) expected-new))
+    result))
+
 (ert-deftest org-mcp-test-tool-get-todo-config-empty ()
   "Test org-get-todo-config with empty `org-todo-keywords'."
   (org-mcp-test--with-config nil
@@ -404,8 +430,7 @@ Content of subsection 2.1."))
          test-file
          org-id-locations)
         (org-mcp-test--with-enabled
-          (let ((uri
-                 "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
+          (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
             (mcp-server-lib-ert-verify-resource-read
              uri
              `((uri . ,uri)
@@ -422,14 +447,12 @@ Content of subsection 2.1."))
         (org-mcp-test--with-enabled
           (let* ((uri "org-id://nonexistent-id-12345")
                  (request
-                  (mcp-server-lib-create-resources-read-request
-                   uri))
+                  (mcp-server-lib-create-resources-read-request uri))
                  (response-json
                   (mcp-server-lib-process-jsonrpc request))
                  (response
-                  (json-parse-string
-                   response-json
-                   :object-type 'alist)))
+                  (json-parse-string response-json
+                                     :object-type 'alist)))
             ;; Should get an error response
             (mcp-server-lib-ert-check-error-object
              response
@@ -455,19 +478,223 @@ Content of subsection 2.1."))
         (org-mcp-test--with-enabled
           (let* ((uri "org-id://test-id-789")
                  (request
-                  (mcp-server-lib-create-resources-read-request
-                   uri))
+                  (mcp-server-lib-create-resources-read-request uri))
                  (response-json
                   (mcp-server-lib-process-jsonrpc request))
                  (response
-                  (json-parse-string
-                   response-json
-                   :object-type 'alist)))
+                  (json-parse-string response-json
+                                     :object-type 'alist)))
             ;; Should get an error for file not allowed
             (mcp-server-lib-ert-check-error-object
              response mcp-server-lib-jsonrpc-error-invalid-params
              (format "File not in allowed list: %s"
                      (file-name-nondirectory other-file)))))))))
+
+(ert-deftest org-mcp-test-update-todo-state-success ()
+  "Test successful TODO state update."
+  (let ((test-content "* TODO Task One\nTask description."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+        (org-mcp-test--with-enabled
+          ;; Update TODO to IN-PROGRESS
+          (let ((resource-uri
+                 (format "org-headline://%s/Task%%20One"
+                         (file-name-nondirectory test-file))))
+            (org-mcp-test--update-and-verify-todo
+             resource-uri "TODO" "IN-PROGRESS" "TODO" "IN-PROGRESS")
+            ;; Verify file was actually updated
+            (org-mcp-test--verify-file-content
+             test-file "^\\* IN-PROGRESS Task One")))))))
+
+(ert-deftest org-mcp-test-update-todo-state-mismatch ()
+  "Test TODO state update fails on state mismatch."
+  (let ((test-content "* TODO Task One\nTask description."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+        (org-mcp-test--with-enabled
+          ;; Try to update with wrong current state
+          (let ((resource-uri
+                 (format "org-headline://%s/Task%%20One"
+                         (file-name-nondirectory test-file))))
+            (should-error
+             (org-mcp--tool-update-todo-state
+              resource-uri "IN-PROGRESS" "DONE") ; Wrong state
+             :type 'mcp-server-lib-tool-error)
+            ;; Verify file was NOT updated
+            (org-mcp-test--verify-file-content
+             test-file "^\\* TODO Task One")))))))
+
+(ert-deftest org-mcp-test-update-todo-state-empty-newstate-invalid ()
+  "Test that empty string for newState is rejected."
+  (let ((test-content "* TODO Task One\nTask description."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+        (org-mcp-test--with-enabled
+          ;; Try to set empty state
+          (let ((resource-uri
+                 (format "org-headline://%s/Task%%20One"
+                         (file-name-nondirectory test-file))))
+            (should-error
+             (org-mcp--tool-update-todo-state
+              resource-uri "TODO" "") ; Empty state should fail
+             :type 'mcp-server-lib-tool-error)
+            ;; Verify file was NOT updated
+            (org-mcp-test--verify-file-content
+             test-file "^\\* TODO Task One")))))))
+
+(ert-deftest org-mcp-test-update-todo-state-invalid ()
+  "Test TODO state update fails for invalid new state."
+  (let ((test-content "* TODO Task One\nTask description."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+        (org-mcp-test--with-enabled
+          ;; Try to update to invalid state
+          (let ((resource-uri
+                 (format "org-headline://%s/Task%%20One"
+                         (file-name-nondirectory test-file))))
+            (should-error
+             (org-mcp--tool-update-todo-state
+              resource-uri "TODO" "INVALID-STATE") ; Invalid state
+             :type 'mcp-server-lib-tool-error)
+            ;; Verify file was NOT updated
+            (org-mcp-test--verify-file-content
+             test-file "^\\* TODO Task One")))))))
+
+(ert-deftest org-mcp-test-update-todo-state-with-open-buffer ()
+  "Test TODO state update works when file is open in another buffer."
+  (let ((test-content "* TODO Task One\nTask description."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+        ;; Open the file in a buffer
+        (let ((buffer (find-file-noselect test-file)))
+          (unwind-protect
+              (org-mcp-test--with-enabled
+                ;; Update TODO state while buffer is open
+                (let ((resource-uri
+                       (format "org-headline://%s/Task%%20One"
+                               (file-name-nondirectory test-file))))
+                  (org-mcp-test--update-and-verify-todo
+                   resource-uri
+                   "TODO"
+                   "IN-PROGRESS"
+                   "TODO"
+                   "IN-PROGRESS")
+                  ;; Verify file was actually updated on disk
+                  (org-mcp-test--verify-file-content
+                   test-file "^\\* IN-PROGRESS Task One")
+                  ;; Verify the buffer was also updated
+                  (with-current-buffer buffer
+                    (goto-char (point-min))
+                    (should
+                     (re-search-forward "^\\* IN-PROGRESS Task One"
+                                        nil t)))))
+            ;; Clean up: kill the buffer
+            (kill-buffer buffer)))))))
+
+(ert-deftest org-mcp-test-update-todo-state-with-modified-buffer ()
+  "Test TODO state update fails when buffer has unsaved changes."
+  (let ((test-content
+         "* TODO Task One
+Task description.
+* TODO Task Two
+Another task description."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+        ;; Open the file in a buffer and modify it elsewhere
+        (let ((buffer (find-file-noselect test-file)))
+          (unwind-protect
+              (progn
+                ;; Make a modification at an unrelated location
+                (with-current-buffer buffer
+                  (goto-char (point-max))
+                  (insert "\n* TODO Task Three\nAdded in buffer.")
+                  ;; Buffer is now modified but not saved
+                  (should (buffer-modified-p)))
+
+                (org-mcp-test--with-enabled
+                  ;; Try to update while buffer has unsaved changes
+                  (let ((resource-uri
+                         (format "org-headline://%s/Task%%20One"
+                                 (file-name-nondirectory test-file))))
+                    (should-error
+                     (org-mcp--tool-update-todo-state
+                      resource-uri "TODO" "IN-PROGRESS")
+                     :type 'mcp-server-lib-tool-error)
+                    ;; Verify file was NOT modified
+                    (org-mcp-test--verify-file-content
+                     test-file "^\\* TODO Task One")
+                    ;; Verify buffer still has unsaved changes
+                    (with-current-buffer buffer
+                      (should (buffer-modified-p))
+                      ;; Task One should still be TODO
+                      (goto-char (point-min))
+                      (should
+                       (re-search-forward "^\\* TODO Task One" nil t))
+                      ;; Task Three should still be there
+                      (goto-char (point-min))
+                      (should
+                       (re-search-forward "^\\* TODO Task Three"
+                                          nil t))))))
+            ;; Clean up: kill the buffer
+            (kill-buffer buffer)))))))
+
+(ert-deftest org-mcp-test-update-todo-state-nonexistent-id ()
+  "Test TODO state update fails for non-existent UUID."
+  (let ((test-content "* TODO Task One\nTask description."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE")))
+            (org-id-locations-file nil)
+            (org-id-locations nil)) ; Make sure no IDs are registered
+        (org-mcp-test--with-enabled
+          ;; Try to update a non-existent ID
+          (let ((resource-uri "org-id://nonexistent-uuid-12345"))
+            (should-error
+             (org-mcp--tool-update-todo-state
+              resource-uri "TODO" "IN-PROGRESS")
+             :type 'mcp-server-lib-tool-error)
+            ;; Verify file was NOT modified
+            (org-mcp-test--verify-file-content
+             test-file "^\\* TODO Task One")))))))
+
+(ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
+  "Test TODO state update fails for non-existent headline path."
+  (let ((test-content
+         "* TODO Task One
+Task description.
+* TODO Task Two
+Another task."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+        (org-mcp-test--with-enabled
+          ;; Try to update a non-existent headline
+          (let ((resource-uri
+                 (format "org-headline://%s/Nonexistent%%20Task"
+                         (file-name-nondirectory test-file))))
+            (should-error
+             (org-mcp--tool-update-todo-state
+              resource-uri "TODO" "IN-PROGRESS")
+             :type 'mcp-server-lib-tool-error)
+            ;; Verify file was NOT modified
+            (org-mcp-test--verify-file-content
+             test-file "^\\* TODO Task One")
+            (org-mcp-test--verify-file-content
+             test-file "^\\* TODO Task Two")))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

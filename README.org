@@ -126,6 +126,36 @@ Example response:
 }
 #+end_src
 
+*** org-update-todo-state
+- *Description:* Update the TODO state of a specific headline
+- *Parameters:*
+  - =resourceUri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
+  - =currentState= (string, required): Current TODO state (empty string "" for no state) - must match actual state
+  - =newState= (string, required): New TODO state (must be valid in org-todo-keywords)
+- *Returns:* Success status with previous and new states
+
+Example:
+#+begin_src json
+# Request:
+{
+  "resourceUri": "org-headline://projects.org/Project%20Alpha",
+  "currentState": "TODO",
+  "newState": "IN-PROGRESS"
+}
+
+# Success response:
+{
+  "success": true,
+  "previousState": "TODO",
+  "newState": "IN-PROGRESS"
+}
+
+# State mismatch error:
+{
+  "error": "State mismatch: expected TODO, found IN-PROGRESS"
+}
+#+end_src
+
 * Contributing
 
 TODO: Contribution guidelines

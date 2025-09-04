@@ -63,9 +63,11 @@ When ID properties exist, tools return both the path-based `resourceUri` and the
 
 ## Key Implementation Components
 
-### URI Scheme
+### URI Scheme and Resource Templates
 
-Dual URI pattern supporting both path-based and ID-based addressing:
+The implementation leverages mcp-server-lib's built-in resource template support (RFC 6570 URI templates) for dynamic resource serving.
+
+#### URI Template Patterns
 
 ```
 org://{filename}                 → Raw org file content
@@ -73,6 +75,37 @@ org://{filename}/outline         → Document structure/hierarchy
 org://{filename}/headline/{path} → Path-based headline reference
 org://id/{uuid}                  → ID-based headline reference (persistent)
 ```
+
+#### Template Implementation
+
+Using `mcp-server-lib-register-resource` with URI templates:
+
+```elisp
+;; Template resource with single parameter
+(mcp-server-lib-register-resource
+ "org://{filename}"
+ (lambda (params)
+   (org-mcp--read-file-resource 
+     (alist-get "filename" params nil nil #'string=)))
+ :name "Org file"
+ :description "Raw org file content")
+
+;; Template with multiple parameters
+(mcp-server-lib-register-resource
+ "org://{filename}/headline/{+path}"  ; {+path} allows slashes
+ (lambda (params)
+   (org-mcp--get-headline-content
+     (alist-get "filename" params nil nil #'string=)
+     (alist-get "path" params nil nil #'string=)))
+ :name "Org headline"
+ :description "Specific headline content")
+```
+
+The library automatically:
+- Detects templates by presence of `{}` patterns
+- Parses and validates URI templates
+- Matches incoming URIs against templates
+- Extracts parameters and passes them to handlers
 
 Examples:
 
@@ -176,16 +209,19 @@ Full-text search within org file content (not just headlines).
 
 **Returns:** Array of matches with context and resourceUri to containing headline (both path-based and ID-based when available)
 
-#### org-update-todo
+#### org-update-todo-state
 
 Change the TODO state of a specific headline.
 
 **Parameters:**
 
-- `resourceUri` (string): URI of the headline to update
-- `newState` (string): New TODO state (must be valid in org-todo-keywords)
+- `resourceUri` (string): URI of the headline to update (supports org-headline:// or org-id://)
+- `currentState` (string): Current TODO state (empty string "" for no state) - must match actual state for update to proceed
+- `newState` (string): New TODO state (must be valid in org-todo-keywords, empty string "" to remove state)
 
-**Returns:** Success status and list of invalidated resource URIs
+**Returns:** 
+- Success: `{"success": true, "previousState": "TODO", "newState": "DONE"}`
+- State mismatch error: `{"error": "State mismatch", "message": "...", "actualState": "...", "expectedState": "..."}`
 
 #### org-schedule-task
 
@@ -242,20 +278,25 @@ org-mcp.el              ; Single file containing all org-specific code
 └── Server Lifecycle   ; Start/stop functions
 ```
 
-### MCP Protocol Extensions
+### MCP Protocol Library Features
 
-Extend `mcp-server-lib.el` with:
+The `mcp-server-lib.el` already provides:
 
 ```elisp
-;; Resource support
-(cl-defun mcp-server-lib-register-resource (uri-pattern handler
-                                           &key mime-type description))
+;; Resource registration with template support
+(defun mcp-server-lib-register-resource (uri handler &rest properties)
+  "Register resource with automatic template detection.
+   URI can be static (org://file.org) or template (org://{filename})."
+  ...)
 
-;; Subscription support
+;; Future extensions needed:
+;; - Subscription support
 (defun mcp-server-lib-notify-resource-changed (uri &optional data))
-
-;; These extensions should be generic, knowing nothing about org-mode
 ```
+
+Resource templates follow RFC 6570 URI template syntax:
+- `{variable}` - Simple expansion
+- `{+variable}` - Reserved character expansion (allows slashes)
 
 ### Resource URI Hierarchy
 
@@ -278,9 +319,9 @@ org://config/todo-states            → TODO configuration (global)
 
 2. **Phase 2: Resource Support**
 
-   - Extend mcp-server-lib.el with resource registration
-   - Implement URI parsing and generation
-   - Add file, outline, and headline resources
+   - Use mcp-server-lib's built-in resource template support
+   - Implement template-based resources for files, outlines, and headlines
+   - Create handler functions for each resource type
    - Update tools to include resource URIs in responses
 
 3. **Phase 3: Complete Read Operations**

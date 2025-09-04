@@ -275,6 +275,125 @@ Returns the content string or nil if not found."
         (goto-char pos)
         (org-mcp--extract-headline-content)))))
 
+(defun org-mcp--tool-update-todo-state
+    (resourceUri currentState newState)
+  "Update the TODO state of a headline.
+RESOURCEURI is the URI of the headline to update.
+CURRENTSTATE is the current TODO state (empty string for no state).
+NEWSTATE is the new TODO state to set.
+
+MCP Parameters:
+  resourceUri - URI of the headline (org-headline:// or org-id://)
+  currentState - Current TODO state (empty string for no state)
+  newState - New TODO state (must be in `org-todo-keywords')"
+  (let (file-path
+        headline-path)
+    ;; Parse the resource URI
+    (cond
+     ;; Handle org-headline:// URIs
+     ((string-match
+       "^org-headline://\\([^/]+\\)/\\(.+\\)$" resourceUri)
+      (let* ((filename (match-string 1 resourceUri))
+             (headline-path-str (match-string 2 resourceUri))
+             (allowed-file (org-mcp--validate-file-access filename)))
+        (setq file-path (expand-file-name allowed-file))
+        (setq headline-path
+              (split-string (url-unhex-string headline-path-str)
+                            "/"))))
+     ;; Handle org-id:// URIs
+     ((string-match "^org-id://\\(.+\\)$" resourceUri)
+      (let* ((id (match-string 1 resourceUri))
+             (id-file (org-id-find-id-file id)))
+        (unless id-file
+          (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
+        (let ((allowed-file
+               (org-mcp--find-allowed-file
+                (file-name-nondirectory id-file))))
+          (unless allowed-file
+            (mcp-server-lib-tool-throw
+             (format "File not in allowed list: %s"
+                     (file-name-nondirectory id-file))))
+          (setq file-path (expand-file-name allowed-file))
+          ;; For ID-based, we'll find the headline by ID
+          (setq headline-path (list id)))))
+     (t
+      (mcp-server-lib-tool-throw
+       (format "Invalid resource URI format: %s" resourceUri))))
+
+    ;; Validate new state is in org-todo-keywords
+    (unless (member
+             newState (apply 'append (mapcar 'cdr org-todo-keywords)))
+      (mcp-server-lib-tool-throw
+       (format "Invalid TODO state: %s" newState)))
+
+    ;; Check if any buffer visiting this file has unsaved changes
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (when (and (buffer-file-name)
+                   (string= (buffer-file-name) file-path)
+                   (buffer-modified-p))
+          (mcp-server-lib-tool-throw
+           "Cannot update: file has unsaved changes in buffer"))))
+
+    ;; Update the TODO state in the file
+    (with-temp-buffer
+      (insert-file-contents file-path)
+      (org-mode)
+      (goto-char (point-min))
+
+      ;; Find the headline
+      (let ((found nil))
+        (if (and (= (length headline-path) 1)
+                 (string-match "^[a-f0-9-]+$" (car headline-path)))
+            ;; ID-based search
+            (let ((pos (org-find-property "ID" (car headline-path))))
+              (when pos
+                (goto-char pos)
+                (setq found t)))
+          ;; Path-based search
+          (catch 'not-found
+            (dolist (target-title headline-path)
+              (setq found nil)
+              (while (and (not found)
+                          (re-search-forward "^\\*+ " nil t))
+                (let ((title (org-get-heading t t t t)))
+                  (when (string= title target-title)
+                    (setq found t))))
+              (unless found
+                (throw 'not-found nil)))
+            (setq found t)))
+
+        (unless found
+          (mcp-server-lib-tool-throw "Headline not found"))
+
+        ;; Check current state matches
+        (beginning-of-line)
+        (let ((actual-state (org-get-todo-state)))
+          (unless (string= actual-state currentState)
+            (mcp-server-lib-tool-throw
+             (format "State mismatch: expected %s, found %s"
+                     (or currentState "(no state)")
+                     (or actual-state "(no state)"))))
+
+          ;; Update the state
+          (org-todo newState)
+
+          ;; Write the updated content back
+          (write-region (point-min) (point-max) file-path)
+
+          ;; Update any buffers visiting this file (all unmodified)
+          (dolist (buf (buffer-list))
+            (with-current-buffer buf
+              (when (and (buffer-file-name)
+                         (string= (buffer-file-name) file-path))
+                ;; Safe to revert - already checked for modifications
+                (revert-buffer t t t))))
+
+          ;; Return success
+          `((success . t)
+            (previousState . ,(or currentState ""))
+            (newState . ,newState)))))))
+
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
   (mcp-server-lib-register-tool
@@ -282,6 +401,11 @@ Returns the content string or nil if not found."
    :id "org-get-todo-config"
    :description "Get TODO keyword configuration for task states"
    :read-only t)
+  (mcp-server-lib-register-tool
+   #'org-mcp--tool-update-todo-state
+   :id "org-update-todo-state"
+   :description "Update the TODO state of a headline"
+   :read-only nil)
   ;; Register template resources for org files
   (mcp-server-lib-register-resource
    "org://{filename}"
@@ -311,6 +435,7 @@ Returns the content string or nil if not found."
 (defun org-mcp-disable ()
   "Disable the org-mcp server."
   (mcp-server-lib-unregister-tool "org-get-todo-config")
+  (mcp-server-lib-unregister-tool "org-update-todo-state")
   ;; Unregister template resources
   (mcp-server-lib-unregister-resource "org://{filename}")
   (mcp-server-lib-unregister-resource "org-outline://{filename}")
