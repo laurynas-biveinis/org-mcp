@@ -264,6 +264,20 @@ Get the TODO keyword configuration for understanding task states.
   - `isFinal`: Boolean indicating if this is a final state
   - `sequenceType`: "sequence" or "type" matching the parent sequence
 
+#### org-get-tag-config
+
+Get the tag configuration as literal Elisp variable values.
+
+**Parameters:** None
+
+**Returns:** Object containing literal Elisp string representations of:
+
+- `org-use-tag-inheritance`: Literal string representation of the variable value (e.g., `"t"`, `"nil"`, `"(\"tag1\" \"tag2\")"`, or `"\"^regex\""`)
+- `org-tags-exclude-from-inheritance`: Literal string of the exclusion list (e.g., `"(\"tag1\" \"tag2\")"`)
+- `org-tags-sort-function`: Literal string of the sort function value
+- `org-tag-alist`: Literal string of the complete tag alist configuration
+- `org-tag-persistent-alist`: Literal string of the persistent tag alist
+
 ## Implementation Approach
 
 ### File Structure

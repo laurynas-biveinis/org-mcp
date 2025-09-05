@@ -203,6 +203,119 @@ EXPECTED-NEW is the expected new state in result."
     (org-mcp-test--check-semantic
      (aref semantics 2) "ENHANCEMENT" t "type")))
 
+(ert-deftest org-mcp-test-tool-get-tag-config-empty ()
+  "Test org-get-tag-config with empty `org-tag-alist'."
+  (let ((org-tag-alist nil)
+        (org-tag-persistent-alist nil)
+        (org-use-tag-inheritance t))
+    (let ((result (org-mcp--tool-get-tag-config)))
+      (should (= (length result) 5))
+      (should (equal (alist-get 'org-use-tag-inheritance result) "t"))
+      (should
+       (equal
+        (alist-get 'org-tags-exclude-from-inheritance result) "nil"))
+      (should
+       (equal (alist-get 'org-tags-sort-function result) "nil"))
+      (should (equal (alist-get 'org-tag-alist result) "nil"))
+      (should
+       (equal (alist-get 'org-tag-persistent-alist result) "nil")))))
+
+(ert-deftest org-mcp-test-tool-get-tag-config-simple ()
+  "Test org-get-tag-config with simple tags."
+  (let ((org-tag-alist '("work" "personal" "urgent"))
+        (org-tag-persistent-alist nil)
+        (org-use-tag-inheritance t)
+        (org-tags-exclude-from-inheritance nil))
+    (let ((result (org-mcp--tool-get-tag-config)))
+      (should
+       (equal
+        (alist-get 'org-tag-alist result)
+        "(\"work\" \"personal\" \"urgent\")"))
+      (should
+       (equal (alist-get 'org-tag-persistent-alist result) "nil"))
+      (should
+       (equal (alist-get 'org-use-tag-inheritance result) "t")))))
+
+(ert-deftest org-mcp-test-tool-get-tag-config-with-keys ()
+  "Test org-get-tag-config with fast selection keys."
+  (let ((org-tag-alist
+         '(("work" . ?w) ("personal" . ?p) "urgent" ("@home" . ?h)))
+        (org-tag-persistent-alist nil)
+        (org-use-tag-inheritance t))
+    (let ((result (org-mcp--tool-get-tag-config)))
+      (should
+       (equal
+        (alist-get 'org-tag-alist result)
+        "((\"work\" . 119) (\"personal\" . 112) \"urgent\" (\"@home\" . 104))")))))
+
+(ert-deftest org-mcp-test-tool-get-tag-config-with-groups ()
+  "Test org-get-tag-config with tag groups."
+  (let ((org-tag-alist
+         '((:startgroup)
+           ("@office" . ?o)
+           ("@home" . ?h)
+           ("@errand" . ?e)
+           (:endgroup)
+           "laptop"
+           (:startgrouptag)
+           ("project")
+           (:grouptags)
+           ("proj_a")
+           ("proj_b")
+           (:endgrouptag)))
+        (org-tag-persistent-alist nil))
+    (let ((result (org-mcp--tool-get-tag-config)))
+      ;; Just check that the literal string is returned correctly
+      (should (stringp (alist-get 'org-tag-alist result)))
+      (should
+       (string-match-p
+        ":startgroup" (alist-get 'org-tag-alist result)))
+      (should
+       (string-match-p ":endgroup" (alist-get 'org-tag-alist result)))
+      (should
+       (string-match-p
+        ":startgrouptag" (alist-get 'org-tag-alist result)))
+      (should
+       (string-match-p
+        ":endgrouptag" (alist-get 'org-tag-alist result))))))
+
+(ert-deftest org-mcp-test-tool-get-tag-config-persistent ()
+  "Test org-get-tag-config with persistent tags."
+  (let ((org-tag-alist '(("work" . ?w)))
+        (org-tag-persistent-alist '(("important" . ?i) "recurring"))
+        (org-tags-exclude-from-inheritance nil))
+    (let ((result (org-mcp--tool-get-tag-config)))
+      (should
+       (equal (alist-get 'org-tag-alist result) "((\"work\" . 119))"))
+      (should
+       (equal
+        (alist-get 'org-tag-persistent-alist result)
+        "((\"important\" . 105) \"recurring\")")))))
+
+(ert-deftest org-mcp-test-tool-get-tag-config-inheritance ()
+  "Test org-get-tag-config with different inheritance settings."
+  (let ((org-tag-alist '("work" "personal"))
+        (org-tags-exclude-from-inheritance nil)
+        (org-tag-persistent-alist nil)
+        (org-tags-sort-function nil))
+    ;; Test with inheritance enabled
+    (let ((org-use-tag-inheritance t))
+      (let ((result (org-mcp--tool-get-tag-config)))
+        (should
+         (equal (alist-get 'org-use-tag-inheritance result) "t"))))
+    ;; Test with inheritance disabled
+    (let ((org-use-tag-inheritance nil))
+      (let ((result (org-mcp--tool-get-tag-config)))
+        (should
+         (equal (alist-get 'org-use-tag-inheritance result) "nil"))))
+    ;; Test with selective inheritance (list)
+    (let ((org-use-tag-inheritance '("work")))
+      (let ((result (org-mcp--tool-get-tag-config)))
+        (should
+         (equal
+          (alist-get 'org-use-tag-inheritance result)
+          "(\"work\")"))))))
+
 
 (ert-deftest org-mcp-test-file-resource-template-in-list ()
   "Test that file template appears in resources/templates/list."

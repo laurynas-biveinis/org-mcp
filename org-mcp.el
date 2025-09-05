@@ -73,6 +73,19 @@ For security, only files in this list can be accessed by MCP clients."
     `((sequences . ,(vconcat (nreverse seq-list)))
       (semantics . ,(vconcat (nreverse sem-list))))))
 
+(defun org-mcp--tool-get-tag-config ()
+  "Return the tag configuration as literal Elisp strings."
+  `((org-use-tag-inheritance
+     .
+     ,(prin1-to-string org-use-tag-inheritance))
+    (org-tags-exclude-from-inheritance
+     . ,(prin1-to-string org-tags-exclude-from-inheritance))
+    (org-tags-sort-function
+     . ,(prin1-to-string org-tags-sort-function))
+    (org-tag-alist . ,(prin1-to-string org-tag-alist))
+    (org-tag-persistent-alist
+     . ,(prin1-to-string org-tag-persistent-alist))))
+
 (defun org-mcp--read-file-resource (file-path)
   "Read and return the contents of FILE-PATH."
   (with-temp-buffer
@@ -402,6 +415,11 @@ MCP Parameters:
    :description "Get TODO keyword configuration for task states"
    :read-only t)
   (mcp-server-lib-register-tool
+   #'org-mcp--tool-get-tag-config
+   :id "org-get-tag-config"
+   :description "Get tag configuration for available tags and their properties"
+   :read-only t)
+  (mcp-server-lib-register-tool
    #'org-mcp--tool-update-todo-state
    :id "org-update-todo-state"
    :description "Update the TODO state of a headline"
@@ -435,6 +453,7 @@ MCP Parameters:
 (defun org-mcp-disable ()
   "Disable the org-mcp server."
   (mcp-server-lib-unregister-tool "org-get-todo-config")
+  (mcp-server-lib-unregister-tool "org-get-tag-config")
   (mcp-server-lib-unregister-tool "org-update-todo-state")
   ;; Unregister template resources
   (mcp-server-lib-unregister-resource "org://{filename}")
