@@ -12,6 +12,24 @@
 (require 'mcp-server-lib-ert)
 (require 'json)
 
+;; Helper functions for calling MCP tools
+
+(defun org-mcp-test--call-get-todo-config ()
+  "Call org-get-todo-config tool via JSON-RPC and return the result."
+  (let ((result
+         (mcp-server-lib-ert-call-tool "org-get-todo-config" nil)))
+    ;; Parse the JSON string result
+    (json-read-from-string result)))
+
+(defun org-mcp-test--call-get-tag-config ()
+  "Call org-get-tag-config tool via JSON-RPC and return the result."
+  (let ((result
+         (mcp-server-lib-ert-call-tool "org-get-tag-config" nil)))
+    ;; Parse the JSON string result
+    (json-read-from-string result)))
+
+;; Test helper macros
+
 (defmacro org-mcp-test--with-enabled (&rest body)
   "Run BODY with org-mcp enabled, ensuring cleanup."
   (declare (indent defun) (debug t))
@@ -57,11 +75,13 @@ EXPECTED-TYPE is the sequence type."
   "Run BODY with `org-todo-keywords' set to KEYWORDS."
   (declare (indent 1) (debug t))
   `(let ((org-todo-keywords ,keywords))
-     (let ((result (org-mcp--tool-get-todo-config)))
-       (should (= (length result) 2))
-       (let ((sequences (cdr (assoc 'sequences result)))
-             (semantics (cdr (assoc 'semantics result))))
-         ,@body))))
+     (org-mcp-test--with-enabled
+       (let ((result (org-mcp-test--call-get-todo-config)))
+         (should (= (length result) 2))
+         (let ((sequences (cdr (assoc 'sequences result)))
+               (semantics (cdr (assoc 'semantics result))))
+           ,@body)))))
+
 
 (defun org-mcp-test--verify-file-content (file-path expected-regexp)
   "Check that FILE-PATH contain text matching EXPECTED-REGEXP."
@@ -70,24 +90,135 @@ EXPECTED-TYPE is the sequence type."
     (goto-char (point-min))
     (should (re-search-forward expected-regexp nil t))))
 
-(defun org-mcp-test--update-and-verify-todo
-    (resource-uri
-     current-state new-state expected-previous expected-new)
-  "Update TODO state and verify the result.
+(defun org-mcp-test--call-add-todo
+    (title todoState tags body parentUri &optional afterUri)
+  "Call org-add-todo tool via JSON-RPC and return the result.
+TITLE is the headline text.
+TODOSTATE is the TODO state.
+TAGS is a single tag string or list of tag strings.
+BODY is optional body text.
+PARENTURI is the URI of the parent item.
+AFTERURI is optional URI of sibling to insert after."
+  (let* ((params
+          `((title . ,title)
+            (todoState . ,todoState)
+            (tags . ,tags)
+            (body . ,body)
+            (parentUri . ,parentUri)
+            (afterUri . ,afterUri)))
+         (request
+          (mcp-server-lib-create-tools-call-request
+           "org-add-todo" 1 params))
+         (response (mcp-server-lib-process-jsonrpc-parsed request)))
+    (mcp-server-lib-ert-process-tool-response response)))
+
+(defun org-mcp-test--call-update-todo-state-expecting-error
+    (resource-uri current-state new-state)
+  "Call org-update-todo-state tool via JSON-RPC expecting an error.
 RESOURCE-URI is the URI to update.
 CURRENT-STATE is the current TODO state.
-NEW-STATE is the new TODO state.
-EXPECTED-PREVIOUS is the expected previous state in result.
-EXPECTED-NEW is the expected new state in result."
-  (let ((result
-         (org-mcp--tool-update-todo-state
-          resource-uri current-state new-state)))
-    ;; Check result
+NEW-STATE is the new TODO state to set."
+  (let* ((request
+          (mcp-server-lib-create-tools-call-request
+           "org-update-todo-state" 1
+           `((resourceUri . ,resource-uri)
+             (currentState . ,current-state)
+             (newState . ,new-state))))
+         (response (mcp-server-lib-process-jsonrpc-parsed request))
+         (result (mcp-server-lib-ert-process-tool-response response)))
+    ;; If we get here, the tool succeeded when we expected failure
+    (error "Expected error but got success: %s" result)))
+
+(defun org-mcp-test--call-add-todo-expecting-error
+    (title todoState tags body parentUri &optional afterUri)
+  "Call org-add-todo tool via JSON-RPC expecting an error.
+TITLE is the headline text.
+TODOSTATE is the TODO state.
+TAGS is a single tag string or list of tag strings.
+BODY is optional body text.
+PARENTURI is the URI of the parent item.
+AFTERURI is optional URI of sibling to insert after."
+  (let* ((params
+          `((title . ,title)
+            (todoState . ,todoState)
+            (tags . ,tags)
+            (body . ,body)
+            (parentUri . ,parentUri)
+            (afterUri . ,afterUri)))
+         (request
+          (mcp-server-lib-create-tools-call-request
+           "org-add-todo" 1 params))
+         (response (mcp-server-lib-process-jsonrpc-parsed request))
+         (result (mcp-server-lib-ert-process-tool-response response)))
+    ;; If we get here, the tool succeeded when we expected failure
+    (error "Expected error but got success: %s" result)))
+
+(defun org-mcp-test--update-and-verify-todo
+    (resource-uri
+     old-state new-state &optional test-file expected-content)
+  "Update TODO state and verify the result via MCP JSON-RPC.
+RESOURCE-URI is the URI to update.
+OLD-STATE is the current TODO state to update from.
+NEW-STATE is the new TODO state to update to.
+TEST-FILE if provided, verify file content after update.
+EXPECTED-CONTENT if provided with TEST-FILE, verify file contains this
+exact content."
+  (let* ((params
+          `((resourceUri . ,resource-uri)
+            (currentState . ,old-state)
+            (newState . ,new-state)))
+         (result-text
+          (mcp-server-lib-ert-call-tool
+           "org-update-todo-state" params))
+         (result (json-read-from-string result-text)))
+    (should (= (length result) 3))
     (should (equal (alist-get 'success result) t))
-    (should
-     (equal (alist-get 'previousState result) expected-previous))
-    (should (equal (alist-get 'newState result) expected-new))
+    (should (equal (alist-get 'previousState result) old-state))
+    (should (equal (alist-get 'newState result) new-state))
+    ;; Verify file content if test-file provided
+    (when test-file
+      (when expected-content
+        (with-temp-buffer
+          (insert-file-contents test-file)
+          (should (string= (buffer-string) expected-content)))))
     result))
+
+(defun org-mcp-test--check-add-todo-result
+    (result
+     expected-title basename test-file &optional expected-pattern)
+  "Check that add-todo RESULT has the correct structure and file content.
+RESULT is the return value from `org-add-todo' tool.
+EXPECTED-TITLE is the title that should be in the result.
+BASENAME is the expected file basename.
+TEST-FILE is the path to the file to check.
+EXPECTED-PATTERN if provided, is a regexp that the file content should match."
+  ;; Check result structure
+  (should (= (length result) 4))
+  (should (equal (alist-get 'success result) t))
+  (should (string-prefix-p "org-id://" (alist-get 'uri result)))
+  (should (equal (alist-get 'file result) basename))
+  (should (equal (alist-get 'title result) expected-title))
+  ;; Check file content if pattern provided
+  (when expected-pattern
+    (with-temp-buffer
+      (insert-file-contents test-file)
+      (should (string-match-p expected-pattern (buffer-string))))))
+
+(defun org-mcp-test--assert-error-and-file (test-file error-form)
+  "Assert that ERROR-FORM throws an error and TEST-FILE remains unchanged.
+ERROR-FORM should be a form that is expected to signal an error.
+The file content is saved before the error test and verified to be
+unchanged after."
+  ;; Save original content before test
+  (let ((original-content
+         (with-temp-buffer
+           (insert-file-contents test-file)
+           (buffer-string))))
+    (should-error (eval error-form) :type 'mcp-server-lib-tool-error)
+    ;; Verify file has not changed
+    (with-temp-buffer
+      (insert-file-contents test-file)
+      (should (string= (buffer-string) original-content)))))
 
 (ert-deftest org-mcp-test-tool-get-todo-config-empty ()
   "Test org-get-todo-config with empty `org-todo-keywords'."
@@ -208,17 +339,22 @@ EXPECTED-NEW is the expected new state in result."
   (let ((org-tag-alist nil)
         (org-tag-persistent-alist nil)
         (org-use-tag-inheritance t))
-    (let ((result (org-mcp--tool-get-tag-config)))
-      (should (= (length result) 5))
-      (should (equal (alist-get 'org-use-tag-inheritance result) "t"))
-      (should
-       (equal
-        (alist-get 'org-tags-exclude-from-inheritance result) "nil"))
-      (should
-       (equal (alist-get 'org-tags-sort-function result) "nil"))
-      (should (equal (alist-get 'org-tag-alist result) "nil"))
-      (should
-       (equal (alist-get 'org-tag-persistent-alist result) "nil")))))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-tag-config)))
+        (should (= (length result) 5))
+        (should
+         (equal (alist-get 'org-use-tag-inheritance result) "t"))
+        (should
+         (equal
+          (alist-get
+           'org-tags-exclude-from-inheritance result)
+          "nil"))
+        (should
+         (equal (alist-get 'org-tags-sort-function result) "nil"))
+        (should (equal (alist-get 'org-tag-alist result) "nil"))
+        (should
+         (equal
+          (alist-get 'org-tag-persistent-alist result) "nil"))))))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-simple ()
   "Test org-get-tag-config with simple tags."
@@ -226,15 +362,16 @@ EXPECTED-NEW is the expected new state in result."
         (org-tag-persistent-alist nil)
         (org-use-tag-inheritance t)
         (org-tags-exclude-from-inheritance nil))
-    (let ((result (org-mcp--tool-get-tag-config)))
-      (should
-       (equal
-        (alist-get 'org-tag-alist result)
-        "(\"work\" \"personal\" \"urgent\")"))
-      (should
-       (equal (alist-get 'org-tag-persistent-alist result) "nil"))
-      (should
-       (equal (alist-get 'org-use-tag-inheritance result) "t")))))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-tag-config)))
+        (should
+         (equal
+          (alist-get 'org-tag-alist result)
+          "(\"work\" \"personal\" \"urgent\")"))
+        (should
+         (equal (alist-get 'org-tag-persistent-alist result) "nil"))
+        (should
+         (equal (alist-get 'org-use-tag-inheritance result) "t"))))))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-with-keys ()
   "Test org-get-tag-config with fast selection keys."
@@ -242,11 +379,14 @@ EXPECTED-NEW is the expected new state in result."
          '(("work" . ?w) ("personal" . ?p) "urgent" ("@home" . ?h)))
         (org-tag-persistent-alist nil)
         (org-use-tag-inheritance t))
-    (let ((result (org-mcp--tool-get-tag-config)))
-      (should
-       (equal
-        (alist-get 'org-tag-alist result)
-        "((\"work\" . 119) (\"personal\" . 112) \"urgent\" (\"@home\" . 104))")))))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-tag-config)))
+        (should
+         (equal
+          (alist-get 'org-tag-alist result)
+          (concat
+           "((\"work\" . 119) (\"personal\" . 112) "
+           "\"urgent\" (\"@home\" . 104))")))))))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-with-groups ()
   "Test org-get-tag-config with tag groups."
@@ -264,58 +404,93 @@ EXPECTED-NEW is the expected new state in result."
            ("proj_b")
            (:endgrouptag)))
         (org-tag-persistent-alist nil))
-    (let ((result (org-mcp--tool-get-tag-config)))
-      ;; Just check that the literal string is returned correctly
-      (should (stringp (alist-get 'org-tag-alist result)))
-      (should
-       (string-match-p
-        ":startgroup" (alist-get 'org-tag-alist result)))
-      (should
-       (string-match-p ":endgroup" (alist-get 'org-tag-alist result)))
-      (should
-       (string-match-p
-        ":startgrouptag" (alist-get 'org-tag-alist result)))
-      (should
-       (string-match-p
-        ":endgrouptag" (alist-get 'org-tag-alist result))))))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-tag-config)))
+        ;; Just check that the literal string is returned correctly
+        (should (stringp (alist-get 'org-tag-alist result)))
+        (should
+         (string-match-p
+          ":startgroup" (alist-get 'org-tag-alist result)))
+        (should
+         (string-match-p
+          ":endgroup" (alist-get 'org-tag-alist result)))
+        (should
+         (string-match-p
+          ":startgrouptag" (alist-get 'org-tag-alist result)))
+        (should
+         (string-match-p
+          ":endgrouptag" (alist-get 'org-tag-alist result)))))))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-persistent ()
   "Test org-get-tag-config with persistent tags."
   (let ((org-tag-alist '(("work" . ?w)))
         (org-tag-persistent-alist '(("important" . ?i) "recurring"))
         (org-tags-exclude-from-inheritance nil))
-    (let ((result (org-mcp--tool-get-tag-config)))
-      (should
-       (equal (alist-get 'org-tag-alist result) "((\"work\" . 119))"))
-      (should
-       (equal
-        (alist-get 'org-tag-persistent-alist result)
-        "((\"important\" . 105) \"recurring\")")))))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-tag-config)))
+        (should
+         (equal
+          (alist-get 'org-tag-alist result) "((\"work\" . 119))"))
+        (should
+         (equal
+          (alist-get 'org-tag-persistent-alist result)
+          "((\"important\" . 105) \"recurring\")"))))))
 
-(ert-deftest org-mcp-test-tool-get-tag-config-inheritance ()
-  "Test org-get-tag-config with different inheritance settings."
+(ert-deftest org-mcp-test-tool-get-tag-config-inheritance-enabled ()
+  "Test org-get-tag-config with inheritance enabled."
   (let ((org-tag-alist '("work" "personal"))
         (org-tags-exclude-from-inheritance nil)
         (org-tag-persistent-alist nil)
-        (org-tags-sort-function nil))
-    ;; Test with inheritance enabled
-    (let ((org-use-tag-inheritance t))
-      (let ((result (org-mcp--tool-get-tag-config)))
+        (org-tags-sort-function nil)
+        (org-use-tag-inheritance t))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-tag-config)))
         (should
-         (equal (alist-get 'org-use-tag-inheritance result) "t"))))
-    ;; Test with inheritance disabled
-    (let ((org-use-tag-inheritance nil))
-      (let ((result (org-mcp--tool-get-tag-config)))
+         (equal (alist-get 'org-use-tag-inheritance result) "t"))))))
+
+(ert-deftest org-mcp-test-tool-get-tag-config-inheritance-disabled ()
+  "Test org-get-tag-config with inheritance disabled."
+  (let ((org-tag-alist '("work" "personal"))
+        (org-tags-exclude-from-inheritance nil)
+        (org-tag-persistent-alist nil)
+        (org-tags-sort-function nil)
+        (org-use-tag-inheritance nil))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-tag-config)))
         (should
-         (equal (alist-get 'org-use-tag-inheritance result) "nil"))))
-    ;; Test with selective inheritance (list)
-    (let ((org-use-tag-inheritance '("work")))
-      (let ((result (org-mcp--tool-get-tag-config)))
+         (equal
+          (alist-get 'org-use-tag-inheritance result) "nil"))))))
+
+(ert-deftest org-mcp-test-tool-get-tag-config-inheritance-selective ()
+  "Test org-get-tag-config with selective inheritance (list)."
+  (let ((org-tag-alist '("work" "personal"))
+        (org-tags-exclude-from-inheritance nil)
+        (org-tag-persistent-alist nil)
+        (org-tags-sort-function nil)
+        (org-use-tag-inheritance '("work")))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-tag-config)))
         (should
          (equal
           (alist-get 'org-use-tag-inheritance result)
           "(\"work\")"))))))
 
+(defmacro org-mcp-test--with-add-todo-setup
+    (file-var initial-content &rest body)
+  "Helper for org-add-todo test.
+Sets up FILE-VAR with INITIAL-CONTENT and standard org configuration.
+Executes BODY with org-mcp enabled and standard variables set.
+Also provides `basename' binding for the temp file's base name."
+  (declare (indent 2))
+  `(org-mcp-test--with-temp-org-file ,file-var ,initial-content
+     (let ((org-mcp-allowed-files (list ,file-var))
+           (org-todo-keywords
+            '((sequence "TODO" "IN-PROGRESS" "|" "DONE")))
+           (org-tag-alist '("work" "personal" "urgent"))
+           (org-id-locations-file nil))
+       (org-mcp-test--with-enabled
+         (let ((basename (file-name-nondirectory ,file-var)))
+           ,@body)))))
 
 (ert-deftest org-mcp-test-file-resource-template-in-list ()
   "Test that file template appears in resources/templates/list."
@@ -523,7 +698,6 @@ Content of subsection 2.1."))
              mcp-server-lib-jsonrpc-error-invalid-params
              "Headline not found: Nonexistent")))))))
 
-
 (ert-deftest org-mcp-test-id-resource-returns-content ()
   "Test that ID resource returns content for valid ID."
   (let ((test-content
@@ -616,10 +790,11 @@ Content of subsection 2.1."))
                  (format "org-headline://%s/Task%%20One"
                          (file-name-nondirectory test-file))))
             (org-mcp-test--update-and-verify-todo
-             resource-uri "TODO" "IN-PROGRESS" "TODO" "IN-PROGRESS")
-            ;; Verify file was actually updated
-            (org-mcp-test--verify-file-content
-             test-file "^\\* IN-PROGRESS Task One")))))))
+             resource-uri
+             "TODO"
+             "IN-PROGRESS"
+             test-file
+             "* IN-PROGRESS Task One\nTask description.")))))))
 
 (ert-deftest org-mcp-test-update-todo-state-mismatch ()
   "Test TODO state update fails on state mismatch."
@@ -633,13 +808,10 @@ Content of subsection 2.1."))
           (let ((resource-uri
                  (format "org-headline://%s/Task%%20One"
                          (file-name-nondirectory test-file))))
-            (should-error
-             (org-mcp--tool-update-todo-state
-              resource-uri "IN-PROGRESS" "DONE") ; Wrong state
-             :type 'mcp-server-lib-tool-error)
-            ;; Verify file was NOT updated
-            (org-mcp-test--verify-file-content
-             test-file "^\\* TODO Task One")))))))
+            (org-mcp-test--assert-error-and-file
+             test-file
+             `(org-mcp-test--call-update-todo-state-expecting-error
+               ,resource-uri "IN-PROGRESS" "DONE"))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-empty-newstate-invalid ()
   "Test that empty string for newState is rejected."
@@ -653,13 +825,10 @@ Content of subsection 2.1."))
           (let ((resource-uri
                  (format "org-headline://%s/Task%%20One"
                          (file-name-nondirectory test-file))))
-            (should-error
-             (org-mcp--tool-update-todo-state
-              resource-uri "TODO" "") ; Empty state should fail
-             :type 'mcp-server-lib-tool-error)
-            ;; Verify file was NOT updated
-            (org-mcp-test--verify-file-content
-             test-file "^\\* TODO Task One")))))))
+            (org-mcp-test--assert-error-and-file
+             test-file
+             `(org-mcp-test--call-update-todo-state-expecting-error
+               ,resource-uri "TODO" ""))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-invalid ()
   "Test TODO state update fails for invalid new state."
@@ -673,13 +842,10 @@ Content of subsection 2.1."))
           (let ((resource-uri
                  (format "org-headline://%s/Task%%20One"
                          (file-name-nondirectory test-file))))
-            (should-error
-             (org-mcp--tool-update-todo-state
-              resource-uri "TODO" "INVALID-STATE") ; Invalid state
-             :type 'mcp-server-lib-tool-error)
-            ;; Verify file was NOT updated
-            (org-mcp-test--verify-file-content
-             test-file "^\\* TODO Task One")))))))
+            (org-mcp-test--assert-error-and-file
+             test-file
+             `(org-mcp-test--call-update-todo-state-expecting-error
+               ,resource-uri "TODO" "INVALID-STATE"))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-with-open-buffer ()
   "Test TODO state update works when file is open in another buffer."
@@ -700,11 +866,8 @@ Content of subsection 2.1."))
                    resource-uri
                    "TODO"
                    "IN-PROGRESS"
-                   "TODO"
-                   "IN-PROGRESS")
-                  ;; Verify file was actually updated on disk
-                  (org-mcp-test--verify-file-content
-                   test-file "^\\* IN-PROGRESS Task One")
+                   test-file
+                   "* IN-PROGRESS Task One\nTask description.")
                   ;; Verify the buffer was also updated
                   (with-current-buffer buffer
                     (goto-char (point-min))
@@ -741,13 +904,10 @@ Another task description."))
                   (let ((resource-uri
                          (format "org-headline://%s/Task%%20One"
                                  (file-name-nondirectory test-file))))
-                    (should-error
-                     (org-mcp--tool-update-todo-state
-                      resource-uri "TODO" "IN-PROGRESS")
-                     :type 'mcp-server-lib-tool-error)
-                    ;; Verify file was NOT modified
-                    (org-mcp-test--verify-file-content
-                     test-file "^\\* TODO Task One")
+                    (org-mcp-test--assert-error-and-file
+                     test-file
+                     `(org-mcp-test--call-update-todo-state-expecting-error
+                       ,resource-uri "TODO" "IN-PROGRESS"))
                     ;; Verify buffer still has unsaved changes
                     (with-current-buffer buffer
                       (should (buffer-modified-p))
@@ -776,7 +936,7 @@ Another task description."))
           ;; Try to update a non-existent ID
           (let ((resource-uri "org-id://nonexistent-uuid-12345"))
             (should-error
-             (org-mcp--tool-update-todo-state
+             (org-mcp-test--call-update-todo-state-expecting-error
               resource-uri "TODO" "IN-PROGRESS")
              :type 'mcp-server-lib-tool-error)
             ;; Verify file was NOT modified
@@ -799,15 +959,475 @@ Another task."))
           (let ((resource-uri
                  (format "org-headline://%s/Nonexistent%%20Task"
                          (file-name-nondirectory test-file))))
+            (org-mcp-test--assert-error-and-file
+             test-file
+             `(org-mcp-test--call-update-todo-state-expecting-error
+               ,resource-uri "TODO" "IN-PROGRESS"))))))))
+
+(ert-deftest org-mcp-test-add-todo-top-level ()
+  "Test adding a top-level TODO item."
+  (org-mcp-test--with-add-todo-setup test-file ""
+    (let* ((parent-uri (format "org-headline://%s/" basename))
+           (result
+            (org-mcp-test--call-add-todo
+             "New Task"
+             "TODO"
+             '("work" "urgent")
+             nil ; no body
+             parent-uri
+             nil))) ; no afterUri
+      (org-mcp-test--check-add-todo-result
+       result "New Task" basename test-file
+       (concat
+        "^\\* TODO New Task +:.*work.*urgent.*:\n"
+        "\\(?::PROPERTIES:\n"
+        ":ID: +[^\n]+\n"
+        ":END:\n\\)?$")))))
+
+(ert-deftest org-mcp-test-add-todo-top-level-with-header ()
+  "Test adding top-level TODO after header comments."
+  (let ((initial-content
+         "#+TITLE: My Org Document
+#+AUTHOR: Test Author
+#+DATE: 2024-01-01
+#+OPTIONS: toc:nil
+
+* Existing Task
+Some content here."))
+    (org-mcp-test--with-add-todo-setup test-file initial-content
+      (let* ((parent-uri (format "org-headline://%s/" basename))
+             (result
+              (org-mcp-test--call-add-todo
+               "New Top Task"
+               "TODO"
+               '("urgent")
+               nil ; no body
+               parent-uri
+               nil))) ; no afterUri
+        (org-mcp-test--check-add-todo-result
+         result "New Top Task" basename test-file)
+        ;; Need extra validation for headers
+        (with-temp-buffer
+          (insert-file-contents test-file)
+          (let ((content (buffer-string)))
+            ;; Check that headers are still at the top
+            (should (string-match-p "^#\\+TITLE:" content))
+            ;; Check that the new task comes after headers but before existing
+            (should
+             (string-match-p
+              (concat
+               "^#\\+TITLE: My Org Document\n"
+               "#\\+AUTHOR: Test Author\n"
+               "#\\+DATE: 2024-01-01\n"
+               "#\\+OPTIONS: toc:nil\n"
+               "\n"
+               "\\* TODO New Top Task +:[^\n]*urgent[^\n]*:\n"
+               "\\(?::PROPERTIES:\n"
+               ":ID: +[^\n]+\n"
+               ":END:\n\\)?"
+               "\n?"
+               "\\* Existing Task\n"
+               "Some content here\\.")
+              content))))))))
+
+(ert-deftest org-mcp-test-add-todo-invalid-state ()
+  "Test that adding TODO with invalid state throws error."
+  (org-mcp-test--with-add-todo-setup test-file ""
+    (let ((parent-uri (format "org-headline://%s/" basename)))
+      (org-mcp-test--assert-error-and-file
+       test-file
+       `(org-mcp-test--call-add-todo-expecting-error
+         "New Task"
+         "INVALID-STATE" ; Not in org-todo-keywords
+         '("work")
+         nil
+         ,parent-uri
+         nil)))))
+
+(ert-deftest org-mcp-test-add-todo-tag-reject-invalid-with-alist ()
+  "Test that tags not in `org-tag-alist' are rejected."
+  (org-mcp-test--with-add-todo-setup test-file ""
+    (let ((parent-uri (format "org-headline://%s/" basename)))
+      ;; Should reject tags not in org-tag-alist
+      (org-mcp-test--assert-error-and-file
+       test-file
+       `(org-mcp-test--call-add-todo-expecting-error
+         "Task" "TODO" '("invalid") nil ,parent-uri
+         nil)))))
+
+(ert-deftest org-mcp-test-add-todo-tag-accept-valid-with-alist ()
+  "Test that tags in `org-tag-alist' are accepted."
+  (org-mcp-test--with-add-todo-setup test-file ""
+    (let ((parent-uri (format "org-headline://%s/" basename)))
+      ;; Should accept tags in org-tag-alist (work, personal, urgent)
+      (let ((result
+             (org-mcp-test--call-add-todo
+              "ValidTask" "TODO" '("work") nil parent-uri
+              nil)))
+        ;; Check result structure - should have exactly 4 fields
+        (org-mcp-test--check-add-todo-result
+         result "ValidTask" basename test-file
+         (concat
+          "^\\* TODO ValidTask +:work:\n"
+          "\\(?::PROPERTIES:\n"
+          ":ID: +[^\n]+\n"
+          ":END:\n\\)?$"))))))
+
+(ert-deftest org-mcp-test-add-todo-tag-validation-without-alist ()
+  "Test valid tag names are accepted when `org-tag-alist' is empty."
+  (org-mcp-test--with-add-todo-setup test-file ""
+    (let ((org-tag-alist nil)
+          (org-tag-persistent-alist nil))
+      (let ((parent-uri (format "org-headline://%s/" basename)))
+        ;; Should accept valid tag names (alphanumeric, _, @)
+        (let ((result
+               (org-mcp-test--call-add-todo
+                "Task1"
+                "TODO"
+                '("validtag" "tag123" "my_tag" "@home")
+                nil
+                parent-uri
+                nil)))
+          ;; Check result structure - should have exactly 4 fields
+          (org-mcp-test--check-add-todo-result
+           result "Task1" basename test-file
+           (concat
+            "^\\* TODO Task1 +:"
+            ".*validtag.*tag123.*my_tag.*@home.*:\n"
+            "\\(?::PROPERTIES:\n"
+            ":ID: +[^\n]+\n"
+            ":END:\n\\)?$")))))))
+
+(ert-deftest org-mcp-test-add-todo-tag-invalid-characters ()
+  "Test that tags with invalid characters are rejected."
+  (org-mcp-test--with-add-todo-setup test-file ""
+    (let ((org-tag-alist nil)
+          (org-tag-persistent-alist nil))
+      (let ((parent-uri (format "org-headline://%s/" basename)))
+        ;; Should reject tags with special characters
+        (org-mcp-test--assert-error-and-file
+         test-file
+         `(org-mcp-test--call-add-todo-expecting-error
+           "Task" "TODO" '("invalid-tag!") nil ,parent-uri
+           nil))
+        (org-mcp-test--assert-error-and-file
+         test-file
+         `(org-mcp-test--call-add-todo-expecting-error
+           "Task" "TODO" '("tag-with-dash") nil ,parent-uri
+           nil))
+        (org-mcp-test--assert-error-and-file
+         test-file
+         `(org-mcp-test--call-add-todo-expecting-error
+           "Task" "TODO" '("tag#hash") nil ,parent-uri
+           nil))))))
+
+(ert-deftest org-mcp-test-add-todo-child-under-parent ()
+  "Test adding a child TODO under an existing parent."
+  (let ((initial-content
+         "* Parent Task
+Some content here.
+* Another Task
+More content."))
+    (org-mcp-test--with-add-todo-setup test-file initial-content
+      (let* ((parent-uri
+              (format "org-headline://%s/Parent%%20Task" basename))
+             (result
+              (org-mcp-test--call-add-todo
+               "Child Task"
+               "TODO"
+               '("work")
+               nil ; no body
+               parent-uri
+               nil))) ; no afterUri
+        ;; Check result structure - should have exactly 4 fields
+        (org-mcp-test--check-add-todo-result
+         result "Child Task" basename test-file
+         (concat
+          "^\\* Parent Task\n"
+          "Some content here\\.\n\n"
+          "\\*\\* TODO Child Task +:[^\n]*\n"
+          "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+          "\\* Another Task\n"
+          "More content\\."))))))
+
+(ert-deftest org-mcp-test-add-todo-with-body ()
+  "Test adding TODO with body text."
+  (org-mcp-test--with-add-todo-setup test-file ""
+    (let* ((parent-uri (format "org-headline://%s/" basename))
+           (body-text
+            (concat
+             "This is the body text.\n"
+             "It has multiple lines.\n"
+             "With some content."))
+           (result
+            (org-mcp-test--call-add-todo
+             "Task with Body" "TODO" '("work") body-text parent-uri
+             nil)))
+      ;; Check result structure - should have exactly 4 fields
+      (org-mcp-test--check-add-todo-result
+       result
+       "Task with Body"
+       basename
+       test-file
+       (concat
+        "^\\* TODO Task with Body +:[^\n]*\n"
+        "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?" ; Optional properties
+        "This is the body text\\.\n"
+        "It has multiple lines\\.\n"
+        "With some content\\.\n?$")))))
+
+(ert-deftest org-mcp-test-add-todo-after-sibling ()
+  "Test adding TODO after a specific sibling."
+  (let ((initial-content
+         "* Parent Task
+** First Child
+First child content.
+** Second Child
+Second child content.
+** Third Child
+Third child content."))
+    (org-mcp-test--with-temp-org-file test-file initial-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            (org-tag-alist '("work"))
+            (org-id-locations-file nil))
+        ;; First add IDs to existing items so we can reference them
+        (let ((second-id nil))
+          (with-temp-buffer
+            (set-visited-file-name test-file t)
+            (insert-file-contents test-file)
+            (org-mode)
+            (goto-char (point-min))
+            ;; Add ID to Second Child
+            (re-search-forward "^\\*\\* Second Child")
+            (org-id-get-create)
+            (setq second-id (org-id-get))
+            (write-region (point-min) (point-max) test-file))
+          ;; Kill any buffer visiting the test file
+          (let ((buf (find-buffer-visiting test-file)))
+            (when buf
+              (kill-buffer buf)))
+          ;; Register the ID location
+          (setq org-id-locations (make-hash-table :test 'equal))
+          (puthash second-id test-file org-id-locations)
+
+          (org-mcp-test--with-enabled
+            (let* ((basename (file-name-nondirectory test-file))
+                   (parent-uri
+                    (format "org-headline://%s/Parent%%20Task"
+                            basename))
+                   (after-uri (format "org-id://%s" second-id))
+                   (result
+                    (org-mcp-test--call-add-todo
+                     "New Task After Second"
+                     "TODO"
+                     '("work")
+                     nil
+                     parent-uri
+                     after-uri)))
+              ;; Check result has exactly 4 fields
+              (org-mcp-test--check-add-todo-result
+               result "New Task After Second" basename test-file
+               (concat
+                "^\\* Parent Task\n"
+                "\\*\\* First Child\n"
+                "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+                "First child content\\.\n"
+                "\\*\\* Second Child\n"
+                "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+                "Second child content\\.\n\n?"
+                "\\*\\* TODO New Task After Second +:[^\n]*\n"
+                "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+                "\\*\\* Third Child\n"
+                "Third child content\\.")))))))))
+
+
+(ert-deftest org-mcp-test-add-todo-afterUri-not-sibling ()
+  "Test error when afterUri is not a child of parentUri."
+  (let ((initial-content
+         "* Parent Task
+** Child One
+** Child Two
+* Other Parent
+** Other Child"))
+    (org-mcp-test--with-temp-org-file test-file initial-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            (org-tag-alist '("work"))
+            (org-id-locations-file nil))
+        ;; Add ID to "Other Child" - not a child of Parent Task
+        (with-temp-buffer
+          (set-visited-file-name test-file t)
+          (insert-file-contents test-file)
+          (org-mode)
+          (goto-char (point-min))
+          (re-search-forward "^\\*\\* Other Child")
+          (org-id-get-create)
+          (let ((other-id (org-id-get)))
+            (write-region (point-min) (point-max) test-file)
+            ;; Kill any buffer visiting the test file
+            (let ((buf (find-buffer-visiting test-file)))
+              (when buf
+                (kill-buffer buf)))
+
+            ;; Register the ID location manually
+            (setq org-id-locations (make-hash-table :test 'equal))
+            (puthash other-id test-file org-id-locations)
+
+            (org-mcp-test--with-enabled
+              (let* ((basename (file-name-nondirectory test-file))
+                     (parent-uri
+                      (format "org-headline://%s/Parent%%20Task"
+                              basename))
+                     (after-uri (format "org-id://%s" other-id)))
+                ;; Error: Other Child is not a child of Parent Task
+                (should-error
+                 (org-mcp-test--call-add-todo
+                  "New Task" "TODO" '("work") nil parent-uri
+                  after-uri)
+                 :type 'mcp-server-lib-tool-error)
+                ;; Verify file was NOT modified from its state with IDs
+                (with-temp-buffer
+                  (insert-file-contents test-file)
+                  ;; Should still have the original structure with IDs added
+                  (should
+                   (string-match-p
+                    (concat
+                     "^\\* Parent Task\n"
+                     "\\*\\* Child One\n"
+                     "\\*\\* Child Two\n"
+                     "\\* Other Parent\n"
+                     "\\*\\* Other Child\n"
+                     "\\(?::PROPERTIES:\n"
+                     ":ID: +[^\n]+\n"
+                     ":END:\n\\)?")
+                    (buffer-string)))
+                  ;; But should NOT have "New Task"
+                  (should-not
+                   (string-match-p
+                    "New Task" (buffer-string))))))))))))
+
+(ert-deftest org-mcp-test-add-todo-parent-id-uri ()
+  "Test adding TODO with parent specified as org-id:// URI."
+  (let ((initial-content
+         "* Parent Task
+Some parent content.
+* Another Task"))
+    (org-mcp-test--with-temp-org-file test-file initial-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            (org-tag-alist '("work"))
+            (org-id-locations-file nil))
+        ;; Add ID to Parent Task
+        (let ((parent-id nil))
+          (with-temp-buffer
+            (set-visited-file-name test-file t)
+            (insert-file-contents test-file)
+            (org-mode)
+            (goto-char (point-min))
+            (re-search-forward "^\\* Parent Task")
+            (org-id-get-create)
+            (setq parent-id (org-id-get))
+            (write-region (point-min) (point-max) test-file))
+          ;; Kill any buffer visiting the test file
+          (let ((buf (find-buffer-visiting test-file)))
+            (when buf
+              (kill-buffer buf)))
+
+          (org-mcp-test--with-enabled
+            ;; Use org-id:// for parent instead of org-headline://
+            (let* ((basename (file-name-nondirectory test-file))
+                   (parent-uri (format "org-id://%s" parent-id))
+                   (result
+                    (org-mcp-test--call-add-todo
+                     "Child via ID" "TODO" '("work") nil parent-uri
+                     nil)))
+              ;; Check result has exactly 4 fields
+              (org-mcp-test--check-add-todo-result
+               result "Child via ID" basename test-file
+               (concat
+                "^\\* Parent Task\n"
+                "\\(?::PROPERTIES:\n"
+                ":ID: +[^\n]+\n"
+                ":END:\n\\)?"
+                "Some parent content\\.\n\n?"
+                "\\*\\* TODO Child via ID +:work:\n"
+                "\\(?::PROPERTIES:\n"
+                ":ID: +[^\n]+\n"
+                ":END:\n\\)?\n?"
+                "\\* Another Task")))))))))
+
+
+(ert-deftest org-mcp-test-add-todo-mutex-tags-error ()
+  "Test that mutually exclusive tags are rejected."
+  (let ((initial-content "#+TITLE: Test Org File\n\n"))
+    (org-mcp-test--with-temp-org-file test-file initial-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-id-track-globally nil)
+            (org-id-locations-file nil)
+            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            ;; Configure mutex tag groups
+            (org-tag-alist
+             '(("work" . ?w)
+               :startgroup
+               ("@office" . ?o)
+               ("@home" . ?h)
+               :endgroup)))
+        (org-mcp-test--with-enabled
+          ;; Try to add TODO with conflicting tags - should error
+          (let* ((basename (file-name-nondirectory test-file))
+                 (parent-uri (format "org-headline://%s/" basename)))
+            ;; This should throw an error
             (should-error
-             (org-mcp--tool-update-todo-state
-              resource-uri "TODO" "IN-PROGRESS")
-             :type 'mcp-server-lib-tool-error)
-            ;; Verify file was NOT modified
-            (org-mcp-test--verify-file-content
-             test-file "^\\* TODO Task One")
-            (org-mcp-test--verify-file-content
-             test-file "^\\* TODO Task Two")))))))
+             (org-mcp-test--call-add-todo
+              "Test Task"
+              "TODO"
+              ["work" "@office" "@home"] ; conflicting tags
+              nil
+              parent-uri
+              nil)
+             :type 'mcp-server-lib-tool-error)))))))
+
+(ert-deftest org-mcp-test-add-todo-mutex-tags-valid ()
+  "Test that non-conflicting tags from mutex groups are accepted."
+  (let ((initial-content "#+TITLE: Test Org File\n\n"))
+    (org-mcp-test--with-temp-org-file test-file initial-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-id-track-globally nil)
+            (org-id-locations-file nil)
+            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            ;; Configure mutex tag groups
+            (org-tag-alist
+             '(("work" . ?w)
+               :startgroup
+               ("@office" . ?o)
+               ("@home" . ?h)
+               :endgroup ("project" . ?p))))
+        (org-mcp-test--with-enabled
+          ;; Add TODO with non-conflicting tags
+          (let* ((basename (file-name-nondirectory test-file))
+                 (parent-uri (format "org-headline://%s/" basename))
+                 (result
+                  (org-mcp-test--call-add-todo
+                   "Test Task"
+                   "TODO"
+                   ["work" "@office" "project"] ; no conflict
+                   nil
+                   parent-uri
+                   nil)))
+            ;; Should succeed
+            (should (assoc 'success result))
+            (should (equal (alist-get 'success result) t))
+            ;; Verify tags were added correctly
+            (with-temp-buffer
+              (insert-file-contents test-file)
+              (let ((content (buffer-string)))
+                ;; Check task was added
+                (should (string-match-p "\\* TODO Test Task" content))
+                ;; Check all tags are present (order doesn't matter)
+                (should (string-match-p ":work:" content))
+                (should (string-match-p ":@office:" content))
+                (should (string-match-p ":project:" content))))))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

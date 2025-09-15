@@ -31,6 +31,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'mcp-server-lib)
 (require 'org)
 (require 'org-id)
@@ -70,21 +71,23 @@ For security, only files in this list can be accessed by MCP clients."
           (setq keyword-vec (vconcat keyword-vec (vector kw))))
         (push
          `((type . ,type-str) (keywords . ,keyword-vec)) seq-list)))
-    `((sequences . ,(vconcat (nreverse seq-list)))
-      (semantics . ,(vconcat (nreverse sem-list))))))
+    (json-encode
+     `((sequences . ,(vconcat (nreverse seq-list)))
+       (semantics . ,(vconcat (nreverse sem-list)))))))
 
 (defun org-mcp--tool-get-tag-config ()
   "Return the tag configuration as literal Elisp strings."
-  `((org-use-tag-inheritance
-     .
-     ,(prin1-to-string org-use-tag-inheritance))
-    (org-tags-exclude-from-inheritance
-     . ,(prin1-to-string org-tags-exclude-from-inheritance))
-    (org-tags-sort-function
-     . ,(prin1-to-string org-tags-sort-function))
-    (org-tag-alist . ,(prin1-to-string org-tag-alist))
-    (org-tag-persistent-alist
-     . ,(prin1-to-string org-tag-persistent-alist))))
+  (json-encode
+   `((org-use-tag-inheritance
+      .
+      ,(prin1-to-string org-use-tag-inheritance))
+     (org-tags-exclude-from-inheritance
+      . ,(prin1-to-string org-tags-exclude-from-inheritance))
+     (org-tags-sort-function
+      . ,(prin1-to-string org-tags-sort-function))
+     (org-tag-alist . ,(prin1-to-string org-tag-alist))
+     (org-tag-persistent-alist
+      . ,(prin1-to-string org-tag-persistent-alist)))))
 
 (defun org-mcp--read-file-resource (file-path)
   "Read and return the contents of FILE-PATH."
@@ -403,9 +406,361 @@ MCP Parameters:
                 (revert-buffer t t t))))
 
           ;; Return success
-          `((success . t)
-            (previousState . ,(or currentState ""))
-            (newState . ,newState)))))))
+          (json-encode
+           `((success . t)
+             (previousState . ,(or currentState ""))
+             (newState . ,newState))))))))
+
+(defun org-mcp--extract-tag-from-alist-entry (entry)
+  "Extract tag name from an `org-tag-alist' ENTRY.
+ENTRY can be a string or a cons cell (tag . key)."
+  (if (consp entry)
+      (car entry)
+    entry))
+
+(defun org-mcp--is-tag-group-keyword-p (tag)
+  "Check if symbol TAG is a special keyword like :startgroup."
+  (and (symbolp tag) (string-match "^:" (symbol-name tag))))
+
+(defun org-mcp--parse-mutex-tag-groups (tag-alist)
+  "Parse mutually exclusive tag groups from TAG-ALIST.
+Returns a list of lists, where each inner list contains tags
+that are mutually exclusive with each other."
+  (let ((groups '())
+        (current-group nil)
+        (in-group nil))
+    (dolist (entry tag-alist)
+      (cond
+       ;; Start of a mutex group
+       ((eq entry :startgroup)
+        (setq in-group t)
+        (setq current-group '()))
+       ;; End of a mutex group
+       ((eq entry :endgroup)
+        (when (and in-group current-group)
+          (push current-group groups))
+        (setq in-group nil)
+        (setq current-group nil))
+       ;; Inside a group - collect tags
+       (in-group
+        (let ((tag (org-mcp--extract-tag-from-alist-entry entry)))
+          (when (and tag (not (org-mcp--is-tag-group-keyword-p tag)))
+            (push tag current-group))))))
+    groups))
+
+(defun org-mcp--validate-mutex-tag-groups (tags tag-alist)
+  "Validate that TAGS don't violate mutex groups in TAG-ALIST.
+TAGS is a list of tag strings.
+Throws an error if multiple tags from the same mutex group are present."
+  (let ((mutex-groups (org-mcp--parse-mutex-tag-groups tag-alist)))
+    (dolist (group mutex-groups)
+      (let ((tags-in-group
+             (cl-intersection tags group :test #'string=)))
+        (when (> (length tags-in-group) 1)
+          (mcp-server-lib-tool-throw
+           (format
+            "Tags %s are mutually exclusive (cannot use together)"
+            (mapconcat (lambda (tag)
+                         (format "'%s'" tag))
+                       tags-in-group
+                       ", "))))))))
+
+(defun org-mcp--tool-add-todo
+    (title todoState tags body parentUri afterUri)
+  "Add a new TODO item to an Org file.
+TITLE is the headline text.
+TODOSTATE is the TODO state from `org-todo-keywords'.
+TAGS is a single tag string or list of tag strings.
+BODY is optional body text.
+PARENTURI is the URI of the parent item.
+AFTERURI is optional URI of sibling to insert after.
+
+MCP Parameters:
+  title - The headline text
+  todoState - TODO state from `org-todo-keywords'
+  tags - Tags to add (single string or array of strings)
+  body - Optional body text content
+  parentUri - Parent item URI (required)
+  afterUri - Sibling to insert after (optional)"
+
+  ;; Validate TODO state
+  (unless (member
+           todoState (apply 'append (mapcar 'cdr org-todo-keywords)))
+    (mcp-server-lib-tool-throw
+     (format "Invalid TODO state: %s" todoState)))
+
+  ;; Validate tags
+  (let ((tag-list
+         (cond
+          ((vectorp tags)
+           (append tags nil)) ; Convert JSON array (vector) to list
+          ((stringp tags)
+           (list tags)) ; Single tag string
+          (t
+           (mcp-server-lib-tool-throw
+            (format "Invalid tags format: %s" tags))))))
+    ;; Get all allowed tags from tag alists
+    (let ((allowed-tags
+           (append
+            (mapcar
+             #'org-mcp--extract-tag-from-alist-entry org-tag-alist)
+            (mapcar
+             #'org-mcp--extract-tag-from-alist-entry
+             org-tag-persistent-alist))))
+      ;; Remove special keywords like :startgroup
+      (setq allowed-tags
+            (cl-remove-if
+             #'org-mcp--is-tag-group-keyword-p allowed-tags))
+      ;; If tag alists are configured, validate against them
+      (when allowed-tags
+        (dolist (tag tag-list)
+          (unless (member tag allowed-tags)
+            (mcp-server-lib-tool-throw
+             (format "Tag not in configured tag alist: %s" tag)))))
+      ;; Always validate tag names follow Org's rules
+      (dolist (tag tag-list)
+        (unless (string-match "^[[:alnum:]_@]+$" tag)
+          (mcp-server-lib-tool-throw
+           (format
+            "Invalid tag name (must be alphanumeric, _, or @): %s"
+            tag))))
+      ;; Validate mutual exclusivity if tag-alist is configured
+      (when org-tag-alist
+        (org-mcp--validate-mutex-tag-groups tag-list org-tag-alist))
+      (when org-tag-persistent-alist
+        (org-mcp--validate-mutex-tag-groups
+         tag-list org-tag-persistent-alist))))
+
+  ;; Parse parent URI to get file path
+  (let (file-path)
+    (cond
+     ;; Handle org-headline:// URIs
+     ((string-match "^org-headline://\\([^/]+\\)/" parentUri)
+      (let* ((filename (match-string 1 parentUri))
+             (allowed-file (org-mcp--validate-file-access filename)))
+        (setq file-path (expand-file-name allowed-file))))
+     ;; Handle org-id:// URIs
+     ((string-match "^org-id://\\(.+\\)$" parentUri)
+      ;; For org-id, we need to find which file contains this ID
+      ;; We'll search through allowed files
+      (let ((parent-id (match-string 1 parentUri))
+            (found nil))
+        (dolist (allowed-file org-mcp-allowed-files)
+          (unless found
+            (when (file-exists-p allowed-file)
+              (with-temp-buffer
+                (insert-file-contents allowed-file)
+                (org-mode)
+                (goto-char (point-min))
+                (while (and (not found)
+                            (re-search-forward "^\\*+ " nil t))
+                  (when (string= (org-entry-get nil "ID") parent-id)
+                    (setq found t)
+                    (setq file-path
+                          (expand-file-name allowed-file))))))))
+        (unless found
+          (mcp-server-lib-tool-throw
+           (format "Parent with ID %s not found in allowed files"
+                   parent-id)))))
+     (t
+      (mcp-server-lib-tool-throw
+       (format "Invalid parent URI format: %s" parentUri))))
+
+    ;; Check for unsaved changes
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (when (and (buffer-file-name)
+                   (string= (buffer-file-name) file-path)
+                   (buffer-modified-p))
+          (mcp-server-lib-tool-throw
+           "Cannot add TODO: file has unsaved changes in buffer"))))
+
+    ;; Add the TODO item
+    (with-temp-buffer
+      (set-visited-file-name file-path t)
+      (insert-file-contents file-path)
+      (org-mode)
+
+      ;; Navigate to insertion point based on parentUri
+      (let ((parent-path nil)
+            (parent-id nil))
+        ;; Parse the parent URI - either org-headline:// or org-id://
+        (cond
+         ;; org-headline:// format
+         ((string-match "^org-headline://[^/]+/\\(.*\\)$" parentUri)
+          (let ((path-str (match-string 1 parentUri)))
+            (when (> (length path-str) 0)
+              (setq parent-path
+                    (split-string (url-unhex-string path-str) "/")))))
+         ;; org-id:// format
+         ((string-match "^org-id://\\(.+\\)$" parentUri)
+          (setq parent-id (match-string 1 parentUri))))
+
+        ;; Navigate to parent if specified
+        (cond
+         ;; Navigate by path
+         (parent-path
+          (goto-char (point-min))
+          (dolist (title parent-path)
+            (unless (re-search-forward (format "^\\*+ %s"
+                                               (regexp-quote title))
+                                       nil t)
+              (mcp-server-lib-tool-throw
+               (format "Parent headline not found: %s" title))))
+          ;; Parent found, point is at the parent heading
+          )
+         ;; Navigate by ID
+         (parent-id
+          (goto-char (point-min))
+          (let ((found nil))
+            (while (and (not found)
+                        (re-search-forward "^\\*+ " nil t))
+              (when (string= (org-entry-get nil "ID") parent-id)
+                (setq found t)))
+            (unless found
+              (mcp-server-lib-tool-throw
+               (format "Parent with ID not found: %s" parent-id))))
+          ;; Parent found, point is at the parent heading
+          )
+         ;; No parent specified - top level
+         (t
+          (goto-char (point-min))
+          ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
+          (while (and (not (eobp)) (looking-at "^#\\+"))
+            (forward-line))
+          ;; Position at the right place: if there's a blank line after headers,
+          ;; move past it; if there's a headline immediately after, stay there
+          (when (and (not (eobp)) (looking-at "^[ \t]*$"))
+            ;; We're on a blank line after headers, skip to next non-blank
+            (while (and (not (eobp)) (looking-at "^[ \t]*$"))
+              (forward-line)))))
+
+        ;; Handle positioning after navigation to parent
+        (when (or parent-path parent-id)
+          ;; Handle afterUri positioning
+          (if afterUri
+              (progn
+                ;; Parse afterUri to get the ID
+                (let
+                    ((after-id
+                      (if (string-match
+                           "^org-id://\\(.+\\)$" afterUri)
+                          (match-string 1 afterUri)
+                        (mcp-server-lib-tool-throw
+                         (format
+                          "afterUri must be org-id:// format, got: %s"
+                          afterUri)))))
+                  ;; Find the sibling with the specified ID
+                  (org-back-to-heading t) ;; Ensure we're at the parent heading
+                  (let ((found nil)
+                        (parent-end
+                         (save-excursion
+                           (org-end-of-subtree t t)
+                           (point))))
+                    ;; Search for the sibling within parent's subtree
+                    ;; Move to first child
+                    (if (org-goto-first-child)
+                        (progn
+                          ;; Now search among siblings
+                          (while (and (not found)
+                                      (< (point) parent-end))
+                            (let ((current-id
+                                   (org-entry-get nil "ID")))
+                              (when (string= current-id after-id)
+                                (setq found t)
+                                ;; Move to end of this sibling's subtree
+                                (org-end-of-subtree t t)))
+                            (unless found
+                              ;; Move to next sibling
+                              (unless (org-get-next-sibling)
+                                ;; No more siblings
+                                (goto-char parent-end)))))
+                      ;; No children
+                      (goto-char parent-end))
+                    (unless found
+                      (mcp-server-lib-tool-throw
+                       (format
+                        "Sibling with ID %s not found under parent"
+                        after-id))))))
+            ;; No afterUri - insert at end of parent's subtree
+            (org-end-of-subtree t t)))
+
+        ;; Insert the new heading using Org functions
+        (if (or parent-path parent-id)
+            ;; We're inside a parent
+            (progn
+              ;; Ensure we have a newline before inserting
+              (unless (or (bobp) (looking-back "\n" 1))
+                (insert "\n"))
+              (if afterUri
+                  ;; When afterUri is specified, we've positioned after a specific sibling
+                  ;; Use org-insert-heading to insert right here
+                  (progn
+                    (org-insert-heading)
+                    (insert title))
+                ;; No afterUri - we're at the end of the parent's subtree
+                ;; Need to create a child heading
+                (progn
+                  ;; Ensure blank line before child heading if there's content
+                  (unless (or (bobp) (looking-back "\n\n" 2))
+                    (insert "\n"))
+                  ;; Use org-insert-subheading to create a proper child
+                  (org-insert-subheading nil)
+                  (insert title))))
+          ;; Top-level heading
+          (progn
+            ;; Ensure proper spacing before inserting
+            (unless (or (bobp) (looking-back "\n" 1))
+              (insert "\n"))
+            ;; Use org-insert-heading for top-level
+            (org-insert-heading nil nil t)
+            (insert title)))
+
+        ;; Set the TODO state using Org functions
+        (org-todo todoState)
+
+        ;; Set tags using Org functions
+        (when tags
+          (let ((tag-list
+                 (cond
+                  ((vectorp tags)
+                   (append tags nil)) ; Convert vector to list
+                  ((listp tags)
+                   tags)
+                  (t
+                   (list tags)))))
+            (org-set-tags tag-list)))
+
+        ;; Add ID property using Org functions
+        (org-id-get-create)
+        (let ((id (org-id-get)))
+
+          ;; Add body if provided
+          (when body
+            ;; org-id-get-create leaves point at the heading
+            ;; Move past the properties drawer if it exists
+            (org-end-of-meta-data t)
+            ;; Insert body
+            (insert body)
+            (unless (string-suffix-p "\n" body)
+              (insert "\n")))
+
+          ;; Write the file
+          (write-region (point-min) (point-max) file-path)
+
+          ;; Update buffers
+          (dolist (buf (buffer-list))
+            (with-current-buffer buf
+              (when (and (buffer-file-name)
+                         (string= (buffer-file-name) file-path))
+                (revert-buffer t t t))))
+
+          ;; Return result
+          (json-encode
+           `((success . t)
+             (uri . ,(format "org-id://%s" id))
+             (file . ,(file-name-nondirectory file-path))
+             (title . ,title))))))))
 
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
@@ -417,12 +772,17 @@ MCP Parameters:
   (mcp-server-lib-register-tool
    #'org-mcp--tool-get-tag-config
    :id "org-get-tag-config"
-   :description "Get tag configuration for available tags and their properties"
+   :description "Get tag configuration for tags and properties"
    :read-only t)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-update-todo-state
    :id "org-update-todo-state"
    :description "Update the TODO state of a headline"
+   :read-only nil)
+  (mcp-server-lib-register-tool
+   #'org-mcp--tool-add-todo
+   :id "org-add-todo"
+   :description "Add a new TODO item to an Org file"
    :read-only nil)
   ;; Register template resources for org files
   (mcp-server-lib-register-resource
@@ -455,6 +815,7 @@ MCP Parameters:
   (mcp-server-lib-unregister-tool "org-get-todo-config")
   (mcp-server-lib-unregister-tool "org-get-tag-config")
   (mcp-server-lib-unregister-tool "org-update-todo-state")
+  (mcp-server-lib-unregister-tool "org-add-todo")
   ;; Unregister template resources
   (mcp-server-lib-unregister-resource "org://{filename}")
   (mcp-server-lib-unregister-resource "org-outline://{filename}")
