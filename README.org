@@ -81,7 +81,7 @@ URI: org-headline://projects.org/Project%20Alpha/Requirements
 Returns: Content of "Requirements" under "Project Alpha"
 #+end_example
 
-*** org-id://\{uuid\}
+*** org-id URI Format
 - *Description:* Access Org node content by its unique ID property
 - *URI Pattern:* =org-id://{uuid}= where uuid is the value of an ID property
 - *Configuration:* The file containing the ID must be in =org-mcp-allowed-files=
@@ -169,6 +169,68 @@ Example:
 # State mismatch error:
 {
   "error": "State mismatch: expected TODO, found IN-PROGRESS"
+}
+#+end_src
+
+*** org-rename-headline
+- *Description:* Rename the title of an existing headline while preserving its TODO state, tags, and properties
+- *Parameters:*
+  - =resourceUri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
+  - =currentTitle= (string, required): Current headline title (without TODO state or tags) - must match actual title
+  - =newTitle= (string, required): New headline title (without TODO state or tags)
+- *Returns:* Success status with previous and new titles
+
+Example:
+#+begin_src json
+# Request:
+{
+  "resourceUri": "org-headline://projects.org/Original%20Task",
+  "currentTitle": "Original Task",
+  "newTitle": "Updated Task Name"
+}
+
+# Success response:
+{
+  "success": true,
+  "previousTitle": "Original Task",
+  "newTitle": "Updated Task Name",
+  "resourceUri": "org-headline://projects.org/Updated%20Task%20Name"
+}
+
+# Title mismatch error:
+{
+  "error": "Title mismatch: expected 'Original Task', found 'Different Task'"
+}
+#+end_src
+
+*** org-add-todo
+- *Description:* Add a new TODO item to an Org file
+- *Parameters:*
+  - =title= (string, required): The headline text
+  - =todoState= (string, required): TODO state from =org-todo-keywords=
+  - =tags= (string or array, required): Tags to add (e.g., "urgent" or ["work", "urgent"])
+  - =body= (string, optional): Body text content to add under the heading
+  - =parentUri= (string, required): URI of parent item. Use =org-headline://filename.org/= for top-level items in a file
+  - =afterUri= (string, optional): URI of sibling to insert after. If not given, append as last child of parent
+- *Returns:* Object with success status, new item URI, file name, and title
+
+Example:
+#+begin_src json
+# Request:
+{
+  "title": "Implement new feature",
+  "todoState": "TODO",
+  "tags": ["work", "urgent"],
+  "body": "This feature needs to be completed by end of week.",
+  "parentUri": "org-headline://projects.org/"
+}
+
+# Success response:
+{
+  "success": true,
+  "uri": "org-id://550e8400-e29b-41d4-a716-446655440001",
+  "file": "projects.org",
+  "title": "Implement new feature"
 }
 #+end_src
 
