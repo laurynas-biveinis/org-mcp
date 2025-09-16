@@ -278,6 +278,105 @@ PARAMS is an alist containing the uuid parameter."
       (org-mcp--get-content-by-id
        (expand-file-name allowed-file) id))))
 
+(defun org-mcp--parse-resource-uri (resourceUri)
+  "Parse RESOURCEURI and return (file-path . headline-path).
+Validates file access and returns expanded file path."
+  (let (file-path
+        headline-path)
+    (cond
+     ;; Handle org-headline:// URIs
+     ((string-match
+       "^org-headline://\\([^/]+\\)/\\(.+\\)$" resourceUri)
+      (let* ((filename (match-string 1 resourceUri))
+             (headline-path-str (match-string 2 resourceUri))
+             (allowed-file (org-mcp--validate-file-access filename)))
+        (setq file-path (expand-file-name allowed-file))
+        (setq headline-path
+              (mapcar
+               #'url-unhex-string
+               (split-string headline-path-str "/")))))
+     ;; Handle org-id:// URIs
+     ((string-match "^org-id://\\(.+\\)$" resourceUri)
+      (let* ((id (match-string 1 resourceUri))
+             (id-file (org-id-find-id-file id)))
+        (unless id-file
+          (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
+        (let ((allowed-file
+               (org-mcp--find-allowed-file
+                (file-name-nondirectory id-file))))
+          (unless allowed-file
+            (mcp-server-lib-tool-throw
+             (format "File not in allowed list: %s"
+                     (file-name-nondirectory id-file))))
+          (setq file-path (expand-file-name allowed-file))
+          (setq headline-path (list id)))))
+     (t
+      (mcp-server-lib-tool-throw
+       (format "Invalid resource URI format: %s" resourceUri))))
+    (cons file-path headline-path)))
+
+(defun org-mcp--find-headline-by-path (headline-path)
+  "Navigate to headline specified by HEADLINE-PATH.
+Returns t if found, nil otherwise.  Point is left at the headline."
+  (let ((found nil))
+    (if (and (= (length headline-path) 1)
+             (string-match "^[a-f0-9-]+$" (car headline-path)))
+        ;; ID-based search
+        (let ((pos (org-find-property "ID" (car headline-path))))
+          (when pos
+            (goto-char pos)
+            (setq found t)))
+      ;; Path-based search
+      (catch 'not-found
+        (let ((search-start (point-min))
+              (search-end (point-max))
+              (current-level 0))
+          (dolist (target-title headline-path)
+            (setq found nil)
+            (goto-char search-start)
+            (while (and (not found)
+                        (re-search-forward "^\\*+ " search-end t))
+              (let ((title (org-get-heading t t t t))
+                    (level (org-current-level)))
+                (when (and (string= title target-title)
+                           (or (= current-level 0)
+                               (= level (1+ current-level))))
+                  (setq found t)
+                  (setq current-level level)
+                  ;; For nested searches, limit next search to this subtree
+                  (when (< (1+ (seq-position
+                                headline-path target-title))
+                           (length headline-path))
+                    (setq search-start (point))
+                    (setq search-end
+                          (save-excursion
+                            (org-end-of-subtree t t)
+                            (point)))))))
+            (unless found
+              (throw 'not-found nil))))
+        (setq found t)))
+    found))
+
+(defun org-mcp--check-buffer-modifications (file-path operation)
+  "Check if FILE-PATH has unsaved change in any buffer.
+OPERATION is a string describing the operation for error messages."
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (and (buffer-file-name)
+                 (string= (buffer-file-name) file-path)
+                 (buffer-modified-p))
+        (mcp-server-lib-tool-throw
+         (format "Cannot %s: file has unsaved changes in buffer"
+                 operation))))))
+
+(defun org-mcp--refresh-file-buffers (file-path)
+  "Refresh all buffers visiting FILE-PATH."
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (and (buffer-file-name)
+                 (string= (buffer-file-name) file-path))
+        (revert-buffer t t t)))))
+
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
 Returns the content string or nil if not found."
@@ -302,54 +401,21 @@ MCP Parameters:
   resourceUri - URI of the headline (org-headline:// or org-id://)
   currentState - Current TODO state (empty string for no state)
   newState - New TODO state (must be in `org-todo-keywords')"
-  (let (file-path
-        headline-path)
-    ;; Parse the resource URI
-    (cond
-     ;; Handle org-headline:// URIs
-     ((string-match
-       "^org-headline://\\([^/]+\\)/\\(.+\\)$" resourceUri)
-      (let* ((filename (match-string 1 resourceUri))
-             (headline-path-str (match-string 2 resourceUri))
-             (allowed-file (org-mcp--validate-file-access filename)))
-        (setq file-path (expand-file-name allowed-file))
-        (setq headline-path
-              (split-string (url-unhex-string headline-path-str)
-                            "/"))))
-     ;; Handle org-id:// URIs
-     ((string-match "^org-id://\\(.+\\)$" resourceUri)
-      (let* ((id (match-string 1 resourceUri))
-             (id-file (org-id-find-id-file id)))
-        (unless id-file
-          (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
-        (let ((allowed-file
-               (org-mcp--find-allowed-file
-                (file-name-nondirectory id-file))))
-          (unless allowed-file
-            (mcp-server-lib-tool-throw
-             (format "File not in allowed list: %s"
-                     (file-name-nondirectory id-file))))
-          (setq file-path (expand-file-name allowed-file))
-          ;; For ID-based, we'll find the headline by ID
-          (setq headline-path (list id)))))
-     (t
-      (mcp-server-lib-tool-throw
-       (format "Invalid resource URI format: %s" resourceUri))))
+  ;; Parse the resource URI
+  (let* ((parsed (org-mcp--parse-resource-uri resourceUri))
+         (file-path (car parsed))
+         (headline-path (cdr parsed)))
 
     ;; Validate new state is in org-todo-keywords
-    (unless (member
-             newState (apply 'append (mapcar 'cdr org-todo-keywords)))
-      (mcp-server-lib-tool-throw
-       (format "Invalid TODO state: %s" newState)))
+    (let ((valid-states
+           (apply 'append (mapcar 'cdr org-todo-keywords))))
+      (unless (member newState valid-states)
+        (mcp-server-lib-tool-throw
+         (format "Invalid TODO state: '%s'. Valid states: %s"
+                 newState (mapconcat 'identity valid-states ", ")))))
 
-    ;; Check if any buffer visiting this file has unsaved changes
-    (dolist (buf (buffer-list))
-      (with-current-buffer buf
-        (when (and (buffer-file-name)
-                   (string= (buffer-file-name) file-path)
-                   (buffer-modified-p))
-          (mcp-server-lib-tool-throw
-           "Cannot update: file has unsaved changes in buffer"))))
+    ;; Check for unsaved changes
+    (org-mcp--check-buffer-modifications file-path "update")
 
     ;; Update the TODO state in the file
     (with-temp-buffer
@@ -358,58 +424,34 @@ MCP Parameters:
       (goto-char (point-min))
 
       ;; Find the headline
-      (let ((found nil))
-        (if (and (= (length headline-path) 1)
-                 (string-match "^[a-f0-9-]+$" (car headline-path)))
-            ;; ID-based search
-            (let ((pos (org-find-property "ID" (car headline-path))))
-              (when pos
-                (goto-char pos)
-                (setq found t)))
-          ;; Path-based search
-          (catch 'not-found
-            (dolist (target-title headline-path)
-              (setq found nil)
-              (while (and (not found)
-                          (re-search-forward "^\\*+ " nil t))
-                (let ((title (org-get-heading t t t t)))
-                  (when (string= title target-title)
-                    (setq found t))))
-              (unless found
-                (throw 'not-found nil)))
-            (setq found t)))
+      (unless (org-mcp--find-headline-by-path headline-path)
+        (mcp-server-lib-tool-throw
+         (format "Headline not found: %s"
+                 (mapconcat 'identity headline-path "/"))))
 
-        (unless found
-          (mcp-server-lib-tool-throw "Headline not found"))
+      ;; Check current state matches
+      (beginning-of-line)
+      (let ((actual-state (org-get-todo-state)))
+        (unless (string= actual-state currentState)
+          (mcp-server-lib-tool-throw
+           (format "State mismatch: expected %s, found %s"
+                   (or currentState "(no state)")
+                   (or actual-state "(no state)"))))
 
-        ;; Check current state matches
-        (beginning-of-line)
-        (let ((actual-state (org-get-todo-state)))
-          (unless (string= actual-state currentState)
-            (mcp-server-lib-tool-throw
-             (format "State mismatch: expected %s, found %s"
-                     (or currentState "(no state)")
-                     (or actual-state "(no state)"))))
+        ;; Update the state
+        (org-todo newState)
 
-          ;; Update the state
-          (org-todo newState)
+        ;; Write the updated content back
+        (write-region (point-min) (point-max) file-path)
 
-          ;; Write the updated content back
-          (write-region (point-min) (point-max) file-path)
+        ;; Update any buffers visiting this file
+        (org-mcp--refresh-file-buffers file-path)
 
-          ;; Update any buffers visiting this file (all unmodified)
-          (dolist (buf (buffer-list))
-            (with-current-buffer buf
-              (when (and (buffer-file-name)
-                         (string= (buffer-file-name) file-path))
-                ;; Safe to revert - already checked for modifications
-                (revert-buffer t t t))))
-
-          ;; Return success
-          (json-encode
-           `((success . t)
-             (previousState . ,(or currentState ""))
-             (newState . ,newState))))))))
+        ;; Return success
+        (json-encode
+         `((success . t)
+           (previousState . ,(or currentState ""))
+           (newState . ,newState)))))))
 
 (defun org-mcp--extract-tag-from-alist-entry (entry)
   "Extract tag name from an `org-tag-alist' ENTRY.
@@ -484,10 +526,12 @@ MCP Parameters:
   afterUri - Sibling to insert after (optional)"
 
   ;; Validate TODO state
-  (unless (member
-           todoState (apply 'append (mapcar 'cdr org-todo-keywords)))
-    (mcp-server-lib-tool-throw
-     (format "Invalid TODO state: %s" todoState)))
+  (let ((valid-states
+         (apply 'append (mapcar 'cdr org-todo-keywords))))
+    (unless (member todoState valid-states)
+      (mcp-server-lib-tool-throw
+       (format "Invalid TODO state: '%s'. Valid states: %s"
+               todoState (mapconcat 'identity valid-states ", ")))))
 
   ;; Validate tags
   (let ((tag-list
@@ -567,13 +611,7 @@ MCP Parameters:
        (format "Invalid parent URI format: %s" parentUri))))
 
     ;; Check for unsaved changes
-    (dolist (buf (buffer-list))
-      (with-current-buffer buf
-        (when (and (buffer-file-name)
-                   (string= (buffer-file-name) file-path)
-                   (buffer-modified-p))
-          (mcp-server-lib-tool-throw
-           "Cannot add TODO: file has unsaved changes in buffer"))))
+    (org-mcp--check-buffer-modifications file-path "add TODO")
 
     ;; Add the TODO item
     (with-temp-buffer
@@ -591,7 +629,9 @@ MCP Parameters:
           (let ((path-str (match-string 1 parentUri)))
             (when (> (length path-str) 0)
               (setq parent-path
-                    (split-string (url-unhex-string path-str) "/")))))
+                    (mapcar
+                     #'url-unhex-string
+                     (split-string path-str "/"))))))
          ;; org-id:// format
          ((string-match "^org-id://\\(.+\\)$" parentUri)
           (setq parent-id (match-string 1 parentUri))))
@@ -749,11 +789,7 @@ MCP Parameters:
           (write-region (point-min) (point-max) file-path)
 
           ;; Update buffers
-          (dolist (buf (buffer-list))
-            (with-current-buffer buf
-              (when (and (buffer-file-name)
-                         (string= (buffer-file-name) file-path))
-                (revert-buffer t t t))))
+          (org-mcp--refresh-file-buffers file-path)
 
           ;; Return result
           (json-encode
@@ -761,6 +797,73 @@ MCP Parameters:
              (uri . ,(format "org-id://%s" id))
              (file . ,(file-name-nondirectory file-path))
              (title . ,title))))))))
+
+(defun org-mcp--tool-rename-headline
+    (resourceUri currentTitle newTitle)
+  "Rename the title of a headline while preserving TODO state and tags.
+RESOURCEURI is the URI of the headline to rename.
+CURRENTTITLE is the current title (without TODO/tags) for validation.
+NEWTITLE is the new title to set (without TODO/tags).
+
+MCP Parameters:
+  resourceUri - URI of the headline (org-headline:// or org-id://)
+  currentTitle - Current title without TODO state or tags
+  newTitle - New title without TODO state or tags"
+  ;; Validate newTitle is not empty or whitespace-only
+  (when (or (string-empty-p newTitle)
+            (string-match-p "^[[:space:]]*$" newTitle))
+    (mcp-server-lib-tool-throw
+     "New title cannot be empty or contain only whitespace"))
+
+  ;; Parse the resource URI
+  (let* ((parsed (org-mcp--parse-resource-uri resourceUri))
+         (file-path (car parsed))
+         (headline-path (cdr parsed)))
+
+    ;; Check for unsaved changes
+    (org-mcp--check-buffer-modifications file-path "rename")
+
+    ;; Rename the headline in the file
+    (with-temp-buffer
+      ;; Make org-id work by setting the file name
+      (set-visited-file-name file-path t)
+      (insert-file-contents file-path)
+      (org-mode)
+      (goto-char (point-min))
+
+      ;; Find the headline
+      (unless (org-mcp--find-headline-by-path headline-path)
+        (mcp-server-lib-tool-throw
+         (format "Headline not found: %s"
+                 (mapconcat 'identity headline-path "/"))))
+
+      ;; Verify current title matches
+      (beginning-of-line)
+      (let ((actual-title (org-get-heading t t t t)))
+        (unless (string= actual-title currentTitle)
+          (mcp-server-lib-tool-throw
+           (format "Title mismatch: expected '%s', found '%s'"
+                   currentTitle actual-title))))
+
+      ;; Use org-edit-headline to safely update the title
+      ;; This preserves TODO state, tags, and other properties
+      (org-edit-headline newTitle)
+
+      ;; Get or create an Org ID for this headline
+      (let ((id (org-id-get-create)))
+
+        ;; Write the file
+        (write-region (point-min) (point-max) file-path)
+
+        ;; Update buffers
+        (org-mcp--refresh-file-buffers file-path)
+
+        ;; Return success with ID-based URI
+        (json-encode
+         `((success . t)
+           (previousTitle . ,currentTitle)
+           (newTitle . ,newTitle)
+           (resourceUri . ,(format "org-id://%s" id))))))))
 
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
@@ -783,6 +886,11 @@ MCP Parameters:
    #'org-mcp--tool-add-todo
    :id "org-add-todo"
    :description "Add a new TODO item to an Org file"
+   :read-only nil)
+  (mcp-server-lib-register-tool
+   #'org-mcp--tool-rename-headline
+   :id "org-rename-headline"
+   :description "Rename the title of a headline"
    :read-only nil)
   ;; Register template resources for org files
   (mcp-server-lib-register-resource
@@ -816,6 +924,7 @@ MCP Parameters:
   (mcp-server-lib-unregister-tool "org-get-tag-config")
   (mcp-server-lib-unregister-tool "org-update-todo-state")
   (mcp-server-lib-unregister-tool "org-add-todo")
+  (mcp-server-lib-unregister-tool "org-rename-headline")
   ;; Unregister template resources
   (mcp-server-lib-unregister-resource "org://{filename}")
   (mcp-server-lib-unregister-resource "org-outline://{filename}")
