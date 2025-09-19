@@ -389,6 +389,17 @@ Returns the content string or nil if not found."
         (goto-char pos)
         (org-mcp--extract-headline-content)))))
 
+(defun org-mcp--save-and-return-success (file-path id response-alist)
+  "Save FILE-PATH and return successful JSON response with ID-based URI.
+FILE-PATH is the path to save the buffer contents to.
+ID is the Org ID to include in the URI.
+RESPONSE-ALIST is an alist of response fields."
+  (write-region (point-min) (point-max) file-path)
+  (org-mcp--refresh-file-buffers file-path)
+  (json-encode (append `((success . t))
+                       response-alist
+                       `((uri . ,(format "org-id://%s" id))))))
+
 (defun org-mcp--tool-update-todo-state (uri currentState newState)
   "Update the TODO state of a headline.
 Creates an Org ID for the headline if one doesn't exist.
@@ -445,18 +456,10 @@ MCP Parameters:
 
         ;; Get or create an Org ID for this headline
         (let ((id (org-id-get-create)))
-
-          ;; Write the updated content back
-          (write-region (point-min) (point-max) file-path)
-
-          ;; Update any buffers visiting this file
-          (org-mcp--refresh-file-buffers file-path)
-
-          (json-encode
-           `((success . t)
-             (previousState . ,(or currentState ""))
-             (newState . ,newState)
-             (uri . ,(format "org-id://%s" id)))))))))
+          (org-mcp--save-and-return-success
+           file-path id
+           `((previousState . ,(or currentState ""))
+             (newState . ,newState))))))))
 
 (defun org-mcp--extract-tag-from-alist-entry (entry)
   "Extract tag name from an `org-tag-alist' ENTRY.
@@ -791,17 +794,9 @@ MCP Parameters:
             (unless (string-suffix-p "\n" body)
               (insert "\n")))
 
-          ;; Write the file
-          (write-region (point-min) (point-max) file-path)
-
-          ;; Update buffers
-          (org-mcp--refresh-file-buffers file-path)
-
-          ;; Return result
-          (json-encode
-           `((success . t)
-             (uri . ,(format "org-id://%s" id))
-             (file . ,(file-name-nondirectory file-path))
+          (org-mcp--save-and-return-success
+           file-path id
+           `((file . ,(file-name-nondirectory file-path))
              (title . ,title))))))))
 
 (defun org-mcp--tool-rename-headline (uri currentTitle newTitle)
@@ -858,19 +853,10 @@ MCP Parameters:
 
       ;; Get or create an Org ID for this headline
       (let ((id (org-id-get-create)))
-
-        ;; Write the file
-        (write-region (point-min) (point-max) file-path)
-
-        ;; Update buffers
-        (org-mcp--refresh-file-buffers file-path)
-
-        ;; Return success with ID-based URI
-        (json-encode
-         `((success . t)
-           (previousTitle . ,currentTitle)
-           (newTitle . ,newTitle)
-           (uri . ,(format "org-id://%s" id))))))))
+        (org-mcp--save-and-return-success
+         file-path id
+         `((previousTitle . ,currentTitle)
+           (newTitle . ,newTitle)))))))
 
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
