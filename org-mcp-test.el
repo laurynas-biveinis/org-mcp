@@ -18,16 +18,6 @@
 (defconst org-mcp-test--content-empty ""
   "Empty org file content.")
 
-(defconst org-mcp-test--content-with-headers
-  "#+TITLE: My Org Document
-#+AUTHOR: Test Author
-#+DATE: 2024-01-01
-#+OPTIONS: toc:nil
-
-* Existing Task
-Some content here."
-  "Org file with header comments and a task.")
-
 (defconst org-mcp-test--content-parent-child
   "* Parent Task
 Some content here.
@@ -44,14 +34,6 @@ Second child content.
 ** Third Child
 Third child content."
   "Parent with multiple child tasks.")
-
-(defconst org-mcp-test--content-multiple-parents
-  "* Parent Task
-** Child One
-** Child Two
-* Other Parent
-** Other Child"
-  "Multiple parent tasks with children.")
 
 (defconst org-mcp-test--content-simple-todo
   "* TODO Original Task
@@ -98,13 +80,6 @@ This task is half done.
 Documentation about URL encoding."
   "Headlines containing percent signs.")
 
-(defconst org-mcp-test--content-important-tasks
-  "* Important Task
-This task has content.
-* Another Task
-More content."
-  "Multiple important tasks.")
-
 (defconst org-mcp-test--content-duplicate-headlines
   "* Team Updates
 ** Project Review
@@ -149,6 +124,47 @@ Content here."
 "
   "Org file with only a title header.")
 
+(defconst org-mcp-test--body-text-multiline
+  (concat
+   "This is the body text.\n"
+   "It has multiple lines.\n"
+   "With some content.")
+  "Multi-line body text for testing TODO items with content.")
+
+(defconst org-mcp-test--content-parent-child-siblings
+  "* Parent Task
+** Child One
+** Child Two
+* Other Parent
+** Other Child"
+  "Parent tasks with children for testing sibling relationships.")
+
+(defconst org-mcp-test--content-parent-task-simple
+  "* Parent Task
+Some parent content.
+* Another Task"
+  "Simple parent task with sibling.")
+
+(defconst org-mcp-test--content-headers-with-task
+  "#+TITLE: My Org Document
+#+AUTHOR: Test Author
+#+DATE: 2024-01-01
+#+OPTIONS: toc:nil
+
+* Existing Task
+Some content here."
+  "Org file with headers and existing task.")
+
+(defconst org-mcp-test--content-siblings-after-test
+  "* Parent Task
+** First Child
+First child content.
+** Second Child
+Second child content.
+** Third Child
+Third child content."
+  "Parent with children for testing after-sibling insertion.")
+
 ;; Regex patterns for validation
 
 (defconst org-mcp-test--regex-todo-with-tags
@@ -174,6 +190,40 @@ Content here."
    "\\* Existing Task\n"
    "Some content here\\.")
   "Pattern for TODO added after org headers.")
+
+(defconst org-mcp-test--regex-child-under-parent
+  (concat
+   "^\\* Parent Task\n"
+   "Some content here\\.\n"
+   "\\*\\* Another Task\n"
+   "More content\\.\n"
+   "\\*\\*\\* TODO Child Task +.*:work:.*\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?")
+  "Pattern for child TODO added under parent with existing child.")
+
+(defconst org-mcp-test--regex-todo-with-body
+  (concat
+   "^\\* TODO Task with Body +:[^\n]*\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?" ; Optional properties
+   "This is the body text\\.\n"
+   "It has multiple lines\\.\n"
+   "With some content\\.\n?$")
+  "Pattern for TODO with body text.")
+
+(defconst org-mcp-test--regex-todo-after-sibling
+  (concat
+   "^\\* Parent Task\n"
+   "\\*\\* First Child\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "First child content\\.\n"
+   "\\*\\* Second Child\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "Second child content\\.\n\n?"
+   "\\*\\* TODO New Task After Second +:[^\n]*\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\*\\* Third Child\n"
+   "Third child content\\.")
+  "Pattern for TODO added after specific sibling.")
 
 ;; Helper functions for calling MCP tools
 
@@ -1224,14 +1274,7 @@ Another task."))
 
 (ert-deftest org-mcp-test-add-todo-top-level-with-header ()
   "Test adding top-level TODO after header comments."
-  (let ((initial-content
-         "#+TITLE: My Org Document
-#+AUTHOR: Test Author
-#+DATE: 2024-01-01
-#+OPTIONS: toc:nil
-
-* Existing Task
-Some content here."))
+  (let ((initial-content org-mcp-test--content-headers-with-task))
     (org-mcp-test--with-add-todo-setup test-file initial-content
       (let* ((parent-uri (format "org-headline://%s/" test-file))
              (result
@@ -1387,24 +1430,14 @@ Some content here."))
        "Child Task"
        (file-name-nondirectory test-file)
        test-file
-       (concat
-        "^\\* Parent Task\n"
-        "Some content here\\.\n"
-        "\\*\\* Another Task\n"
-        "More content\\.\n"
-        "\\*\\*\\* TODO Child Task +.*:work:.*\n"
-        "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?")))))
+       org-mcp-test--regex-child-under-parent))))
 
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
     (let* ((parent-uri (format "org-headline://%s/" test-file))
-           (body-text
-            (concat
-             "This is the body text.\n"
-             "It has multiple lines.\n"
-             "With some content."))
+           (body-text org-mcp-test--body-text-multiline)
            (result
             (org-mcp-test--call-add-todo
              "Task with Body" "TODO" '("work") body-text parent-uri
@@ -1415,23 +1448,11 @@ Some content here."))
        "Task with Body"
        (file-name-nondirectory test-file)
        test-file
-       (concat
-        "^\\* TODO Task with Body +:[^\n]*\n"
-        "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?" ; Optional properties
-        "This is the body text\\.\n"
-        "It has multiple lines\\.\n"
-        "With some content\\.\n?$")))))
+       org-mcp-test--regex-todo-with-body))))
 
 (ert-deftest org-mcp-test-add-todo-after-sibling ()
   "Test adding TODO after a specific sibling."
-  (let ((initial-content
-         "* Parent Task
-** First Child
-First child content.
-** Second Child
-Second child content.
-** Third Child
-Third child content."))
+  (let ((initial-content org-mcp-test--content-siblings-after-test))
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords '((sequence "TODO" "|" "DONE")))
@@ -1476,28 +1497,12 @@ Third child content."))
                "New Task After Second"
                (file-name-nondirectory test-file)
                test-file
-               (concat
-                "^\\* Parent Task\n"
-                "\\*\\* First Child\n"
-                "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
-                "First child content\\.\n"
-                "\\*\\* Second Child\n"
-                "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
-                "Second child content\\.\n\n?"
-                "\\*\\* TODO New Task After Second +:[^\n]*\n"
-                "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
-                "\\*\\* Third Child\n"
-                "Third child content\\.")))))))))
+               org-mcp-test--regex-todo-after-sibling))))))))
 
 
 (ert-deftest org-mcp-test-add-todo-afterUri-not-sibling ()
   "Test error when afterUri is not a child of parentUri."
-  (let ((initial-content
-         "* Parent Task
-** Child One
-** Child Two
-* Other Parent
-** Other Child"))
+  (let ((initial-content org-mcp-test--content-parent-child-siblings))
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords '((sequence "TODO" "|" "DONE")))
@@ -1556,10 +1561,7 @@ Third child content."))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
-  (let ((initial-content
-         "* Parent Task
-Some parent content.
-* Another Task"))
+  (let ((initial-content org-mcp-test--content-parent-task-simple))
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords '((sequence "TODO" "|" "DONE")))
