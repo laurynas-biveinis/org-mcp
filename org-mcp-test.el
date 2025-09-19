@@ -31,9 +31,9 @@ Some content here."
 (defconst org-mcp-test--content-parent-child
   "* Parent Task
 Some content here.
-* Another Task
+** Another Task
 More content."
-  "Simple parent tasks structure.")
+  "Parent task with a child task.")
 
 (defconst org-mcp-test--content-nested-siblings
   "* Parent Task
@@ -1389,11 +1389,11 @@ Some content here."))
        test-file
        (concat
         "^\\* Parent Task\n"
-        "Some content here\\.\n\n"
-        "\\*\\* TODO Child Task +.*:work:.*\n"
-        "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?\n?"
-        "\\* Another Task\n"
-        "More content\\.")))))
+        "Some content here\\.\n"
+        "\\*\\* Another Task\n"
+        "More content\\.\n"
+        "\\*\\*\\* TODO Child Task +.*:work:.*\n"
+        "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?")))))
 
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."
