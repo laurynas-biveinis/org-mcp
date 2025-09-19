@@ -278,17 +278,16 @@ PARAMS is an alist containing the uuid parameter."
       (org-mcp--get-content-by-id
        (expand-file-name allowed-file) id))))
 
-(defun org-mcp--parse-resource-uri (resourceUri)
-  "Parse RESOURCEURI and return (file-path . headline-path).
+(defun org-mcp--parse-resource-uri (uri)
+  "Parse URI and return (file-path . headline-path).
 Validates file access and returns expanded file path."
   (let (file-path
         headline-path)
     (cond
      ;; Handle org-headline:// URIs
-     ((string-match
-       "^org-headline://\\([^/]+\\)/\\(.+\\)$" resourceUri)
-      (let* ((filename (match-string 1 resourceUri))
-             (headline-path-str (match-string 2 resourceUri))
+     ((string-match "^org-headline://\\([^/]+\\)/\\(.+\\)$" uri)
+      (let* ((filename (match-string 1 uri))
+             (headline-path-str (match-string 2 uri))
              (allowed-file (org-mcp--validate-file-access filename)))
         (setq file-path (expand-file-name allowed-file))
         (setq headline-path
@@ -296,8 +295,8 @@ Validates file access and returns expanded file path."
                #'url-unhex-string
                (split-string headline-path-str "/")))))
      ;; Handle org-id:// URIs
-     ((string-match "^org-id://\\(.+\\)$" resourceUri)
-      (let* ((id (match-string 1 resourceUri))
+     ((string-match "^org-id://\\(.+\\)$" uri)
+      (let* ((id (match-string 1 uri))
              (id-file (org-id-find-id-file id)))
         (unless id-file
           (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
@@ -312,7 +311,7 @@ Validates file access and returns expanded file path."
           (setq headline-path (list id)))))
      (t
       (mcp-server-lib-tool-throw
-       (format "Invalid resource URI format: %s" resourceUri))))
+       (format "Invalid resource URI format: %s" uri))))
     (cons file-path headline-path)))
 
 (defun org-mcp--find-headline-by-path (headline-path)
@@ -390,21 +389,20 @@ Returns the content string or nil if not found."
         (goto-char pos)
         (org-mcp--extract-headline-content)))))
 
-(defun org-mcp--tool-update-todo-state
-    (resourceUri currentState newState)
+(defun org-mcp--tool-update-todo-state (uri currentState newState)
   "Update the TODO state of a headline.
 Creates an Org ID for the headline if one doesn't exist.
 Returns the ID-based URI for the updated headline.
-RESOURCEURI is the URI of the headline to update.
+URI is the URI of the headline to update.
 CURRENTSTATE is the current TODO state (empty string for no state).
 NEWSTATE is the new TODO state to set.
 
 MCP Parameters:
-  resourceUri - URI of the headline (org-headline:// or org-id://)
+  uri - URI of the headline (org-headline:// or org-id://)
   currentState - Current TODO state (empty string for no state)
   newState - New TODO state (must be in `org-todo-keywords')"
   ;; Parse the resource URI
-  (let* ((parsed (org-mcp--parse-resource-uri resourceUri))
+  (let* ((parsed (org-mcp--parse-resource-uri uri))
          (file-path (car parsed))
          (headline-path (cdr parsed)))
 
@@ -458,7 +456,7 @@ MCP Parameters:
            `((success . t)
              (previousState . ,(or currentState ""))
              (newState . ,newState)
-             (resourceUri . ,(format "org-id://%s" id)))))))))
+             (uri . ,(format "org-id://%s" id)))))))))
 
 (defun org-mcp--extract-tag-from-alist-entry (entry)
   "Extract tag name from an `org-tag-alist' ENTRY.
@@ -806,17 +804,16 @@ MCP Parameters:
              (file . ,(file-name-nondirectory file-path))
              (title . ,title))))))))
 
-(defun org-mcp--tool-rename-headline
-    (resourceUri currentTitle newTitle)
+(defun org-mcp--tool-rename-headline (uri currentTitle newTitle)
   "Rename the title of a headline while preserving TODO state and tags.
 Creates an Org ID for the headline if one doesn't exist.
 Returns the ID-based URI for the renamed headline.
-RESOURCEURI is the URI of the headline to rename.
+URI is the URI of the headline to rename.
 CURRENTTITLE is the current title (without TODO/tags) for validation.
 NEWTITLE is the new title to set (without TODO/tags).
 
 MCP Parameters:
-  resourceUri - URI of the headline (org-headline:// or org-id://)
+  uri - URI of the headline (org-headline:// or org-id://)
   currentTitle - Current title without TODO state or tags
   newTitle - New title without TODO state or tags"
   ;; Validate newTitle is not empty or whitespace-only
@@ -826,7 +823,7 @@ MCP Parameters:
      "New title cannot be empty or contain only whitespace"))
 
   ;; Parse the resource URI
-  (let* ((parsed (org-mcp--parse-resource-uri resourceUri))
+  (let* ((parsed (org-mcp--parse-resource-uri uri))
          (file-path (car parsed))
          (headline-path (cdr parsed)))
 
@@ -873,7 +870,7 @@ MCP Parameters:
          `((success . t)
            (previousTitle . ,currentTitle)
            (newTitle . ,newTitle)
-           (resourceUri . ,(format "org-id://%s" id))))))))
+           (uri . ,(format "org-id://%s" id))))))))
 
 (defun org-mcp-enable ()
   "Enable the org-mcp server."

@@ -93,14 +93,14 @@ Returns: Content of "Requirements" under "Project Alpha"
 - *Returns:* Plain text content of the headline with the specified ID, including all subheadings
 
 Example:
-#+BEGIN_EXAMPLE
+#+begin_src org
 # Org file with ID property:
 * Project Meeting Notes
 :PROPERTIES:
 :ID: 550e8400-e29b-41d4-a716-446655440000
 :END:
 Meeting content here...
-#+END_EXAMPLE
+#+end_src
 
 Access via MCP:
 - URI: =org-id://550e8400-e29b-41d4-a716-446655440000=
@@ -153,7 +153,7 @@ Example return value:
 *** org-update-todo-state
 - *Description:* Update the TODO state of a specific headline
 - *Parameters:*
-  - =resourceUri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
+  - =uri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
   - =currentState= (string, required): Current TODO state (empty string "" for no state) - must match actual state
   - =newState= (string, required): New TODO state (must be valid in org-todo-keywords)
 - *Returns:* Success status with previous and new states, and ID-based URI of the updated headline
@@ -162,7 +162,7 @@ Example:
 #+begin_src json
 # Request:
 {
-  "resourceUri": "org-headline://projects.org/Project%20Alpha",
+  "uri": "org-headline://projects.org/Project%20Alpha",
   "currentState": "TODO",
   "newState": "IN-PROGRESS"
 }
@@ -172,7 +172,7 @@ Example:
   "success": true,
   "previousState": "TODO",
   "newState": "IN-PROGRESS",
-  "resourceUri": "org-id://554A22F6-E29F-4759-8AD2-E7CA225C6397"
+  "uri": "org-id://554A22F6-E29F-4759-8AD2-E7CA225C6397"
 }
 
 # State mismatch error:
@@ -184,7 +184,7 @@ Example:
 *** org-rename-headline
 - *Description:* Rename the title of an existing headline while preserving its TODO state, tags, and properties
 - *Parameters:*
-  - =resourceUri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
+  - =uri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
   - =currentTitle= (string, required): Current headline title (without TODO state or tags) - must match actual title
   - =newTitle= (string, required): New headline title (without TODO state or tags)
 - *Returns:* Success status with previous and new titles
@@ -193,7 +193,7 @@ Example:
 #+begin_src json
 # Request:
 {
-  "resourceUri": "org-headline://projects.org/Original%20Task",
+  "uri": "org-headline://projects.org/Original%20Task",
   "currentTitle": "Original Task",
   "newTitle": "Updated Task Name"
 }
@@ -203,7 +203,7 @@ Example:
   "success": true,
   "previousTitle": "Original Task",
   "newTitle": "Updated Task Name",
-  "resourceUri": "org-headline://projects.org/Updated%20Task%20Name"
+  "uri": "org-headline://projects.org/Updated%20Task%20Name"
 }
 
 # Title mismatch error:

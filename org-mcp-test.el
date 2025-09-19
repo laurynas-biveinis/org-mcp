@@ -121,7 +121,7 @@ NEW-STATE is the new TODO state to set."
   (let* ((request
           (mcp-server-lib-create-tools-call-request
            "org-update-todo-state" 1
-           `((resourceUri . ,resource-uri)
+           `((uri . ,resource-uri)
              (currentState . ,current-state)
              (newState . ,new-state))))
          (response (mcp-server-lib-process-jsonrpc-parsed request))
@@ -136,7 +136,7 @@ RESOURCE-URI is the URI to rename.
 CURRENT-TITLE is the current title for validation.
 NEW-TITLE is the new title to set."
   (let* ((params
-          `((resourceUri . ,resource-uri)
+          `((uri . ,resource-uri)
             (currentTitle . ,current-title)
             (newTitle . ,new-title)))
          (request
@@ -182,7 +182,7 @@ TEST-FILE if provided, verify file content after update.
 EXPECTED-CONTENT if provided with TEST-FILE, verify file contains this
 exact content."
   (let* ((params
-          `((resourceUri . ,resource-uri)
+          `((uri . ,resource-uri)
             (currentState . ,old-state)
             (newState . ,new-state)))
          (result-text
@@ -193,9 +193,8 @@ exact content."
     (should (equal (alist-get 'success result) t))
     (should (equal (alist-get 'previousState result) old-state))
     (should (equal (alist-get 'newState result) new-state))
-    (should (stringp (alist-get 'resourceUri result)))
-    (should
-     (string-prefix-p "org-id://" (alist-get 'resourceUri result)))
+    (should (stringp (alist-get 'uri result)))
+    (should (string-prefix-p "org-id://" (alist-get 'uri result)))
     ;; Verify file content if test-file provided
     (when test-file
       (when expected-content
@@ -1007,7 +1006,7 @@ This is a task with an ID property."))
             ;; Verify the returned URI is the same ID
             (should
              (equal
-              (alist-get 'resourceUri result)
+              (alist-get 'uri result)
               "org-id://550e8400-e29b-41d4-a716-446655440000"))
             ;; Verify file content with a single regex matching the whole buffer
             (with-temp-buffer
@@ -1530,7 +1529,7 @@ Some parent content.
                   (format "org-headline://%s/Original%%20Task"
                           basename))
                  (params
-                  `((resourceUri . ,resource-uri)
+                  `((uri . ,resource-uri)
                     (currentTitle . "Original Task")
                     (newTitle . "Updated Task")))
                  (result-text
@@ -1547,8 +1546,7 @@ Some parent content.
              (equal (alist-get 'newTitle result) "Updated Task"))
             ;; Should return an org-id:// URI
             (should
-             (string-match
-              "^org-id://" (alist-get 'resourceUri result)))
+             (string-match "^org-id://" (alist-get 'uri result)))
             ;; Verify file content
             (with-temp-buffer
               (insert-file-contents test-file)
@@ -1594,7 +1592,7 @@ Some parent content.
                   (format "org-headline://%s/Task%%20with%%20Tags"
                           basename))
                  (params
-                  `((resourceUri . ,resource-uri)
+                  `((uri . ,resource-uri)
                     (currentTitle . "Task with Tags")
                     (newTitle . "Renamed Task")))
                  (result-text
@@ -1629,7 +1627,7 @@ Some parent content.
                   (format "org-headline://%s/Regular%%20Headline"
                           basename))
                  (params
-                  `((resourceUri . ,resource-uri)
+                  `((uri . ,resource-uri)
                     (currentTitle . "Regular Headline")
                     (newTitle . "Updated Headline")))
                  (result-text
@@ -1675,7 +1673,7 @@ This Child is under Parent Three, not Parent Two."))
             (let* ((request
                     (mcp-server-lib-create-tools-call-request
                      "org-rename-headline" 1
-                     `((resourceUri . ,resource-uri)
+                     `((uri . ,resource-uri)
                        (currentTitle . "Child")
                        (newTitle . "Renamed Child"))))
                    (response
@@ -1705,7 +1703,7 @@ This is a task with an ID property."))
           (let* ((resource-uri
                   "org-id://550e8400-e29b-41d4-a716-446655440000")
                  (params
-                  `((resourceUri . ,resource-uri)
+                  `((uri . ,resource-uri)
                     (currentTitle . "Task with ID")
                     (newTitle . "Renamed Task with ID")))
                  (result-text
@@ -1722,7 +1720,7 @@ This is a task with an ID property."))
             ;; URI should remain ID-based (not converted to path-based)
             (should
              (equal
-              (alist-get 'resourceUri result)
+              (alist-get 'uri result)
               "org-id://550e8400-e29b-41d4-a716-446655440000"))
             ;; Verify file content
             (with-temp-buffer
@@ -1751,7 +1749,7 @@ This is a task with an ID property."))
                  (request
                   (mcp-server-lib-create-tools-call-request
                    "org-rename-headline" 1
-                   `((resourceUri . ,resource-uri)
+                   `((uri . ,resource-uri)
                      (currentTitle . "Whatever")
                      (newTitle . "Should Fail"))))
                  (response
@@ -1778,7 +1776,7 @@ Some other content."))
                    "org-headline://%s/Project%%20A%%2FB%%20Testing"
                    basename))
                  (params
-                  `((resourceUri . ,resource-uri)
+                  `((uri . ,resource-uri)
                     (currentTitle . "Project A/B Testing")
                     (newTitle . "Project A/B Experiments")))
                  (result-text
@@ -1796,8 +1794,7 @@ Some other content."))
               (alist-get 'newTitle result) "Project A/B Experiments"))
             ;; Should return an org-id:// URI
             (should
-             (string-match
-              "^org-id://" (alist-get 'resourceUri result)))
+             (string-match "^org-id://" (alist-get 'uri result)))
             ;; Verify file content
             (with-temp-buffer
               (insert-file-contents test-file)
@@ -1827,7 +1824,7 @@ This is a single headline with a slash, not nested under Parent."))
                   (format "org-headline://%s/Parent%%2FChild"
                           basename))
                  (params
-                  `((resourceUri . ,resource-uri)
+                  `((uri . ,resource-uri)
                     (currentTitle . "Parent/Child")
                     (newTitle . "Parent-Child Renamed")))
                  (result-text
@@ -1868,7 +1865,7 @@ Documentation about URL encoding."))
                   (format "org-headline://%s/50%%25%%20Complete"
                           basename))
                  (params
-                  `((resourceUri . ,resource-uri)
+                  `((uri . ,resource-uri)
                     (currentTitle . "50% Complete")
                     (newTitle . "75% Complete")))
                  (result-text
@@ -1883,8 +1880,7 @@ Documentation about URL encoding."))
              (equal (alist-get 'newTitle result) "75% Complete"))
             ;; Should return an org-id:// URI
             (should
-             (string-match
-              "^org-id://" (alist-get 'resourceUri result)))
+             (string-match "^org-id://" (alist-get 'uri result)))
             ;; Verify file content
             (with-temp-buffer
               (insert-file-contents test-file)
@@ -1913,7 +1909,7 @@ More content."))
                  (request
                   (mcp-server-lib-create-tools-call-request
                    "org-rename-headline" 1
-                   `((resourceUri . ,resource-uri)
+                   `((uri . ,resource-uri)
                      (currentTitle . "Important Task")
                      (newTitle . ""))))
                  (response
@@ -1929,7 +1925,7 @@ More content."))
                  (request
                   (mcp-server-lib-create-tools-call-request
                    "org-rename-headline" 1
-                   `((resourceUri . ,resource-uri)
+                   `((uri . ,resource-uri)
                      (currentTitle . "Another Task")
                      (newTitle . "   "))))
                  (response
@@ -2015,7 +2011,7 @@ Content here."))
                    "org-headline://%s/Headline%%20Without%%20ID"
                    basename))
                  (params
-                  `((resourceUri . ,resource-uri)
+                  `((uri . ,resource-uri)
                     (currentTitle . "Headline Without ID")
                     (newTitle . "Renamed Headline")))
                  (request
@@ -2035,7 +2031,7 @@ Content here."))
             (should
              (equal (alist-get 'newTitle result) "Renamed Headline"))
             ;; The returned URI should now be an org-id:// URI
-            (let ((returned-uri (alist-get 'resourceUri result)))
+            (let ((returned-uri (alist-get 'uri result)))
               (should (string-match "^org-id://" returned-uri))
               ;; Extract the ID from the URI
               (let ((id
@@ -2079,7 +2075,7 @@ This Target is under Second Section, not First Section."))
                   (format "org-headline://%s/Second%%20Section/Target"
                           basename))
                  (params
-                  `((resourceUri . ,resource-uri)
+                  `((uri . ,resource-uri)
                     (currentTitle . "Target")
                     (newTitle . "Renamed Target")))
                  (result-text

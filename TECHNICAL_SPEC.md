@@ -45,7 +45,7 @@ Tools provide the "queries" - dynamic views of the data based on search criteria
 
 **Critical design principles**:
 
-1. **Read-only tools**: Return org content with resource URIs to enable consistent data access. When ID properties exist, return both the path-based `resourceUri` and the `orgId`.
+1. **Read-only tools**: Return org content with resource URIs to enable consistent data access. When ID properties exist, return both the path-based `uri` and the `orgId`.
 
 2. **Write operations**: Any non-read-only tool that operates on an org node:
    - MUST return the node's ID regardless of how it was addressed (by path or ID)
@@ -56,7 +56,7 @@ Tools provide the "queries" - dynamic views of the data based on search criteria
 {
   "heading": "Implement feature",
   "todo": { "state": "TODO", "type": "todo", "isFinal": false },
-  "resourceUri": "org://project.org/headline/Implement%20feature",
+  "uri": "org://project.org/headline/Implement%20feature",
   "orgId": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
@@ -123,7 +123,7 @@ Search for headlines across org files with text and tag filters.
 - `excludeTags` (array of strings, optional): Tags to exclude
 - `caseSensitive` (boolean, optional): Case-sensitive search (default: false)
 
-**Returns:** Array of headline objects with resourceUri references (both path-based and ID-based when available)
+**Returns:** Array of headline objects with uri references (both path-based and ID-based when available)
 
 #### org-get-todos
 
@@ -137,7 +137,7 @@ Retrieve TODO items with multiple filter criteria.
 - `scheduled` (object, optional): Date range filter {"from": "2024-01-01", "to": "2024-12-31"}
 - `deadline` (object, optional): Date range filter
 
-**Returns:** Array of TODO items with full metadata and resourceUri (both path-based and ID-based when available)
+**Returns:** Array of TODO items with full metadata and uri (both path-based and ID-based when available)
 
 #### org-search-content
 
@@ -150,7 +150,7 @@ Full-text search within org file content (not just headlines).
 - `includeArchived` (boolean, optional): Include archived sections (default: false)
 - `maxResults` (number, optional): Limit number of results
 
-**Returns:** Array of matches with context and resourceUri to containing headline (both path-based and ID-based when available)
+**Returns:** Array of matches with context and uri to containing headline (both path-based and ID-based when available)
 
 
 #### org-schedule-task
@@ -159,7 +159,7 @@ Set or update scheduling/deadline for a headline.
 
 **Parameters:**
 
-- `resourceUri` (string): URI of the headline
+- `uri` (string): URI of the headline
 - `scheduled` (string, optional): Scheduled date in org format (e.g., "2024-12-25")
 - `deadline` (string, optional): Deadline date in org format
 - `removeScheduled` (boolean, optional): Remove existing scheduled date
@@ -173,7 +173,7 @@ Extract property drawer contents for a headline.
 
 **Parameters:**
 
-- `resourceUri` (string): URI of the headline
+- `uri` (string): URI of the headline
 - `properties` (array of strings, optional): Specific properties to retrieve
 
 **Returns:** Object with property key-value pairs
@@ -255,7 +255,7 @@ Export a section to different formats.
 
 **Parameters:**
 
-- `resourceUri` (string): URI of the section to export
+- `uri` (string): URI of the section to export
 - `format` (string): Target format ("html", "markdown", "latex", "plain")
 - `includeSubheadings` (boolean, optional): Include child headlines (default: true)
 - `bodyOnly` (boolean, optional): Export body without headers (default: false)
@@ -273,7 +273,7 @@ Get items that would appear in org agenda.
 - `includeScheduled` (boolean, optional): Include scheduled items (default: true)
 - `includeDeadlines` (boolean, optional): Include deadlines (default: true)
 
-**Returns:** Array of agenda items sorted by date with resourceUri
+**Returns:** Array of agenda items sorted by date with uri
 
 
 ### Advanced Features
