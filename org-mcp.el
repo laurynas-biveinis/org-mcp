@@ -396,9 +396,11 @@ ID is the Org ID to include in the URI.
 RESPONSE-ALIST is an alist of response fields."
   (write-region (point-min) (point-max) file-path)
   (org-mcp--refresh-file-buffers file-path)
-  (json-encode (append `((success . t))
-                       response-alist
-                       `((uri . ,(format "org-id://%s" id))))))
+  (json-encode
+   (append
+    `((success . t))
+    response-alist
+    `((uri . ,(format "org-id://%s" id))))))
 
 (defun org-mcp--tool-update-todo-state (uri currentState newState)
   "Update the TODO state of a headline.
@@ -780,10 +782,7 @@ MCP Parameters:
                    (list tags)))))
             (org-set-tags tag-list)))
 
-        ;; Add ID property using Org functions
-        (org-id-get-create)
-        (let ((id (org-id-get)))
-
+        (let ((id (org-id-get-create)))
           ;; Add body if provided
           (when body
             ;; org-id-get-create leaves point at the heading
