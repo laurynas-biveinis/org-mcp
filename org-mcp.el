@@ -38,10 +38,7 @@
 (require 'url-util)
 
 (defcustom org-mcp-allowed-files nil
-  "List of Org files that can be accessed via MCP.
-Each element should be a file path (absolute or relative).
-Relative paths are expanded relative to `default-directory'.
-For security, only files in this list can be accessed by MCP clients."
+  "List of absolute paths to Org files that can be accessed via MCP."
   :type '(repeat file)
   :group 'org-mcp)
 
@@ -95,23 +92,31 @@ For security, only files in this list can be accessed by MCP clients."
     (insert-file-contents file-path)
     (buffer-string)))
 
-(defun org-mcp--file-matches-p (filename file)
-  "Check if FILENAME matches FILE by basename or full path."
-  (let ((basename (file-name-nondirectory file)))
-    (or (string= filename file) (string= filename basename))))
+
+(defun org-mcp--paths-equal-p (path1 path2)
+  "Return t if PATH1 and PATH2 refer to the same file.
+Handles symlinks and path variations by normalizing both paths."
+  (string= (file-truename path1) (file-truename path2)))
 
 (defun org-mcp--find-allowed-file (filename)
   "Find FILENAME in `org-mcp-allowed-files' and return the full path.
+FILENAME must be an absolute path.
 Returns nil if the file is not in the allowed list."
-  (let ((allowed-file nil))
-    (dolist (file org-mcp-allowed-files)
-      (when (org-mcp--file-matches-p filename file)
-        (setq allowed-file file)))
-    allowed-file))
+  ;; Normalize the filename to handle symlinks and path variations
+  (let ((normalized-filename (file-truename filename)))
+    (cl-find
+     normalized-filename
+     org-mcp-allowed-files
+     :test #'org-mcp--paths-equal-p)))
 
 (defun org-mcp--validate-file-access (filename)
   "Validate that FILENAME is in the allowed list.
+FILENAME must be an absolute path.
 Returns the full path if allowed, signals an error otherwise."
+  (unless (file-name-absolute-p filename)
+    (mcp-server-lib-resource-signal-error
+     mcp-server-lib-jsonrpc-error-invalid-params
+     (format "Path must be absolute: %s" filename)))
   (let ((allowed-file (org-mcp--find-allowed-file filename)))
     (unless allowed-file
       (mcp-server-lib-resource-signal-error
@@ -200,8 +205,9 @@ PARAMS is an alist containing the filename parameter."
 PARAMS is an alist containing the filename parameter.
 The filename parameter includes both file and headline path."
   (let* ((full-path (alist-get "filename" params nil nil #'string=)))
-    ;; Split filename and headline path
-    (if (string-match "^\\([^/]+\\)/\\(.+\\)$" full-path)
+    ;; Split absolute path and headline path
+    ;; Look for .org extension to find where filename ends
+    (if (string-match "^\\(.*\\.org\\)/\\(.+\\)$" full-path)
         (let* ((filename (match-string 1 full-path))
                (headline-path-str (match-string 2 full-path))
                (allowed-file (org-mcp--validate-file-access filename))
@@ -266,14 +272,11 @@ PARAMS is an alist containing the uuid parameter."
        mcp-server-lib-jsonrpc-error-invalid-params
        (format "ID not found: %s" id)))
     ;; Validate that the file is in allowed list
-    (let ((allowed-file
-           (org-mcp--find-allowed-file
-            (file-name-nondirectory file-path))))
+    (let ((allowed-file (org-mcp--find-allowed-file file-path)))
       (unless allowed-file
         (mcp-server-lib-resource-signal-error
          mcp-server-lib-jsonrpc-error-invalid-params
-         (format "File not in allowed list: %s"
-                 (file-name-nondirectory file-path))))
+         (format "File not in allowed list: %s" file-path)))
       ;; Get the content
       (org-mcp--get-content-by-id
        (expand-file-name allowed-file) id))))
@@ -285,7 +288,7 @@ Validates file access and returns expanded file path."
         headline-path)
     (cond
      ;; Handle org-headline:// URIs
-     ((string-match "^org-headline://\\([^/]+\\)/\\(.+\\)$" uri)
+     ((string-match "^org-headline://\\(.*\\.org\\)/\\(.+\\)$" uri)
       (let* ((filename (match-string 1 uri))
              (headline-path-str (match-string 2 uri))
              (allowed-file (org-mcp--validate-file-access filename)))
@@ -300,13 +303,10 @@ Validates file access and returns expanded file path."
              (id-file (org-id-find-id-file id)))
         (unless id-file
           (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
-        (let ((allowed-file
-               (org-mcp--find-allowed-file
-                (file-name-nondirectory id-file))))
+        (let ((allowed-file (org-mcp--find-allowed-file id-file)))
           (unless allowed-file
             (mcp-server-lib-tool-throw
-             (format "File not in allowed list: %s"
-                     (file-name-nondirectory id-file))))
+             (format "File not in allowed list: %s" id-file)))
           (setq file-path (expand-file-name allowed-file))
           (setq headline-path (list id)))))
      (t
@@ -397,9 +397,11 @@ RESPONSE-ALIST is an alist of response fields."
   (let ((id (org-id-get-create)))
     (write-region (point-min) (point-max) file-path)
     (org-mcp--refresh-file-buffers file-path)
-    (json-encode (append `((success . t))
-                         response-alist
-                         `((uri . ,(format "org-id://%s" id)))))))
+    (json-encode
+     (append
+      `((success . t))
+      response-alist
+      `((uri . ,(format "org-id://%s" id)))))))
 
 (defun org-mcp--tool-update-todo-state (uri currentState newState)
   "Update the TODO state of a headline.
@@ -587,7 +589,7 @@ MCP Parameters:
   (let (file-path)
     (cond
      ;; Handle org-headline:// URIs
-     ((string-match "^org-headline://\\([^/]+\\)/" parentUri)
+     ((string-match "^org-headline://\\(.*\\.org\\)/" parentUri)
       (let* ((filename (match-string 1 parentUri))
              (allowed-file (org-mcp--validate-file-access filename)))
         (setq file-path (expand-file-name allowed-file))))
@@ -633,7 +635,8 @@ MCP Parameters:
         ;; Parse the parent URI - either org-headline:// or org-id://
         (cond
          ;; org-headline:// format
-         ((string-match "^org-headline://[^/]+/\\(.*\\)$" parentUri)
+         ((string-match
+           "^org-headline://.*\\.org/\\(.*\\)$" parentUri)
           (let ((path-str (match-string 1 parentUri)))
             (when (> (length path-str) 0)
               (setq parent-path

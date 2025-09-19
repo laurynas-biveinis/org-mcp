@@ -30,30 +30,32 @@ Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib
 
 *** org://{filename}
 - *Description:* Access the raw content of an allowed Org file
-- *URI Pattern:* =org://{filename}= where filename is the base name of the file
-- *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files=
+- *URI Pattern:* =org://{filename}= where filename is the absolute path to the file
+- *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
 - *Returns:* Plain text content of the Org file
 
 Example:
 #+begin_example
-# Configure allowed files in Emacs:
-(setq org-mcp-allowed-files '("~/org/projects.org" "~/org/tasks.org"))
+# Configure allowed files in Emacs (absolute paths required):
+(setq org-mcp-allowed-files
+      '("/home/user/org/projects.org"
+        "/home/user/org/tasks.org"))
 
 # Access via MCP:
-URI: org://projects.org
-Returns: Full content of ~/org/projects.org
+URI: org:///home/user/org/projects.org
+Returns: Full content of /home/user/org/projects.org
 #+end_example
 
 *** org-outline://{filename}
 - *Description:* Get the hierarchical structure of an Org file
-- *URI Pattern:* =org-outline://{filename}= where filename is the base name of the file
-- *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files=
+- *URI Pattern:* =org-outline://{filename}= where filename is the absolute path to the file
+- *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
 - *Returns:* JSON representation of the document structure with headings and their levels
 
 Example:
 #+begin_example
 # Access via MCP:
-URI: org-outline://projects.org
+URI: org-outline:///home/user/org/projects.org
 Returns: JSON structure like:
 {
   "headings": [
@@ -71,18 +73,18 @@ Returns: JSON structure like:
 
 *** org-headline://{filename}/{path}
 - *Description:* Access the content of a specific headline by its path
-- *URI Pattern:* =org-headline://{filename}/{path}= where path is URL-encoded headline titles separated by =/=
-- *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files=
+- *URI Pattern:* =org-headline://{filename}/{path}= where filename is the absolute path and path is URL-encoded headline titles separated by =/=
+- *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
 - *Returns:* Plain text content of the specified headline section including all subheadings
 
 Example:
 #+begin_example
 # Access a top-level headline:
-URI: org-headline://projects.org/Project%20Alpha
+URI: org-headline:///home/user/org/projects.org/Project%20Alpha
 Returns: Content of "Project Alpha" heading and all its subheadings
 
 # Access a nested headline:
-URI: org-headline://projects.org/Project%20Alpha/Requirements
+URI: org-headline:///home/user/org/projects.org/Project%20Alpha/Requirements
 Returns: Content of "Requirements" under "Project Alpha"
 #+end_example
 
@@ -93,14 +95,14 @@ Returns: Content of "Requirements" under "Project Alpha"
 - *Returns:* Plain text content of the headline with the specified ID, including all subheadings
 
 Example:
-#+begin_src org
+#+begin_example
 # Org file with ID property:
 * Project Meeting Notes
 :PROPERTIES:
 :ID: 550e8400-e29b-41d4-a716-446655440000
 :END:
 Meeting content here...
-#+end_src
+#+end_example
 
 Access via MCP:
 - URI: =org-id://550e8400-e29b-41d4-a716-446655440000=
@@ -162,7 +164,7 @@ Example:
 #+begin_src json
 # Request:
 {
-  "uri": "org-headline://projects.org/Project%20Alpha",
+  "uri": "org-headline:///home/user/org/projects.org/Project%20Alpha",
   "currentState": "TODO",
   "newState": "IN-PROGRESS"
 }
@@ -193,7 +195,7 @@ Example:
 #+begin_src json
 # Request:
 {
-  "uri": "org-headline://projects.org/Original%20Task",
+  "uri": "org-headline:///home/user/org/projects.org/Original%20Task",
   "currentTitle": "Original Task",
   "newTitle": "Updated Task Name"
 }
@@ -203,7 +205,7 @@ Example:
   "success": true,
   "previousTitle": "Original Task",
   "newTitle": "Updated Task Name",
-  "uri": "org-headline://projects.org/Updated%20Task%20Name"
+  "uri": "org-id://550e8400-e29b-41d4-a716-446655440002"
 }
 
 # Title mismatch error:
@@ -231,7 +233,7 @@ Example:
   "todoState": "TODO",
   "tags": ["work", "urgent"],
   "body": "This feature needs to be completed by end of week.",
-  "parentUri": "org-headline://projects.org/"
+  "parentUri": "org-headline:///home/user/org/projects.org/"
 }
 
 # Success response:
