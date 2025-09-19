@@ -189,16 +189,37 @@ exact content."
           (mcp-server-lib-ert-call-tool
            "org-update-todo-state" params))
          (result (json-read-from-string result-text)))
-    (should (= (length result) 3))
+    (should (= (length result) 4))
     (should (equal (alist-get 'success result) t))
     (should (equal (alist-get 'previousState result) old-state))
     (should (equal (alist-get 'newState result) new-state))
+    (should (stringp (alist-get 'resourceUri result)))
+    (should
+     (string-prefix-p "org-id://" (alist-get 'resourceUri result)))
     ;; Verify file content if test-file provided
     (when test-file
       (when expected-content
         (with-temp-buffer
           (insert-file-contents test-file)
-          (should (string= (buffer-string) expected-content)))))
+          (let ((buffer-content (buffer-string)))
+            ;; Build a regex that matches the expected content
+            ;; The expected-content should be a headline like "* IN-PROGRESS Task One"
+            ;; We need to match: headline, optional PROPERTIES drawer with ID, then rest of content
+            (let*
+                ((expected-regex
+                  (concat
+                   ;; Match start of buffer
+                   "\\`"
+                   ;; Match the headline exactly as provided
+                   (regexp-quote expected-content)
+                   ;; Optional newline and PROPERTIES drawer with ID
+                   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+                   ;; Match any remaining content (body text, etc.) to end of buffer
+                   "\\(?:.\\|\n\\)*"
+                   ;; Match end of buffer
+                   "\\'")))
+              (should
+               (string-match expected-regex buffer-content)))))))
     result))
 
 (defun org-mcp-test--check-add-todo-result
@@ -808,11 +829,8 @@ Content of subsection 2.1."))
                  (format "org-headline://%s/Task%%20One"
                          (file-name-nondirectory test-file))))
             (org-mcp-test--update-and-verify-todo
-             resource-uri
-             "TODO"
-             "IN-PROGRESS"
-             test-file
-             "* IN-PROGRESS Task One\nTask description.")))))))
+             resource-uri "TODO" "IN-PROGRESS"
+             test-file "* IN-PROGRESS Task One")))))))
 
 (ert-deftest org-mcp-test-update-todo-state-mismatch ()
   "Test TODO state update fails on state mismatch."
@@ -881,11 +899,8 @@ Content of subsection 2.1."))
                        (format "org-headline://%s/Task%%20One"
                                (file-name-nondirectory test-file))))
                   (org-mcp-test--update-and-verify-todo
-                   resource-uri
-                   "TODO"
-                   "IN-PROGRESS"
-                   test-file
-                   "* IN-PROGRESS Task One\nTask description.")
+                   resource-uri "TODO" "IN-PROGRESS"
+                   test-file "* IN-PROGRESS Task One")
                   ;; Verify the buffer was also updated
                   (with-current-buffer buffer
                     (goto-char (point-min))
@@ -960,6 +975,60 @@ Another task description."))
             ;; Verify file was NOT modified
             (org-mcp-test--verify-file-content
              test-file "^\\* TODO Task One")))))))
+
+(ert-deftest org-mcp-test-update-todo-state-by-id ()
+  "Test updating TODO state using org-id:// URI."
+  (let ((test-content
+         "* TODO Task with ID
+:PROPERTIES:
+:ID:       550e8400-e29b-41d4-a716-446655440000
+:END:
+This is a task with an ID property."))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE")))
+            (org-id-track-globally t)
+            (org-id-locations-file
+             (make-temp-file "org-id-locations")))
+        ;; Initialize org-id system with the file
+        (with-temp-buffer
+          (insert-file-contents test-file)
+          (org-mode)
+          (org-id-update-id-locations (list test-file)))
+        (org-mcp-test--with-enabled
+          ;; Update using ID-based URI
+          (let* ((resource-uri
+                  "org-id://550e8400-e29b-41d4-a716-446655440000")
+                 (result
+                  (org-mcp-test--update-and-verify-todo
+                   resource-uri "TODO" "IN-PROGRESS"
+                   test-file "* IN-PROGRESS Task with ID")))
+            ;; Verify the returned URI is the same ID
+            (should
+             (equal
+              (alist-get 'resourceUri result)
+              "org-id://550e8400-e29b-41d4-a716-446655440000"))
+            ;; Verify file content with a single regex matching the whole buffer
+            (with-temp-buffer
+              (insert-file-contents test-file)
+              (let*
+                  ((content (buffer-string))
+                   (expected-regex
+                    (concat
+                     ;; Match start of buffer
+                     "\\`"
+                     ;; Match the updated headline
+                     "\\* IN-PROGRESS Task with ID\n"
+                     ;; Match the PROPERTIES drawer with the specific ID
+                     ":PROPERTIES:\n"
+                     ":ID: +550e8400-e29b-41d4-a716-446655440000\n"
+                     ":END:\n"
+                     ;; Match the body text
+                     "This is a task with an ID property\\."
+                     ;; Match end of buffer
+                     "\\'")))
+                (should (string-match expected-regex content))))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."

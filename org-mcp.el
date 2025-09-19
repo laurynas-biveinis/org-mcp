@@ -393,6 +393,8 @@ Returns the content string or nil if not found."
 (defun org-mcp--tool-update-todo-state
     (resourceUri currentState newState)
   "Update the TODO state of a headline.
+Creates an Org ID for the headline if one doesn't exist.
+Returns the ID-based URI for the updated headline.
 RESOURCEURI is the URI of the headline to update.
 CURRENTSTATE is the current TODO state (empty string for no state).
 NEWSTATE is the new TODO state to set.
@@ -419,6 +421,8 @@ MCP Parameters:
 
     ;; Update the TODO state in the file
     (with-temp-buffer
+      ;; Make org-id work by setting the file name
+      (set-visited-file-name file-path t)
       (insert-file-contents file-path)
       (org-mode)
       (goto-char (point-min))
@@ -441,17 +445,20 @@ MCP Parameters:
         ;; Update the state
         (org-todo newState)
 
-        ;; Write the updated content back
-        (write-region (point-min) (point-max) file-path)
+        ;; Get or create an Org ID for this headline
+        (let ((id (org-id-get-create)))
 
-        ;; Update any buffers visiting this file
-        (org-mcp--refresh-file-buffers file-path)
+          ;; Write the updated content back
+          (write-region (point-min) (point-max) file-path)
 
-        ;; Return success
-        (json-encode
-         `((success . t)
-           (previousState . ,(or currentState ""))
-           (newState . ,newState)))))))
+          ;; Update any buffers visiting this file
+          (org-mcp--refresh-file-buffers file-path)
+
+          (json-encode
+           `((success . t)
+             (previousState . ,(or currentState ""))
+             (newState . ,newState)
+             (resourceUri . ,(format "org-id://%s" id)))))))))
 
 (defun org-mcp--extract-tag-from-alist-entry (entry)
   "Extract tag name from an `org-tag-alist' ENTRY.
@@ -510,6 +517,7 @@ Throws an error if multiple tags from the same mutex group are present."
 (defun org-mcp--tool-add-todo
     (title todoState tags body parentUri afterUri)
   "Add a new TODO item to an Org file.
+Creates an Org ID for the new headline and returns its ID-based URI.
 TITLE is the headline text.
 TODOSTATE is the TODO state from `org-todo-keywords'.
 TAGS is a single tag string or list of tag strings.
@@ -801,6 +809,8 @@ MCP Parameters:
 (defun org-mcp--tool-rename-headline
     (resourceUri currentTitle newTitle)
   "Rename the title of a headline while preserving TODO state and tags.
+Creates an Org ID for the headline if one doesn't exist.
+Returns the ID-based URI for the renamed headline.
 RESOURCEURI is the URI of the headline to rename.
 CURRENTTITLE is the current title (without TODO/tags) for validation.
 NEWTITLE is the new title to set (without TODO/tags).

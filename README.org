@@ -108,6 +108,9 @@ Access via MCP:
 
 ** Available MCP Tools
 
+Note: All write tools will create Org IDs for any touched nodes that did not have
+them originally. The IDs will be returned in the tool response.
+
 *** org-get-todo-config
 - *Description:* Get TODO keyword configuration for understanding task states
 - *Parameters:* None
@@ -153,7 +156,7 @@ Example return value:
   - =resourceUri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
   - =currentState= (string, required): Current TODO state (empty string "" for no state) - must match actual state
   - =newState= (string, required): New TODO state (must be valid in org-todo-keywords)
-- *Returns:* Success status with previous and new states
+- *Returns:* Success status with previous and new states, and ID-based URI of the updated headline
 
 Example:
 #+begin_src json
@@ -168,7 +171,8 @@ Example:
 {
   "success": true,
   "previousState": "TODO",
-  "newState": "IN-PROGRESS"
+  "newState": "IN-PROGRESS",
+  "resourceUri": "org-id://554A22F6-E29F-4759-8AD2-E7CA225C6397"
 }
 
 # State mismatch error:
