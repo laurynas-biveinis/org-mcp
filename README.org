@@ -88,18 +88,18 @@ Returns: Content of "Requirements" under "Project Alpha"
 - *Returns:* Plain text content of the headline with the specified ID, including all subheadings
 
 Example:
-#+begin_example
+#+BEGIN_EXAMPLE
 # Org file with ID property:
 * Project Meeting Notes
 :PROPERTIES:
 :ID: 550e8400-e29b-41d4-a716-446655440000
 :END:
 Meeting content here...
+#+END_EXAMPLE
 
-# Access via MCP:
-URI: org-id://550e8400-e29b-41d4-a716-446655440000
-Returns: Content of "Project Meeting Notes" section
-#+end_example
+Access via MCP:
+- URI: =org-id://550e8400-e29b-41d4-a716-446655440000=
+- Returns: Content of "Project Meeting Notes" section
 
 ** Available MCP Tools
 
