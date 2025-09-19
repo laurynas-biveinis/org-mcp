@@ -4,11 +4,7 @@
 
 ### Layer 1: MCP Protocol (mcp-server-lib.el)
 
-Required extensions for full MCP support:
-
-- Resource registration and handling
-- Subscription/notification support
-- Prompt template support
+The existing mcp-server-lib.el provides all needed MCP protocol support.
 
 ### Layer 2: Org-mode Server (org-mcp.el)
 
@@ -26,7 +22,6 @@ A single, well-organized package containing all org-specific functionality:
 Resources represent the document structure and content:
 
 - Natural hierarchical URIs: `org://file.org/outline/Section`
-- Enable subscriptions (future enhancement)
 - Direct addressability for specific content
 - RESTful semantics for read operations
 
@@ -48,7 +43,14 @@ Tools provide the "queries" - dynamic views of the data based on search criteria
 
 ### Cross-Referencing Pattern
 
-**Critical design principle**: Tools that return org content must include resource URIs to enable consistent data access:
+**Critical design principles**:
+
+1. **Read-only tools**: Return org content with resource URIs to enable consistent data access. When ID properties exist, return both the path-based `resourceUri` and the `orgId`.
+
+2. **Write operations**: Any non-read-only tool that operates on an org node:
+   - MUST return the node's ID regardless of how it was addressed (by path or ID)
+   - MUST create an ID if the node doesn't have one
+   - This ensures all modified content has persistent, stable references
 
 ```json
 {
@@ -59,7 +61,7 @@ Tools provide the "queries" - dynamic views of the data based on search criteria
 }
 ```
 
-When ID properties exist, tools return both the path-based `resourceUri` and the `orgId`. The ID enables persistent references through `org://id/{orgId}` URIs that survive renames, moves, and refiling operations.
+The ID enables persistent references through `org://id/{orgId}` URIs that survive renames, moves, and refiling operations.
 
 ## Key Implementation Components
 
@@ -76,36 +78,6 @@ org://{filename}/headline/{path} → Path-based headline reference
 org://id/{uuid}                  → ID-based headline reference (persistent)
 ```
 
-#### Template Implementation
-
-Using `mcp-server-lib-register-resource` with URI templates:
-
-```elisp
-;; Template resource with single parameter
-(mcp-server-lib-register-resource
- "org://{filename}"
- (lambda (params)
-   (org-mcp--read-file-resource 
-     (alist-get "filename" params nil nil #'string=)))
- :name "Org file"
- :description "Raw org file content")
-
-;; Template with multiple parameters
-(mcp-server-lib-register-resource
- "org://{filename}/headline/{+path}"  ; {+path} allows slashes
- (lambda (params)
-   (org-mcp--get-headline-content
-     (alist-get "filename" params nil nil #'string=)
-     (alist-get "path" params nil nil #'string=)))
- :name "Org headline"
- :description "Specific headline content")
-```
-
-The library automatically:
-- Detects templates by presence of `{}` patterns
-- Parses and validates URI templates
-- Matches incoming URIs against templates
-- Extracts parameters and passes them to handlers
 
 Examples:
 
@@ -116,23 +88,6 @@ Examples:
 
 **ID-Based Addressing**: Org nodes with ID properties can be referenced using persistent ID-based URIs that survive renames, moves, and refiling. Tools return both URI types when an ID exists, allowing clients to choose based on their needs.
 
-### TODO Keyword State Semantics
-
-Semantic information derived from org's built-in configuration:
-
-```elisp
-{
-  "state": "WAIT",
-  "isFinal": false,        ; true for done states
-  "sequenceType": "sequence" ; or "type"
-}
-```
-
-This provides MCP clients with workflow understanding:
-- `isFinal`: Whether this is a final state (after "|") or active state (before "|")
-- `sequenceType`: Whether keywords represent workflow stages ("sequence") or task categories ("type")
-
-The full sequence information is provided separately in the tool response to avoid redundancy.
 
 ### Security Model
 
@@ -153,18 +108,6 @@ The server will automatically generate IDs using Org's built-in `org-id-new` fun
 
 ## Core Tool and Resource Definitions
 
-### Essential Resources
-
-```elisp
-;; File and structure
-org://{file}                      ; Raw org file content
-org://{file}/outline              ; Document structure/hierarchy
-org://{file}/headline/{path}      ; Path-based section reference
-org://id/{uuid}                   ; ID-based section reference
-
-;; Configuration
-org://config/todo-states          ; TODO keyword configuration
-```
 
 ### Essential Tools
 
@@ -209,19 +152,6 @@ Full-text search within org file content (not just headlines).
 
 **Returns:** Array of matches with context and resourceUri to containing headline (both path-based and ID-based when available)
 
-#### org-update-todo-state
-
-Change the TODO state of a specific headline.
-
-**Parameters:**
-
-- `resourceUri` (string): URI of the headline to update (supports org-headline:// or org-id://)
-- `currentState` (string): Current TODO state (empty string "" for no state) - must match actual state for update to proceed
-- `newState` (string): New TODO state (must be valid in org-todo-keywords, empty string "" to remove state)
-
-**Returns:** 
-- Success: `{"success": true, "previousState": "TODO", "newState": "DONE"}`
-- State mismatch error: `{"error": "State mismatch", "message": "...", "actualState": "...", "expectedState": "..."}`
 
 #### org-schedule-task
 
@@ -248,35 +178,7 @@ Extract property drawer contents for a headline.
 
 **Returns:** Object with property key-value pairs
 
-#### org-get-todo-config
 
-Get the TODO keyword configuration for understanding task states.
-
-**Parameters:** None
-
-**Returns:** Object containing:
-
-- `sequences`: Array of sequence objects, each with:
-  - `type`: "sequence" or "type" indicating interpretation
-  - `keywords`: Array of keywords including "|" separator
-- `semantics`: Array of state objects for all keywords with:
-  - `state`: The keyword string
-  - `isFinal`: Boolean indicating if this is a final state
-  - `sequenceType`: "sequence" or "type" matching the parent sequence
-
-#### org-get-tag-config
-
-Get the tag configuration as literal Elisp variable values.
-
-**Parameters:** None
-
-**Returns:** Object containing literal Elisp string representations of:
-
-- `org-use-tag-inheritance`: Literal string representation of the variable value (e.g., `"t"`, `"nil"`, `"(\"tag1\" \"tag2\")"`, or `"\"^regex\""`)
-- `org-tags-exclude-from-inheritance`: Literal string of the exclusion list (e.g., `"(\"tag1\" \"tag2\")"`)
-- `org-tags-sort-function`: Literal string of the sort function value
-- `org-tag-alist`: Literal string of the complete tag alist configuration
-- `org-tag-persistent-alist`: Literal string of the persistent tag alist
 
 ## Implementation Approach
 
@@ -292,25 +194,6 @@ org-mcp.el              ; Single file containing all org-specific code
 └── Server Lifecycle   ; Start/stop functions
 ```
 
-### MCP Protocol Library Features
-
-The `mcp-server-lib.el` already provides:
-
-```elisp
-;; Resource registration with template support
-(defun mcp-server-lib-register-resource (uri handler &rest properties)
-  "Register resource with automatic template detection.
-   URI can be static (org://file.org) or template (org://{filename})."
-  ...)
-
-;; Future extensions needed:
-;; - Subscription support
-(defun mcp-server-lib-notify-resource-changed (uri &optional data))
-```
-
-Resource templates follow RFC 6570 URI template syntax:
-- `{variable}` - Simple expansion
-- `{+variable}` - Reserved character expansion (allows slashes)
 
 ### Resource URI Hierarchy
 
@@ -318,41 +201,33 @@ Resource templates follow RFC 6570 URI template syntax:
 org://projects.org                   → Raw org file content
 org://projects.org/outline           → Structural view of document
 org://projects.org/headline/Alpha    → Specific section with content
-org://config/todo-states            → TODO configuration (global)
 ```
 
 ## Implementation Roadmap
 
-1. **Phase 1: Basic Setup with Tools Only**
+### Completed
+- ✅ Basic org-mcp.el structure with security validation
+- ✅ `org-get-todo-config` tool
+- ✅ `org-get-tag-config` tool
+- ✅ `org-update-todo-state` tool
+- ✅ `org-add-todo` tool with ID generation
+- ✅ Basic resources (file, outline, headline, ID-based)
+- ✅ `org-rename-headline` tool (bonus feature)
 
-   - Create org-mcp.el with basic structure
-   - Implement security validation for allowed files
-   - Implement `org-get-todo-config` tool (no file access needed)
-   - Implement `org-search-headlines` tool using existing mcp-server-lib
-   - Test basic tool functionality manually
+### Remaining Work
 
-2. **Phase 2: Resource Support**
+1. **Phase 3: Complete Read Operations**
+   - Implement `org-search-headlines` tool
+   - Implement `org-get-todos` tool
+   - Implement `org-search-content` tool
+   - Implement `org-get-properties` tool
+   - Add cross-referencing between tools and resources
 
-   - Use mcp-server-lib's built-in resource template support
-   - Implement template-based resources for files, outlines, and headlines
-   - Create handler functions for each resource type
-   - Update tools to include resource URIs in responses
-
-3. **Phase 3: Complete Read Operations**
-
-   - Implement remaining search tools (TODOs, content)
-   - Add property extraction
-   - Ensure consistent TODO state semantics
-   - Full cross-referencing between tools and resources
-
-4. **Phase 4: Write Operations**
-
-   - TODO state updates
-   - Task scheduling/deadline management
+2. **Phase 4: Additional Write Operations**
+   - Implement `org-schedule-task` tool
    - Property modifications
-   - Change notifications
 
-5. **Phase 5: Future Development**
+3. **Phase 5: Future Development**
    - See "Future Potential Development" section for advanced features
 
 ## Key Design Principles
@@ -400,9 +275,9 @@ Get items that would appear in org agenda.
 
 **Returns:** Array of agenda items sorted by date with resourceUri
 
+
 ### Advanced Features
 
-- Resource subscriptions and file watching
 - Org-roam integration for linked notes
 - Capture template execution
 - Refiling capabilities
