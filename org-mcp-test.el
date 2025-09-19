@@ -12,6 +12,169 @@
 (require 'mcp-server-lib-ert)
 (require 'json)
 
+;;; Test Data Constants
+
+;; Initial content strings for various test scenarios
+(defconst org-mcp-test--content-empty ""
+  "Empty org file content.")
+
+(defconst org-mcp-test--content-with-headers
+  "#+TITLE: My Org Document
+#+AUTHOR: Test Author
+#+DATE: 2024-01-01
+#+OPTIONS: toc:nil
+
+* Existing Task
+Some content here."
+  "Org file with header comments and a task.")
+
+(defconst org-mcp-test--content-parent-child
+  "* Parent Task
+Some content here.
+* Another Task
+More content."
+  "Simple parent tasks structure.")
+
+(defconst org-mcp-test--content-nested-siblings
+  "* Parent Task
+** First Child
+First child content.
+** Second Child
+Second child content.
+** Third Child
+Third child content."
+  "Parent with multiple child tasks.")
+
+(defconst org-mcp-test--content-multiple-parents
+  "* Parent Task
+** Child One
+** Child Two
+* Other Parent
+** Other Child"
+  "Multiple parent tasks with children.")
+
+(defconst org-mcp-test--content-simple-todo
+  "* TODO Original Task
+Task description."
+  "Simple TODO task.")
+
+(defconst org-mcp-test--content-todo-with-tags
+  "* TODO Task with Tags :work:urgent:
+Task description."
+  "TODO task with tags.")
+
+(defconst org-mcp-test--content-headline-no-todo
+  "* Regular Headline
+Some content."
+  "Regular headline without TODO state.")
+
+(defconst org-mcp-test--content-with-id
+  "* Task with ID
+:PROPERTIES:
+:ID:       550e8400-e29b-41d4-a716-446655440000
+:END:
+This is a task with an ID property."
+  "Task with an Org ID property.")
+
+(defconst org-mcp-test--content-slash-in-headline
+  "* Project A/B Testing
+This is a headline with a slash in it.
+* Other Task
+Some other content."
+  "Headlines containing slash characters.")
+
+(defconst org-mcp-test--content-parent-child-slash
+  "* Parent
+** Real Child
+Content here.
+* Parent/Child
+This is a single headline with a slash, not nested under Parent."
+  "Mixed nested and slash-containing headlines.")
+
+(defconst org-mcp-test--content-percent-in-headline
+  "* 50% Complete
+This task is half done.
+* Use %20 for spaces
+Documentation about URL encoding."
+  "Headlines containing percent signs.")
+
+(defconst org-mcp-test--content-important-tasks
+  "* Important Task
+This task has content.
+* Another Task
+More content."
+  "Multiple important tasks.")
+
+(defconst org-mcp-test--content-duplicate-headlines
+  "* Team Updates
+** Project Review
+First review content.
+* Development Tasks
+** Project Review
+Second review content.
+* Quality Assurance
+** Project Review
+Third review content.
+** Code Review
+Code review content."
+  "Multiple headlines with the same name.")
+
+(defconst org-mcp-test--content-nested-targets
+  "* First Section
+** Target
+Some content.
+* Second Section
+** Other Item
+Other content.
+** Target
+This Target is under Second Section, not First Section."
+  "Multiple targets in different sections.")
+
+(defconst org-mcp-test--content-todo-hierarchy
+  "* Project Management
+** TODO Review Documents
+This task needs to be renamed
+** DONE Review Code
+This is already done"
+  "TODO items in a hierarchy.")
+
+(defconst org-mcp-test--content-headline-without-id
+  "* Headline Without ID
+Content here."
+  "Simple headline without an ID property.")
+
+(defconst org-mcp-test--content-title-header-only
+  "#+TITLE: Test Org File
+
+"
+  "Org file with only a title header.")
+
+;; Regex patterns for validation
+
+(defconst org-mcp-test--regex-todo-with-tags
+  "^\\* TODO New Task +:.*work.*urgent.*:
+\\(?::PROPERTIES:
+:ID: +[^\n]+
+:END:
+\\)?$"
+  "Pattern for TODO with work and urgent tags.")
+
+(defconst org-mcp-test--regex-todo-after-headers
+  (concat
+   "^#\\+TITLE: My Org Document\n"
+   "#\\+AUTHOR: Test Author\n"
+   "#\\+DATE: 2024-01-01\n"
+   "#\\+OPTIONS: toc:nil\n"
+   "\n"
+   "\\* TODO New Top Task +:[^\n]*urgent[^\n]*:\n"
+   "\\(?::PROPERTIES:\n"
+   ":ID: +[^\n]+\n"
+   ":END:\n\\)?"
+   "\n?"
+   "\\* Existing Task\n"
+   "Some content here\\.")
+  "Pattern for TODO added after org headers.")
+
 ;; Helper functions for calling MCP tools
 
 (defun org-mcp-test--call-get-todo-config ()
@@ -1040,7 +1203,8 @@ Another task."))
 
 (ert-deftest org-mcp-test-add-todo-top-level ()
   "Test adding a top-level TODO item."
-  (org-mcp-test--with-add-todo-setup test-file ""
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
     (let* ((parent-uri (format "org-headline://%s/" test-file))
            (result
             (org-mcp-test--call-add-todo
@@ -1109,7 +1273,8 @@ Some content here."))
 
 (ert-deftest org-mcp-test-add-todo-invalid-state ()
   "Test that adding TODO with invalid state throws error."
-  (org-mcp-test--with-add-todo-setup test-file ""
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s/" test-file)))
       (org-mcp-test--assert-error-and-file
        test-file
@@ -1123,7 +1288,8 @@ Some content here."))
 
 (ert-deftest org-mcp-test-add-todo-tag-reject-invalid-with-alist ()
   "Test that tags not in `org-tag-alist' are rejected."
-  (org-mcp-test--with-add-todo-setup test-file ""
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s/" test-file)))
       ;; Should reject tags not in org-tag-alist
       (org-mcp-test--assert-error-and-file
@@ -1134,7 +1300,8 @@ Some content here."))
 
 (ert-deftest org-mcp-test-add-todo-tag-accept-valid-with-alist ()
   "Test that tags in `org-tag-alist' are accepted."
-  (org-mcp-test--with-add-todo-setup test-file ""
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s/" test-file)))
       ;; Should accept tags in org-tag-alist (work, personal, urgent)
       (let ((result
@@ -1155,7 +1322,8 @@ Some content here."))
 
 (ert-deftest org-mcp-test-add-todo-tag-validation-without-alist ()
   "Test valid tag names are accepted when `org-tag-alist' is empty."
-  (org-mcp-test--with-add-todo-setup test-file ""
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
     (let ((org-tag-alist nil)
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s/" test-file)))
@@ -1180,7 +1348,8 @@ Some content here."))
 
 (ert-deftest org-mcp-test-add-todo-tag-invalid-characters ()
   "Test that tags with invalid characters are rejected."
-  (org-mcp-test--with-add-todo-setup test-file ""
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
     (let ((org-tag-alist nil)
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s/" test-file)))
@@ -1203,39 +1372,33 @@ Some content here."))
 
 (ert-deftest org-mcp-test-add-todo-child-under-parent ()
   "Test adding a child TODO under an existing parent."
-  (let ((initial-content
-         "* Parent Task
-Some content here.
-* Another Task
-More content."))
-    (org-mcp-test--with-add-todo-setup test-file initial-content
-      (let* ((parent-uri
-              (format "org-headline://%s/Parent%%20Task" test-file))
-             (result
-              (org-mcp-test--call-add-todo
-               "Child Task"
-               "TODO"
-               '("work")
-               nil ; no body
-               parent-uri
-               nil))) ; no afterUri
-        ;; Check result structure - should have exactly 4 fields
-        (org-mcp-test--check-add-todo-result
-         result
-         "Child Task"
-         (file-name-nondirectory test-file)
-         test-file
-         (concat
-          "^\\* Parent Task\n"
-          "Some content here\\.\n\n"
-          "\\*\\* TODO Child Task +.*:work:.*\n"
-          "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?\n?"
-          "\\* Another Task\n"
-          "More content\\."))))))
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-parent-child
+    (let* ((parent-uri
+            (format "org-headline://%s/Parent%%20Task" test-file))
+           (result
+            (org-mcp-test--call-add-todo "Child Task" "TODO" '("work")
+                                         nil ; no body
+                                         parent-uri
+                                         nil))) ; no afterUri
+      ;; Check result structure - should have exactly 4 fields
+      (org-mcp-test--check-add-todo-result
+       result
+       "Child Task"
+       (file-name-nondirectory test-file)
+       test-file
+       (concat
+        "^\\* Parent Task\n"
+        "Some content here\\.\n\n"
+        "\\*\\* TODO Child Task +.*:work:.*\n"
+        "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?\n?"
+        "\\* Another Task\n"
+        "More content\\.")))))
 
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."
-  (org-mcp-test--with-add-todo-setup test-file ""
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
     (let* ((parent-uri (format "org-headline://%s/" test-file))
            (body-text
             (concat
@@ -1515,7 +1678,7 @@ Some parent content.
 
 (ert-deftest org-mcp-test-rename-headline-simple ()
   "Test renaming a simple TODO headline."
-  (let ((initial-content "* TODO Original Task\nTask description."))
+  (let ((initial-content org-mcp-test--content-simple-todo))
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords
