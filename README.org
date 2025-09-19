@@ -11,6 +11,11 @@ TODO: Installation instructions
 
 * Usage
 
+WARNING: some of the tools in this package give LLMs WRITE access to your Org files,
+and, once in a thousand invocations, LLMs *will* try to delete everything, because
+they are like that. Backups and automatic versioning on every change are strongly
+advised.
+
 ** Registering with an MCP Client
 
 After =mcp-server-lib= has been properly installed (including =M-x mcp-server-lib-install=), register =org-mcp= with your MCP client:
