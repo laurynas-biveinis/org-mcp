@@ -782,17 +782,15 @@ MCP Parameters:
                    (list tags)))))
             (org-set-tags tag-list)))
 
-        (let ((id (org-id-get-create)))
-          ;; Add body if provided
-          (when body
-            ;; org-id-get-create leaves point at the heading
-            ;; Move past the properties drawer if it exists
-            (org-end-of-meta-data t)
-            ;; Insert body
-            (insert body)
-            (unless (string-suffix-p "\n" body)
-              (insert "\n")))
+        ;; Add body if provided
+        (when body
+          (end-of-line)
+          (insert "\n" body)
+          (unless (string-suffix-p "\n" body)
+            (insert "\n")))
 
+        ;; Get or create an Org ID for this headline
+        (let ((id (org-id-get-create)))
           (org-mcp--save-and-return-success
            file-path id
            `((file . ,(file-name-nondirectory file-path))
