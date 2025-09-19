@@ -113,11 +113,6 @@ This task needs to be renamed
 This is already done"
   "TODO items in a hierarchy.")
 
-(defconst org-mcp-test--content-headline-without-id
-  "* Headline Without ID
-Content here."
-  "Simple headline without an ID property.")
-
 (defconst org-mcp-test--content-title-header-only
   "#+TITLE: Test Org File
 
@@ -168,7 +163,7 @@ Third child content."
 ;; Regex patterns for validation
 
 (defconst org-mcp-test--regex-todo-with-tags
-  "^\\* TODO New Task +:.*work.*urgent.*:
+  "^\\* TODO New Task +.*:work:urgent:
 \\(?::PROPERTIES:
 :ID: +[^\n]+
 :END:
@@ -182,7 +177,7 @@ Third child content."
    "#\\+DATE: 2024-01-01\n"
    "#\\+OPTIONS: toc:nil\n"
    "\n"
-   "\\* TODO New Top Task +:[^\n]*urgent[^\n]*:\n"
+   "\\* TODO New Top Task +.*:urgent:\n"
    "\\(?::PROPERTIES:\n"
    ":ID: +[^\n]+\n"
    ":END:\n\\)?"
@@ -1305,7 +1300,7 @@ Another task."))
                "#\\+DATE: 2024-01-01\n"
                "#\\+OPTIONS: toc:nil\n"
                "\n"
-               "\\* TODO New Top Task +:[^\n]*urgent[^\n]*:\n"
+               "\\* TODO New Top Task +.*:urgent:\n"
                "\\(?::PROPERTIES:\n"
                ":ID: +[^\n]+\n"
                ":END:\n\\)?"
