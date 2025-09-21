@@ -243,19 +243,20 @@ The filename parameter includes both file and headline path."
          (headline-path
           (when headline-path-str
             (mapcar
-             'url-unhex-string (split-string headline-path-str "/"))))
-         (content
-          (if headline-path
-              (org-mcp--get-headline-content
-               (expand-file-name allowed-file) headline-path)
-            ;; No headline path means get entire file
-            (org-mcp--read-file-resource
-             (expand-file-name allowed-file)))))
-    (unless content
-      (mcp-server-lib-resource-signal-error
-       mcp-server-lib-jsonrpc-error-invalid-params
-       (format "Headline not found: %s" (car (last headline-path)))))
-    content))
+             'url-unhex-string
+             (split-string headline-path-str "/")))))
+    (if headline-path
+        (let ((content
+               (org-mcp--get-headline-content
+                (expand-file-name allowed-file) headline-path)))
+          (unless content
+            (mcp-server-lib-resource-signal-error
+             mcp-server-lib-jsonrpc-error-invalid-params
+             (format "Headline not found: %s"
+                     (car (last headline-path)))))
+          content)
+      ;; No headline path means get entire file
+      (org-mcp--read-file-resource (expand-file-name allowed-file)))))
 
 (defun org-mcp--get-headline-content (file-path headline-path)
   "Get content for headline at HEADLINE-PATH in FILE-PATH.
