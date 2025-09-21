@@ -71,21 +71,40 @@ Returns: JSON structure like:
 }
 #+end_example
 
-*** org-headline://{filename}/{path}
+*** org-headline://{filename}#{path}
 - *Description:* Access the content of a specific headline by its path
-- *URI Pattern:* =org-headline://{filename}/{path}= where filename is the absolute path and path is URL-encoded headline titles separated by =/=
+- *URI Pattern:* =org-headline://{filename}#{path}= where:
+  - =filename= is the absolute path (with # encoded as %23)
+  - =path= is URL-encoded headline titles separated by =/=
+  - Headlines containing # must be encoded as %23 in the path
 - *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
 - *Returns:* Plain text content of the specified headline section including all subheadings
 
 Example:
 #+begin_example
 # Access a top-level headline:
-URI: org-headline:///home/user/org/projects.org/Project%20Alpha
+URI: org-headline:///home/user/org/projects.org#Project%20Alpha
 Returns: Content of "Project Alpha" heading and all its subheadings
 
 # Access a nested headline:
-URI: org-headline:///home/user/org/projects.org/Project%20Alpha/Requirements
+URI: org-headline:///home/user/org/projects.org#Project%20Alpha/Requirements
 Returns: Content of "Requirements" under "Project Alpha"
+
+# Headline with # character (must be encoded as %23):
+URI: org-headline:///home/user/org/projects.org#Issue%20%2342
+Returns: Content of "Issue #42" headline
+
+# Access entire file (no fragment):
+URI: org-headline:///home/user/org/projects.org
+Returns: Full content of the file
+
+# File with # in the name (must be encoded as %23):
+URI: org-headline:///home/user/org/file%231.org#Headline
+Returns: Content of "Headline" from file#1.org
+
+# Both file and headline with # (all encoded):
+URI: org-headline:///home/user/org/file%231.org#Task%20%235
+Returns: Content of "Task #5" from file#1.org
 #+end_example
 
 *** org-id URI Format
@@ -97,7 +116,7 @@ Returns: Content of "Requirements" under "Project Alpha"
 Example:
 #+begin_example
 # Org file with ID property:
-* Project Meeting Notes
+,* Project Meeting Notes
 :PROPERTIES:
 :ID: 550e8400-e29b-41d4-a716-446655440000
 :END:

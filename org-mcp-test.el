@@ -105,14 +105,6 @@ Other content.
 This Target is under Second Section, not First Section."
   "Multiple targets in different sections.")
 
-(defconst org-mcp-test--content-todo-hierarchy
-  "* Project Management
-** TODO Review Documents
-This task needs to be renamed
-** DONE Review Code
-This is already done"
-  "TODO items in a hierarchy.")
-
 (defconst org-mcp-test--content-title-header-only
   "#+TITLE: Test Org File
 
@@ -159,6 +151,20 @@ Second child content.
 ** Third Child
 Third child content."
   "Parent with children for testing after-sibling insertion.")
+
+(defconst org-mcp-test--content-headlines-with-hash
+  "* Task #1
+First task
+* Task #2
+Second task"
+  "Headlines containing # character in titles.")
+
+(defconst org-mcp-test--expected-first-section-from-nested-targets
+  "* First Section
+** Target
+Some content."
+  "Expected content when extracting First Section from nested-targets.")
+
 
 ;; Regex patterns for validation
 
@@ -247,19 +253,27 @@ Third child content."
          (mcp-server-lib-ert-with-server :tools t :resources t ,@body)
        (org-mcp-disable))))
 
-(defmacro org-mcp-test--with-temp-org-file (var content &rest body)
+(defmacro org-mcp-test--with-temp-org-file (var content &rest args)
   "Create a temporary Org file, execute BODY, and ensure cleanup.
 VAR is the variable to bind the temp file path to.
-CONTENT is the initial content to write to the file."
-  (declare (indent 2) (debug (symbolp form body)))
-  `(let (,var)
-     (unwind-protect
-         (progn
-           (setq ,var
-                 (make-temp-file "org-mcp-test" nil ".org" ,content))
-           ,@body)
-       (when ,var
-         (delete-file ,var)))))
+CONTENT is the initial content to write to the file.
+If first element of ARGS is a string, it's used as the filename prefix.
+Remaining elements are the body."
+  (declare (indent 2))
+  (let* ((filename
+          (or (when (stringp (car args))
+                (pop args))
+              "org-mcp-test"))
+         (body args))
+    `(let (,var)
+       (unwind-protect
+           (progn
+             (setq ,var
+                   (make-temp-file ,filename nil ".org" ,content))
+             (let ((org-mcp-allowed-files (list ,var)))
+               ,@body))
+         (when ,var
+           (delete-file ,var))))))
 
 (defun org-mcp-test--check-sequence
     (seq expected-type expected-keywords)
@@ -290,13 +304,43 @@ EXPECTED-TYPE is the sequence type."
                (semantics (cdr (assoc 'semantics result))))
            ,@body)))))
 
-
 (defun org-mcp-test--verify-file-content (file-path expected-regexp)
   "Check that FILE-PATH contain text matching EXPECTED-REGEXP."
   (with-temp-buffer
     (insert-file-contents file-path)
     (goto-char (point-min))
     (should (re-search-forward expected-regexp nil t))))
+
+(defun org-mcp-test--test-headline-resource-with-extension
+    (extension &optional file-path)
+  "Test headline resource with file having EXTENSION.
+EXTENSION can be a string like \".txt\" or nil for no extension.
+FILE-PATH if provided uses this exact file path instead of creating temp file."
+  (let ((test-file file-path))
+    (unwind-protect
+        (progn
+          (unless test-file
+            ;; Create temp file with extension
+            (setq test-file
+                  (make-temp-file "org-mcp-test" nil extension))
+            (with-temp-file test-file
+              (insert org-mcp-test--content-nested-targets)))
+          (let ((org-mcp-allowed-files (list test-file))
+                (uri
+                 (format "org-headline://%s#First%%20Section"
+                         test-file)))
+            (org-mcp-test--with-enabled
+              ;; Try to access headline in file
+              (mcp-server-lib-ert-verify-resource-read
+               uri
+               `((uri . ,uri)
+                 (text
+                  .
+                  ,org-mcp-test--expected-first-section-from-nested-targets)
+                 (mimeType . "text/plain"))))))
+      ;; Only cleanup if we created the file
+      (unless file-path
+        (delete-file test-file)))))
 
 (defun org-mcp-test--call-add-todo
     (title todoState tags body parentUri &optional afterUri)
@@ -885,7 +929,7 @@ Content of subsection 2.1."))
         (org-mcp-test--with-enabled
           ;; Test getting a top-level headline
           (let ((uri
-                 (format "org-headline://%s/First%%20Section"
+                 (format "org-headline://%s#First%%20Section"
                          test-file)))
             (mcp-server-lib-ert-verify-resource-read
              uri
@@ -903,7 +947,7 @@ Content of subsection 2.1."))
           ;; Test getting a nested headline
           (let ((uri
                  (format (concat
-                          "org-headline://%s/"
+                          "org-headline://%s#"
                           "First%%20Section/Subsection%%201.1")
                          test-file)))
             (mcp-server-lib-ert-verify-resource-read
@@ -922,7 +966,7 @@ Content of subsection 2.1."))
       (let ((org-mcp-allowed-files (list test-file)))
         (org-mcp-test--with-enabled
           (let* ((uri
-                  (format "org-headline://%s/Nonexistent" test-file))
+                  (format "org-headline://%s#Nonexistent" test-file))
                  (request
                   (mcp-server-lib-create-resources-read-request uri))
                  (response-json
@@ -935,6 +979,64 @@ Content of subsection 2.1."))
              response
              mcp-server-lib-jsonrpc-error-invalid-params
              "Headline not found: Nonexistent")))))))
+
+(ert-deftest org-mcp-test-headline-resource-file-with-hash ()
+  "Test headline resource with # in filename."
+  (org-mcp-test--with-temp-org-file file
+      org-mcp-test--content-headline-no-todo
+    "org-mcp-test-file#"
+    (org-mcp-test--with-enabled
+      ;; Test accessing the file with # encoded as %23
+      (let* ((encoded-path (replace-regexp-in-string "#" "%23" file))
+             (uri
+              (format "org-headline://%s#Regular%%20Headline"
+                      encoded-path)))
+        (mcp-server-lib-ert-verify-resource-read
+         uri
+         `((uri . ,uri)
+           (text . "* Regular Headline\nSome content.")
+           (mimeType . "text/plain")))))))
+
+(ert-deftest org-mcp-test-headline-resource-headline-with-hash ()
+  "Test headline resource with # in headline title."
+  (let ((test-content org-mcp-test--content-headlines-with-hash))
+    (org-mcp-test--with-temp-org-file file test-content
+      (let ((org-mcp-allowed-files (list file)))
+        (org-mcp-test--with-enabled
+          ;; Test accessing headline with # encoded as %23
+          (let ((uri (format "org-headline://%s#Task%%20%%231" file)))
+            (mcp-server-lib-ert-verify-resource-read
+             uri
+             `((uri . ,uri)
+               (text . "* Task #1\nFirst task")
+               (mimeType . "text/plain")))))))))
+
+(ert-deftest
+    org-mcp-test-headline-resource-file-and-headline-with-hash
+    ()
+  "Test headline resource with # in both filename and headline."
+  (org-mcp-test--with-temp-org-file file
+      org-mcp-test--content-headlines-with-hash
+    "org-mcp-test-file#"
+    (org-mcp-test--with-enabled
+      ;; Test with both file and headline containing #
+      (let* ((encoded-path (replace-regexp-in-string "#" "%23" file))
+             (uri
+              (format "org-headline://%s#Task%%20%%231"
+                      encoded-path)))
+        (mcp-server-lib-ert-verify-resource-read
+         uri
+         `((uri . ,uri)
+           (text . "* Task #1\nFirst task")
+           (mimeType . "text/plain")))))))
+
+(ert-deftest org-mcp-test-headline-resource-txt-extension ()
+  "Test that headline resource works with .txt files, not just .org files."
+  (org-mcp-test--test-headline-resource-with-extension ".txt"))
+
+(ert-deftest org-mcp-test-headline-resource-no-extension ()
+  "Test that headline resource works with files having no extension."
+  (org-mcp-test--test-headline-resource-with-extension nil))
 
 (ert-deftest org-mcp-test-id-resource-returns-content ()
   "Test that ID resource returns content for valid ID."
@@ -1025,7 +1127,7 @@ Content of subsection 2.1."))
         (org-mcp-test--with-enabled
           ;; Update TODO to IN-PROGRESS
           (let ((resource-uri
-                 (format "org-headline://%s/Task%%20One" test-file)))
+                 (format "org-headline://%s#Task%%20One" test-file)))
             (org-mcp-test--update-and-verify-todo
              resource-uri "TODO" "IN-PROGRESS"
              test-file "* IN-PROGRESS Task One")))))))
@@ -1040,7 +1142,7 @@ Content of subsection 2.1."))
         (org-mcp-test--with-enabled
           ;; Try to update with wrong current state
           (let ((resource-uri
-                 (format "org-headline://%s/Task%%20One" test-file)))
+                 (format "org-headline://%s#Task%%20One" test-file)))
             (org-mcp-test--assert-error-and-file
              test-file
              `(org-mcp-test--call-update-todo-state-expecting-error
@@ -1056,7 +1158,7 @@ Content of subsection 2.1."))
         (org-mcp-test--with-enabled
           ;; Try to set empty state
           (let ((resource-uri
-                 (format "org-headline://%s/Task%%20One" test-file)))
+                 (format "org-headline://%s#Task%%20One" test-file)))
             (org-mcp-test--assert-error-and-file
              test-file
              `(org-mcp-test--call-update-todo-state-expecting-error
@@ -1072,7 +1174,7 @@ Content of subsection 2.1."))
         (org-mcp-test--with-enabled
           ;; Try to update to invalid state
           (let ((resource-uri
-                 (format "org-headline://%s/Task%%20One" test-file)))
+                 (format "org-headline://%s#Task%%20One" test-file)))
             (org-mcp-test--assert-error-and-file
              test-file
              `(org-mcp-test--call-update-todo-state-expecting-error
@@ -1091,7 +1193,7 @@ Content of subsection 2.1."))
               (org-mcp-test--with-enabled
                 ;; Update TODO state while buffer is open
                 (let ((resource-uri
-                       (format "org-headline://%s/Task%%20One"
+                       (format "org-headline://%s#Task%%20One"
                                test-file)))
                   (org-mcp-test--update-and-verify-todo
                    resource-uri "TODO" "IN-PROGRESS"
@@ -1130,7 +1232,7 @@ Another task description."))
                 (org-mcp-test--with-enabled
                   ;; Try to update while buffer has unsaved changes
                   (let ((resource-uri
-                         (format "org-headline://%s/Task%%20One"
+                         (format "org-headline://%s#Task%%20One"
                                  test-file)))
                     (org-mcp-test--assert-error-and-file
                      test-file
@@ -1239,7 +1341,7 @@ Another task."))
         (org-mcp-test--with-enabled
           ;; Try to update a non-existent headline
           (let ((resource-uri
-                 (format "org-headline://%s/Nonexistent%%20Task"
+                 (format "org-headline://%s#Nonexistent%%20Task"
                          test-file)))
             (org-mcp-test--assert-error-and-file
              test-file
@@ -1250,7 +1352,7 @@ Another task."))
   "Test adding a top-level TODO item."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let* ((parent-uri (format "org-headline://%s/" test-file))
+    (let* ((parent-uri (format "org-headline://%s#" test-file))
            (result
             (org-mcp-test--call-add-todo
              "New Task"
@@ -1271,7 +1373,7 @@ Another task."))
   "Test adding top-level TODO after header comments."
   (let ((initial-content org-mcp-test--content-headers-with-task))
     (org-mcp-test--with-add-todo-setup test-file initial-content
-      (let* ((parent-uri (format "org-headline://%s/" test-file))
+      (let* ((parent-uri (format "org-headline://%s#" test-file))
              (result
               (org-mcp-test--call-add-todo
                "New Top Task"
@@ -1313,7 +1415,7 @@ Another task."))
   "Test that adding TODO with invalid state throws error."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let ((parent-uri (format "org-headline://%s/" test-file)))
+    (let ((parent-uri (format "org-headline://%s#" test-file)))
       (org-mcp-test--assert-error-and-file
        test-file
        `(org-mcp-test--call-add-todo-expecting-error
@@ -1328,7 +1430,7 @@ Another task."))
   "Test that tags not in `org-tag-alist' are rejected."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let ((parent-uri (format "org-headline://%s/" test-file)))
+    (let ((parent-uri (format "org-headline://%s#" test-file)))
       ;; Should reject tags not in org-tag-alist
       (org-mcp-test--assert-error-and-file
        test-file
@@ -1340,7 +1442,7 @@ Another task."))
   "Test that tags in `org-tag-alist' are accepted."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let ((parent-uri (format "org-headline://%s/" test-file)))
+    (let ((parent-uri (format "org-headline://%s#" test-file)))
       ;; Should accept tags in org-tag-alist (work, personal, urgent)
       (let ((result
              (org-mcp-test--call-add-todo
@@ -1364,7 +1466,7 @@ Another task."))
       org-mcp-test--content-empty
     (let ((org-tag-alist nil)
           (org-tag-persistent-alist nil))
-      (let ((parent-uri (format "org-headline://%s/" test-file)))
+      (let ((parent-uri (format "org-headline://%s#" test-file)))
         ;; Should accept valid tag names (alphanumeric, _, @)
         (let ((result
                (org-mcp-test--call-add-todo
@@ -1390,7 +1492,7 @@ Another task."))
       org-mcp-test--content-empty
     (let ((org-tag-alist nil)
           (org-tag-persistent-alist nil))
-      (let ((parent-uri (format "org-headline://%s/" test-file)))
+      (let ((parent-uri (format "org-headline://%s#" test-file)))
         ;; Should reject tags with special characters
         (org-mcp-test--assert-error-and-file
          test-file
@@ -1413,7 +1515,7 @@ Another task."))
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-parent-child
     (let* ((parent-uri
-            (format "org-headline://%s/Parent%%20Task" test-file))
+            (format "org-headline://%s#Parent%%20Task" test-file))
            (result
             (org-mcp-test--call-add-todo "Child Task" "TODO" '("work")
                                          nil ; no body
@@ -1431,7 +1533,7 @@ Another task."))
   "Test adding TODO with body text."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let* ((parent-uri (format "org-headline://%s/" test-file))
+    (let* ((parent-uri (format "org-headline://%s#" test-file))
            (body-text org-mcp-test--body-text-multiline)
            (result
             (org-mcp-test--call-add-todo
@@ -1475,7 +1577,7 @@ Another task."))
 
           (org-mcp-test--with-enabled
             (let* ((parent-uri
-                    (format "org-headline://%s/Parent%%20Task"
+                    (format "org-headline://%s#Parent%%20Task"
                             test-file))
                    (after-uri (format "org-id://%s" second-id))
                    (result
@@ -1524,7 +1626,7 @@ Another task."))
 
             (org-mcp-test--with-enabled
               (let* ((parent-uri
-                      (format "org-headline://%s/Parent%%20Task"
+                      (format "org-headline://%s#Parent%%20Task"
                               test-file))
                      (after-uri (format "org-id://%s" other-id)))
                 ;; Error: Other Child is not a child of Parent Task
@@ -1621,7 +1723,7 @@ Another task."))
                :endgroup)))
         (org-mcp-test--with-enabled
           ;; Try to add TODO with conflicting tags - should error
-          (let ((parent-uri (format "org-headline://%s/" test-file)))
+          (let ((parent-uri (format "org-headline://%s#" test-file)))
             ;; This should throw an error
             (should-error
              (org-mcp-test--call-add-todo
@@ -1650,7 +1752,7 @@ Another task."))
                :endgroup ("project" . ?p))))
         (org-mcp-test--with-enabled
           ;; Add TODO with non-conflicting tags
-          (let* ((parent-uri (format "org-headline://%s/" test-file))
+          (let* ((parent-uri (format "org-headline://%s#" test-file))
                  (result
                   (org-mcp-test--call-add-todo
                    "Test Task"
@@ -1683,7 +1785,7 @@ Another task."))
         (org-mcp-test--with-enabled
           ;; Rename the headline
           (let* ((resource-uri
-                  (format "org-headline://%s/Original%%20Task"
+                  (format "org-headline://%s#Original%%20Task"
                           test-file))
                  (params
                   `((uri . ,resource-uri)
@@ -1721,7 +1823,7 @@ Another task."))
         (org-mcp-test--with-enabled
           ;; Try to rename with wrong current title
           (let* ((resource-uri
-                  (format "org-headline://%s/Actual%%20Task"
+                  (format "org-headline://%s#Actual%%20Task"
                           test-file)))
             (should-error
              (org-mcp-test--call-rename-headline-expecting-error
@@ -1744,7 +1846,7 @@ Another task."))
         (org-mcp-test--with-enabled
           ;; Rename the headline
           (let* ((resource-uri
-                  (format "org-headline://%s/Task%%20with%%20Tags"
+                  (format "org-headline://%s#Task%%20with%%20Tags"
                           test-file))
                  (params
                   `((uri . ,resource-uri)
@@ -1778,7 +1880,7 @@ Another task."))
         (org-mcp-test--with-enabled
           ;; Rename the headline
           (let* ((resource-uri
-                  (format "org-headline://%s/Regular%%20Headline"
+                  (format "org-headline://%s#Regular%%20Headline"
                           test-file))
                  (params
                   `((uri . ,resource-uri)
@@ -1820,7 +1922,7 @@ This Child is under Parent Three, not Parent Two."))
           ;; The function should fail, but it might incorrectly
           ;; find Parent Three's Child
           (let* ((resource-uri
-                  (format "org-headline://%s/Parent%%20Two/Child"
+                  (format "org-headline://%s#Parent%%20Two/Child"
                           test-file)))
             ;; This should throw an error because Parent Two has no Child
             (let* ((request
@@ -1925,7 +2027,7 @@ Some other content."))
           ;; The slash should be encoded as %2F in the URI
           (let* ((resource-uri
                   (format
-                   "org-headline://%s/Project%%20A%%2FB%%20Testing"
+                   "org-headline://%s#Project%%20A%%2FB%%20Testing"
                    test-file))
                  (params
                   `((uri . ,resource-uri)
@@ -1972,7 +2074,7 @@ This is a single headline with a slash, not nested under Parent."))
           ;; Try to rename the "Parent/Child" headline
           (let* ((resource-uri
                   ;; Slash encoded as %2F to indicate single headline
-                  (format "org-headline://%s/Parent%%2FChild"
+                  (format "org-headline://%s#Parent%%2FChild"
                           test-file))
                  (params
                   `((uri . ,resource-uri)
@@ -2012,7 +2114,7 @@ Documentation about URL encoding."))
         (org-mcp-test--with-enabled
           ;; The percent should be encoded as %25 in the URI
           (let* ((resource-uri
-                  (format "org-headline://%s/50%%25%%20Complete"
+                  (format "org-headline://%s#50%%25%%20Complete"
                           test-file))
                  (params
                   `((uri . ,resource-uri)
@@ -2053,7 +2155,7 @@ More content."))
         (org-mcp-test--with-enabled
           ;; Try to rename to empty string - should fail
           (let* ((resource-uri
-                  (format "org-headline://%s/Important%%20Task"
+                  (format "org-headline://%s#Important%%20Task"
                           test-file))
                  (request
                   (mcp-server-lib-create-tools-call-request
@@ -2068,7 +2170,7 @@ More content."))
              :type 'mcp-server-lib-tool-error))
           ;; Try to rename to whitespace only - should also fail
           (let* ((resource-uri
-                  (format "org-headline://%s/Another%%20Task"
+                  (format "org-headline://%s#Another%%20Task"
                           test-file))
                  (request
                   (mcp-server-lib-create-tools-call-request
@@ -2114,7 +2216,7 @@ Third review content."))
             (setq org-mcp-allowed-files (list test-file))
             ;; Use headline:// URI with ambiguous path
             (let ((resource-uri
-                   (format "org-headline://%s/Project%%20Review"
+                   (format "org-headline://%s#Project%%20Review"
                            test-file)))
               ;; Should succeed - renames first match
               (org-mcp--tool-rename-headline
@@ -2155,7 +2257,7 @@ Content here."))
           ;; Rename headline using path-based URI
           (let* ((resource-uri
                   (format
-                   "org-headline://%s/Headline%%20Without%%20ID"
+                   "org-headline://%s#Headline%%20Without%%20ID"
                    test-file))
                  (params
                   `((uri . ,resource-uri)
@@ -2218,7 +2320,7 @@ This Target is under Second Section, not First Section."))
           ;; But after finding "First Section", the search continues
           ;; and might find "Second Section/Target" instead
           (let* ((resource-uri
-                  (format "org-headline://%s/Second%%20Section/Target"
+                  (format "org-headline://%s#Second%%20Section/Target"
                           test-file))
                  (params
                   `((uri . ,resource-uri)
@@ -2265,7 +2367,7 @@ This is already done"))
             (let
                 ((resource-uri
                   (format
-                   "org-headline://%s/Project%%20Management/Review%%20Documents"
+                   "org-headline://%s#Project%%20Management/Review%%20Documents"
                    test-file)))
               ;; This should work - finding "Review Documents" even though
               ;; the actual headline is "TODO Review Documents"

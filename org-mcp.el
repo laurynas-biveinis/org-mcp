@@ -42,6 +42,13 @@
   :type '(repeat file)
   :group 'org-mcp)
 
+;; Internal constants for URI prefixes
+(defconst org-mcp--org-headline-prefix "org-headline://"
+  "URI prefix for headline resources.")
+
+(defconst org-mcp--org-id-prefix "org-id://"
+  "URI prefix for ID-based resources.")
+
 (defun org-mcp--tool-get-todo-config ()
   "Return the TODO keyword configuration."
   (let ((seq-list '())
@@ -200,32 +207,55 @@ PARAMS is an alist containing the filename parameter."
          (allowed-file (org-mcp--validate-file-access filename)))
     (org-mcp--read-file-resource (expand-file-name allowed-file))))
 
+(defun org-mcp--encode-file-path (file-path)
+  "Encode special characters in FILE-PATH for URI.
+Specifically encodes # as %23 to avoid confusion with fragment separator."
+  (replace-regexp-in-string "#" "%23" file-path))
+
+(defun org-mcp--decode-file-path (encoded-path)
+  "Decode special characters from ENCODED-PATH.
+Specifically decodes %23 back to #."
+  (replace-regexp-in-string "%23" "#" encoded-path))
+
+(defun org-mcp--split-headline-uri (path-after-protocol)
+  "Split PATH-AFTER-PROTOCOL into (file-path . headline-path).
+PATH-AFTER-PROTOCOL is the part after `org-headline://'.
+Returns (FILE . HEADLINE) where FILE is the decoded file path and
+HEADLINE is the part after the fragment separator.
+File paths with # characters should be encoded as %23."
+  (if-let* ((hash-pos (string-match "#" path-after-protocol)))
+    (cons
+     (org-mcp--decode-file-path
+      (substring path-after-protocol 0 hash-pos))
+     (substring path-after-protocol (1+ hash-pos)))
+    (cons (org-mcp--decode-file-path path-after-protocol) nil)))
+
 (defun org-mcp--handle-headline-resource (params)
   "Handler for org-headline://{filename} template.
 PARAMS is an alist containing the filename parameter.
 The filename parameter includes both file and headline path."
-  (let* ((full-path (alist-get "filename" params nil nil #'string=)))
-    ;; Split absolute path and headline path
-    ;; Look for .org extension to find where filename ends
-    (if (string-match "^\\(.*\\.org\\)/\\(.+\\)$" full-path)
-        (let* ((filename (match-string 1 full-path))
-               (headline-path-str (match-string 2 full-path))
-               (allowed-file (org-mcp--validate-file-access filename))
-               ;; Parse the path (URL-encoded headline path)
-               (decoded-path (url-unhex-string headline-path-str))
-               (headline-path (split-string decoded-path "/"))
-               (content
-                (org-mcp--get-headline-content
-                 (expand-file-name allowed-file) headline-path)))
-          (unless content
-            (mcp-server-lib-resource-signal-error
-             mcp-server-lib-jsonrpc-error-invalid-params
-             (format "Headline not found: %s"
-                     (car (last headline-path)))))
-          content)
+  (let* ((full-path (alist-get "filename" params nil nil #'string=))
+         (split-result (org-mcp--split-headline-uri full-path))
+         (filename (car split-result))
+         (allowed-file (org-mcp--validate-file-access filename))
+         (headline-path-str (cdr split-result))
+         ;; Parse the path (URL-encoded headline path)
+         (headline-path
+          (when headline-path-str
+            (mapcar
+             'url-unhex-string (split-string headline-path-str "/"))))
+         (content
+          (if headline-path
+              (org-mcp--get-headline-content
+               (expand-file-name allowed-file) headline-path)
+            ;; No headline path means get entire file
+            (org-mcp--read-file-resource
+             (expand-file-name allowed-file)))))
+    (unless content
       (mcp-server-lib-resource-signal-error
        mcp-server-lib-jsonrpc-error-invalid-params
-       "Invalid headline resource format"))))
+       (format "Headline not found: %s" (car (last headline-path)))))
+    content))
 
 (defun org-mcp--get-headline-content (file-path headline-path)
   "Get content for headline at HEADLINE-PATH in FILE-PATH.
@@ -288,18 +318,23 @@ Validates file access and returns expanded file path."
         headline-path)
     (cond
      ;; Handle org-headline:// URIs
-     ((string-match "^org-headline://\\(.*\\.org\\)/\\(.+\\)$" uri)
-      (let* ((filename (match-string 1 uri))
-             (headline-path-str (match-string 2 uri))
+     ((string-prefix-p org-mcp--org-headline-prefix uri)
+      (let* ((path-after-protocol
+              (substring uri (length org-mcp--org-headline-prefix)))
+             (split-result
+              (org-mcp--split-headline-uri path-after-protocol))
+             (filename (car split-result))
+             (headline-path-str (cdr split-result))
              (allowed-file (org-mcp--validate-file-access filename)))
         (setq file-path (expand-file-name allowed-file))
         (setq headline-path
-              (mapcar
-               #'url-unhex-string
-               (split-string headline-path-str "/")))))
+              (when headline-path-str
+                (mapcar
+                 #'url-unhex-string
+                 (split-string headline-path-str "/"))))))
      ;; Handle org-id:// URIs
-     ((string-match "^org-id://\\(.+\\)$" uri)
-      (let* ((id (match-string 1 uri))
+     ((string-prefix-p org-mcp--org-id-prefix uri)
+      (let* ((id (substring uri (length org-mcp--org-id-prefix)))
              (id-file (org-id-find-id-file id)))
         (unless id-file
           (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
@@ -401,7 +436,7 @@ RESPONSE-ALIST is an alist of response fields."
      (append
       `((success . t))
       response-alist
-      `((uri . ,(format "org-id://%s" id)))))))
+      `((uri . ,(concat org-mcp--org-id-prefix id)))))))
 
 (defun org-mcp--tool-update-todo-state (uri currentState newState)
   "Update the TODO state of a headline.
@@ -589,15 +624,21 @@ MCP Parameters:
   (let (file-path)
     (cond
      ;; Handle org-headline:// URIs
-     ((string-match "^org-headline://\\(.*\\.org\\)/" parentUri)
-      (let* ((filename (match-string 1 parentUri))
+     ((string-prefix-p org-mcp--org-headline-prefix parentUri)
+      (let* ((path-after-protocol
+              (substring parentUri
+                         (length org-mcp--org-headline-prefix)))
+             (split-result
+              (org-mcp--split-headline-uri path-after-protocol))
+             (filename (car split-result))
              (allowed-file (org-mcp--validate-file-access filename)))
         (setq file-path (expand-file-name allowed-file))))
      ;; Handle org-id:// URIs
-     ((string-match "^org-id://\\(.+\\)$" parentUri)
+     ((string-prefix-p org-mcp--org-id-prefix parentUri)
       ;; For org-id, we need to find which file contains this ID
       ;; We'll search through allowed files
-      (let ((parent-id (match-string 1 parentUri))
+      (let ((parent-id
+             (substring parentUri (length org-mcp--org-id-prefix)))
             (found nil))
         (dolist (allowed-file org-mcp-allowed-files)
           (unless found
@@ -635,17 +676,23 @@ MCP Parameters:
         ;; Parse the parent URI - either org-headline:// or org-id://
         (cond
          ;; org-headline:// format
-         ((string-match
-           "^org-headline://.*\\.org/\\(.*\\)$" parentUri)
-          (let ((path-str (match-string 1 parentUri)))
-            (when (> (length path-str) 0)
+         ((string-prefix-p org-mcp--org-headline-prefix parentUri)
+          (let* ((path-after-protocol
+                  (substring parentUri
+                             (length org-mcp--org-headline-prefix)))
+                 (split-result
+                  (org-mcp--split-headline-uri path-after-protocol))
+                 (path-str (cdr split-result)))
+            (when (and path-str (> (length path-str) 0))
               (setq parent-path
                     (mapcar
                      #'url-unhex-string
                      (split-string path-str "/"))))))
          ;; org-id:// format
-         ((string-match "^org-id://\\(.+\\)$" parentUri)
-          (setq parent-id (match-string 1 parentUri))))
+         ((string-prefix-p org-mcp--org-id-prefix parentUri)
+          (setq parent-id
+                (substring parentUri
+                           (length org-mcp--org-id-prefix)))))
 
         ;; Navigate to parent if specified
         (cond
@@ -889,13 +936,13 @@ MCP Parameters:
    :description "Hierarchical structure of an Org file"
    :mime-type "application/json")
   (mcp-server-lib-register-resource
-   "org-headline://{filename}"
+   (concat org-mcp--org-headline-prefix "{filename}")
    #'org-mcp--handle-headline-resource
    :name "Org headline content"
    :description "Content of a specific Org headline by path"
    :mime-type "text/plain")
   (mcp-server-lib-register-resource
-   "org-id://{uuid}"
+   (concat org-mcp--org-id-prefix "{uuid}")
    #'org-mcp--handle-id-resource
    :name "Org node by ID"
    :description "Content of an Org node by its ID"
@@ -911,8 +958,10 @@ MCP Parameters:
   ;; Unregister template resources
   (mcp-server-lib-unregister-resource "org://{filename}")
   (mcp-server-lib-unregister-resource "org-outline://{filename}")
-  (mcp-server-lib-unregister-resource "org-headline://{filename}")
-  (mcp-server-lib-unregister-resource "org-id://{uuid}"))
+  (mcp-server-lib-unregister-resource
+   (concat org-mcp--org-headline-prefix "{filename}"))
+  (mcp-server-lib-unregister-resource
+   (concat org-mcp--org-id-prefix "{uuid}")))
 
 (provide 'org-mcp)
 ;;; org-mcp.el ends here
