@@ -49,6 +49,27 @@
 (defconst org-mcp--org-id-prefix "org-id://"
   "URI prefix for ID-based resources.")
 
+(defmacro org-mcp--with-uri-prefix-dispatch
+    (uri headline-body id-body)
+  "Dispatch tool URI handling based on prefix.
+URI is the URI string to dispatch on.
+HEADLINE-BODY is executed when URI starts with `org-mcp--org-headline-prefix',
+ID-BODY is executed when URI starts with `org-mcp--org-id-prefix'.
+In both cases the URI after the prefix is bound to `uri-without-prefix'.
+Throws an error if neither prefix matches."
+  `(cond
+    ((string-prefix-p org-mcp--org-headline-prefix ,uri)
+     (let ((uri-without-prefix
+            (substring ,uri (length org-mcp--org-headline-prefix))))
+       ,headline-body))
+    ((string-prefix-p org-mcp--org-id-prefix ,uri)
+     (let ((uri-without-prefix
+            (substring ,uri (length org-mcp--org-id-prefix))))
+       ,id-body))
+    (t
+     (mcp-server-lib-tool-throw
+      (format "Invalid resource URI format: %s" ,uri)))))
+
 (defun org-mcp--tool-get-todo-config ()
   "Return the TODO keyword configuration."
   (let ((seq-list '())
@@ -317,37 +338,31 @@ PARAMS is an alist containing the uuid parameter."
 Validates file access and returns expanded file path."
   (let (file-path
         headline-path)
-    (cond
+    (org-mcp--with-uri-prefix-dispatch
+     uri
      ;; Handle org-headline:// URIs
-     ((string-prefix-p org-mcp--org-headline-prefix uri)
-      (let* ((path-after-protocol
-              (substring uri (length org-mcp--org-headline-prefix)))
-             (split-result
-              (org-mcp--split-headline-uri path-after-protocol))
-             (filename (car split-result))
-             (headline-path-str (cdr split-result))
-             (allowed-file (org-mcp--validate-file-access filename)))
-        (setq file-path (expand-file-name allowed-file))
-        (setq headline-path
-              (when headline-path-str
-                (mapcar
-                 #'url-unhex-string
-                 (split-string headline-path-str "/"))))))
+     (let* ((split-result
+             (org-mcp--split-headline-uri uri-without-prefix))
+            (filename (car split-result))
+            (headline-path-str (cdr split-result))
+            (allowed-file (org-mcp--validate-file-access filename)))
+       (setq file-path (expand-file-name allowed-file))
+       (setq headline-path
+             (when headline-path-str
+               (mapcar
+                #'url-unhex-string
+                (split-string headline-path-str "/")))))
      ;; Handle org-id:// URIs
-     ((string-prefix-p org-mcp--org-id-prefix uri)
-      (let* ((id (substring uri (length org-mcp--org-id-prefix)))
-             (id-file (org-id-find-id-file id)))
-        (unless id-file
-          (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
-        (let ((allowed-file (org-mcp--find-allowed-file id-file)))
-          (unless allowed-file
-            (mcp-server-lib-tool-throw
-             (format "File not in allowed list: %s" id-file)))
-          (setq file-path (expand-file-name allowed-file))
-          (setq headline-path (list id)))))
-     (t
-      (mcp-server-lib-tool-throw
-       (format "Invalid resource URI format: %s" uri))))
+     (let* ((id uri-without-prefix)
+            (id-file (org-id-find-id-file id)))
+       (unless id-file
+         (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
+       (let ((allowed-file (org-mcp--find-allowed-file id-file)))
+         (unless allowed-file
+           (mcp-server-lib-tool-throw
+            (format "File not in allowed list: %s" id-file)))
+         (setq file-path (expand-file-name allowed-file))
+         (setq headline-path (list id)))))
     (cons file-path headline-path)))
 
 (defun org-mcp--find-headline-by-path (headline-path)
@@ -623,44 +638,36 @@ MCP Parameters:
 
   ;; Parse parent URI to get file path
   (let (file-path)
-    (cond
+    (org-mcp--with-uri-prefix-dispatch
+     parentUri
      ;; Handle org-headline:// URIs
-     ((string-prefix-p org-mcp--org-headline-prefix parentUri)
-      (let* ((path-after-protocol
-              (substring parentUri
-                         (length org-mcp--org-headline-prefix)))
-             (split-result
-              (org-mcp--split-headline-uri path-after-protocol))
-             (filename (car split-result))
-             (allowed-file (org-mcp--validate-file-access filename)))
-        (setq file-path (expand-file-name allowed-file))))
+     (let* ((split-result
+             (org-mcp--split-headline-uri uri-without-prefix))
+            (filename (car split-result))
+            (allowed-file (org-mcp--validate-file-access filename)))
+       (setq file-path (expand-file-name allowed-file)))
      ;; Handle org-id:// URIs
-     ((string-prefix-p org-mcp--org-id-prefix parentUri)
-      ;; For org-id, we need to find which file contains this ID
-      ;; We'll search through allowed files
-      (let ((parent-id
-             (substring parentUri (length org-mcp--org-id-prefix)))
-            (found nil))
-        (dolist (allowed-file org-mcp-allowed-files)
-          (unless found
-            (when (file-exists-p allowed-file)
-              (with-temp-buffer
-                (insert-file-contents allowed-file)
-                (org-mode)
-                (goto-char (point-min))
-                (while (and (not found)
-                            (re-search-forward "^\\*+ " nil t))
-                  (when (string= (org-entry-get nil "ID") parent-id)
-                    (setq found t)
-                    (setq file-path
-                          (expand-file-name allowed-file))))))))
-        (unless found
-          (mcp-server-lib-tool-throw
-           (format "Parent with ID %s not found in allowed files"
-                   parent-id)))))
-     (t
-      (mcp-server-lib-tool-throw
-       (format "Invalid parent URI format: %s" parentUri))))
+     (let ((parent-id uri-without-prefix)
+           (found nil))
+       ;; For org-id, we need to find which file contains this ID
+       ;; We'll search through allowed files
+       (dolist (allowed-file org-mcp-allowed-files)
+         (unless found
+           (when (file-exists-p allowed-file)
+             (with-temp-buffer
+               (insert-file-contents allowed-file)
+               (org-mode)
+               (goto-char (point-min))
+               (while (and (not found)
+                           (re-search-forward "^\\*+ " nil t))
+                 (when (string= (org-entry-get nil "ID") parent-id)
+                   (setq found t)
+                   (setq file-path
+                         (expand-file-name allowed-file))))))))
+       (unless found
+         (mcp-server-lib-tool-throw
+          (format "Parent with ID %s not found in allowed files"
+                  parent-id)))))
 
     ;; Check for unsaved changes
     (org-mcp--check-buffer-modifications file-path "add TODO")
@@ -675,25 +682,18 @@ MCP Parameters:
       (let ((parent-path nil)
             (parent-id nil))
         ;; Parse the parent URI - either org-headline:// or org-id://
-        (cond
+        (org-mcp--with-uri-prefix-dispatch
+         parentUri
          ;; org-headline:// format
-         ((string-prefix-p org-mcp--org-headline-prefix parentUri)
-          (let* ((path-after-protocol
-                  (substring parentUri
-                             (length org-mcp--org-headline-prefix)))
-                 (split-result
-                  (org-mcp--split-headline-uri path-after-protocol))
-                 (path-str (cdr split-result)))
-            (when (and path-str (> (length path-str) 0))
-              (setq parent-path
-                    (mapcar
-                     #'url-unhex-string
-                     (split-string path-str "/"))))))
+         (let* ((split-result
+                 (org-mcp--split-headline-uri uri-without-prefix))
+                (path-str (cdr split-result)))
+           (when (and path-str (> (length path-str) 0))
+             (setq parent-path
+                   (mapcar
+                    #'url-unhex-string (split-string path-str "/")))))
          ;; org-id:// format
-         ((string-prefix-p org-mcp--org-id-prefix parentUri)
-          (setq parent-id
-                (substring parentUri
-                           (length org-mcp--org-id-prefix)))))
+         (setq parent-id uri-without-prefix))
 
         ;; Navigate to parent if specified
         (cond
