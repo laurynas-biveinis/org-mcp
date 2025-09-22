@@ -2395,6 +2395,13 @@ This task has content."
 More content."
    "Another Task" "   "))
 
+(ert-deftest org-mcp-test-rename-headline-reject-newline ()
+  "Test that renaming to a title with embedded newline is rejected."
+  (org-mcp-test--assert-rename-headline-rejected
+   org-mcp-test--content-headline-no-todo
+   "Regular Headline"
+   "First Line\nSecond Line"))
+
 (ert-deftest org-mcp-test-rename-headline-duplicate-first-match ()
   "Test that when multiple headlines have the same name, first match is renamed.
 This test documents the first-match behavior when duplicate headlines exist."
