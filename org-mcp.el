@@ -617,6 +617,52 @@ Throws an MCP tool error if invalid headlines are found."
        (format "Body cannot contain headlines at level %d or higher"
                level)))))
 
+(defun org-mcp--validate-body-no-unbalanced-blocks (body)
+  "Validate that BODY doesn't contain unbalanced blocks.
+Uses a state machine: tracks if we're in a block, and which one.
+Text inside blocks is literal and doesn't start/end other blocks.
+Throws an MCP tool error if unbalanced blocks are found."
+  (with-temp-buffer
+    (insert body)
+    (goto-char (point-min))
+    (let
+        ((current-block nil)) ; nil or the block type we're currently in
+      ;; Scan forward for all block markers
+      ;; Per Org spec, block names can be any non-whitespace characters
+      (while
+          (re-search-forward
+           "^#\\+\\([Bb][Ee][Gg][Ii][Nn]\\|[Ee][Nn][Dd]\\)_\\(\\S-+\\)"
+           nil t)
+        (let ((marker-type (upcase (match-string 1)))
+              (block-type (upcase (match-string 2))))
+          (cond
+           ;; Found BEGIN
+           ((string= marker-type "BEGIN")
+            (if current-block
+                ;; Already in a block - this BEGIN is just literal text
+                nil
+              ;; Not in a block - enter this block
+              (setq current-block block-type)))
+           ;; Found END
+           ((string= marker-type "END")
+            (cond
+             ;; Not in any block - this END is orphaned
+             ((null current-block)
+              (mcp-server-lib-tool-throw
+               (format
+                "Body contains orphaned END_%s without matching BEGIN_%s"
+                block-type block-type)))
+             ;; In matching block - exit the block
+             ((string= current-block block-type)
+              (setq current-block nil))
+             ;; In different block - this END is just literal text
+             (t
+              nil))))))
+      ;; After scanning everything, check if we're still in a block
+      (when current-block
+        (mcp-server-lib-tool-throw
+         (format "Body contains unclosed %s block" current-block))))))
+
 (defun org-mcp--normalize-tags-to-list (tags)
   "Normalize TAGS parameter to a list format.
 TAGS can be:
@@ -876,6 +922,7 @@ MCP Parameters:
           (when body
             (org-mcp--validate-body-no-headlines
              body (org-current-level))
+            (org-mcp--validate-body-no-unbalanced-blocks body)
             (end-of-line)
             (insert "\n" body)
             (unless (string-suffix-p "\n" body)

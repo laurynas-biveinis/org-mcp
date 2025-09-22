@@ -1674,6 +1674,73 @@ A single asterisk without space is not a valid Org headline."
       (should result)
       (should (alist-get 'success result)))))
 
+(ert-deftest org-mcp-test-add-todo-body-with-unbalanced-block ()
+  "Test that adding TODO with body containing unbalanced block is rejected.
+Unbalanced blocks like #+BEGIN_EXAMPLE without #+END_EXAMPLE should be
+rejected in TODO body content."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
+    (let
+        ((parent-uri (format "org-headline://%s#" test-file))
+         (body-with-unbalanced-block
+          "Here's an example:\n#+BEGIN_EXAMPLE\nsome code\nMore text after block"))
+      ;; Should reject unbalanced blocks
+      (org-mcp-test--assert-error-and-file
+       test-file
+       `(org-mcp-test--call-add-todo-expecting-error
+         "Task with unbalanced block"
+         "TODO"
+         '("work")
+         ,body-with-unbalanced-block
+         ,parent-uri
+         nil)))))
+
+(ert-deftest org-mcp-test-add-todo-body-with-unbalanced-end-block ()
+  "Test that adding TODO with body containing unbalanced END block is rejected.
+An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
+    (let ((parent-uri (format "org-headline://%s#" test-file))
+          (body-with-unbalanced-end
+           "Some text before\n#+END_EXAMPLE\nMore text after"))
+      ;; Should reject unbalanced END blocks
+      (org-mcp-test--assert-error-and-file
+       test-file
+       `(org-mcp-test--call-add-todo-expecting-error
+         "Task with unbalanced END block"
+         "TODO"
+         '("work")
+         ,body-with-unbalanced-end
+         ,parent-uri
+         nil)))))
+
+(ert-deftest org-mcp-test-add-todo-body-with-literal-block-end ()
+  "Test that TODO body with END_SRC inside EXAMPLE block is accepted.
+#+END_SRC inside an EXAMPLE block is literal text, not a block delimiter.
+This is valid Org-mode syntax and should be allowed."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
+    (let*
+        ((parent-uri (format "org-headline://%s#" test-file))
+         (body-with-literal-end
+          "Example of source block:\n#+BEGIN_EXAMPLE\n#+END_SRC\n#+END_EXAMPLE\nText after.")
+         (result
+          (org-mcp-test--call-add-todo "Task with literal END_SRC"
+                                       "TODO"
+                                       '("work")
+                                       body-with-literal-end
+                                       parent-uri
+                                       nil)))
+      ;; Should succeed - #+END_SRC is just literal text inside EXAMPLE block
+      (should result)
+      (should (alist-get 'success result))
+      ;; Verify the content was added correctly
+      (with-current-buffer (find-file-noselect test-file)
+        (goto-char (point-min))
+        (should (search-forward "#+BEGIN_EXAMPLE" nil t))
+        (should (search-forward "#+END_SRC" nil t))
+        (should (search-forward "#+END_EXAMPLE" nil t))))))
+
 (ert-deftest org-mcp-test-add-todo-after-sibling ()
   "Test adding TODO after a specific sibling."
   (let ((initial-content org-mcp-test--content-siblings-after-test))
