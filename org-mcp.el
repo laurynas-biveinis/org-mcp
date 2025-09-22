@@ -611,6 +611,11 @@ MCP Parameters:
   body - Optional body text content
   parentUri - Parent item URI (required)
   afterUri - Sibling to insert after (optional)"
+  ;; Validate title is not empty or whitespace-only
+  (when (or (string-empty-p title)
+            (string-match-p "^[[:space:]]*$" title))
+    (mcp-server-lib-tool-throw
+     "Headline title cannot be empty or contain only whitespace"))
 
   ;; Validate TODO state
   (let ((valid-states
@@ -867,7 +872,7 @@ MCP Parameters:
   (when (or (string-empty-p newTitle)
             (string-match-p "^[[:space:]]*$" newTitle))
     (mcp-server-lib-tool-throw
-     "New title cannot be empty or contain only whitespace"))
+     "Headline title cannot be empty or contain only whitespace"))
 
   ;; Parse the resource URI
   (let* ((parsed (org-mcp--parse-resource-uri uri))

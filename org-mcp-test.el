@@ -799,6 +799,18 @@ Executes BODY with org-mcp enabled and standard variables set."
           (should (member "org-headline://{filename}" template-uris))
           (should (member "org-id://{uuid}" template-uris)))))))
 
+(defun org-mcp-test--assert-add-todo-invalid-title (invalid-title)
+  "Assert that adding TODO with INVALID-TITLE throws an error.
+Tests that the given title is rejected when creating a TODO."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
+    (let ((parent-uri (format "org-headline://%s#" test-file)))
+      (org-mcp-test--assert-error-and-file
+       test-file
+       `(org-mcp-test--call-add-todo-expecting-error
+         ,invalid-title "TODO" nil nil ,parent-uri
+         nil)))))
+
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
   (let ((org-mcp-allowed-files '("test.org")))
@@ -1425,6 +1437,18 @@ Another task."))
          nil
          ,parent-uri
          nil)))))
+
+(ert-deftest org-mcp-test-add-todo-empty-title ()
+  "Test that adding TODO with empty title throws error."
+  (org-mcp-test--assert-add-todo-invalid-title ""))
+
+(ert-deftest org-mcp-test-add-todo-spaces-only-title ()
+  "Test that adding TODO with spaces-only title throws error."
+  (org-mcp-test--assert-add-todo-invalid-title "   "))
+
+(ert-deftest org-mcp-test-add-todo-mixed-whitespace-title ()
+  "Test that adding TODO with mixed whitespace title throws error."
+  (org-mcp-test--assert-add-todo-invalid-title "	  	"))
 
 (ert-deftest org-mcp-test-add-todo-tag-reject-invalid-with-alist ()
   "Test that tags not in `org-tag-alist' are rejected."
