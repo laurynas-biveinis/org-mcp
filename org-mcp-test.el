@@ -786,6 +786,21 @@ Executes BODY with org-mcp enabled and standard variables set."
        (org-mcp-test--with-enabled
          ,@body))))
 
+(defun org-mcp-test--assert-add-todo-rejects-body-headline
+    (initial-content parent-headline body-with-headline)
+  "Test that adding TODO with BODY-WITH-HEADLINE is rejected.
+INITIAL-CONTENT is the initial file content.
+PARENT-HEADLINE is the parent headline path (empty string for top-level).
+BODY-WITH-HEADLINE is the body containing invalid headline."
+  (org-mcp-test--with-add-todo-setup test-file initial-content
+    (let ((parent-uri
+           (format "org-headline://%s#%s" test-file parent-headline)))
+      (org-mcp-test--assert-error-and-file
+       test-file
+       `(org-mcp-test--call-add-todo-expecting-error
+         "Test Task" "TODO" '("work") ,body-with-headline ,parent-uri
+         nil)))))
+
 (ert-deftest org-mcp-test-file-resource-template-in-list ()
   "Test that file template appears in resources/templates/list."
   (let ((org-mcp-allowed-files '("test.org")))
@@ -1622,6 +1637,42 @@ Another task."))
        (file-name-nondirectory test-file)
        test-file
        org-mcp-test--regex-todo-with-body))))
+
+(ert-deftest org-mcp-test-add-todo-body-with-same-level-headline ()
+  "Test that adding TODO with body containing same-level headline is rejected."
+  (org-mcp-test--assert-add-todo-rejects-body-headline
+   org-mcp-test--content-empty
+   "" ; top-level parent
+   "Some initial text.\n* Another headline\nMore text."))
+
+(ert-deftest org-mcp-test-add-todo-body-with-higher-level-headline ()
+  "Test that adding TODO with body containing higher-level headline is rejected."
+  (org-mcp-test--assert-add-todo-rejects-body-headline
+   "* Parent\n"
+   "Parent"
+   "Some initial text.\n* Top level headline\nMore text."))
+
+(ert-deftest org-mcp-test-add-todo-body-with-headline-at-eof ()
+  "Test that adding TODO with body ending in headline at EOF is rejected."
+  (org-mcp-test--assert-add-todo-rejects-body-headline
+   org-mcp-test--content-empty
+   "" ; top-level parent
+   "Some initial text.\n* Headline at EOF"))
+
+(ert-deftest org-mcp-test-add-todo-body-with-asterisk-only-at-eof ()
+  "Test that body ending with just asterisk at EOF is correctly accepted.
+A single asterisk without space is not a valid Org headline."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
+    (let* ((parent-uri (format "org-headline://%s#" test-file))
+           (body-with-asterisk "Some initial text.\n*")
+           (result
+            (org-mcp-test--call-add-todo
+             "Task" "TODO" '("work") body-with-asterisk parent-uri
+             nil)))
+      ;; Should succeed since * without space is not a headline
+      (should result)
+      (should (alist-get 'success result)))))
 
 (ert-deftest org-mcp-test-add-todo-after-sibling ()
   "Test adding TODO after a specific sibling."

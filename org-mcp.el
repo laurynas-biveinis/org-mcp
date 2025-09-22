@@ -604,6 +604,19 @@ Throws an MCP tool error if validation fails."
     (mcp-server-lib-tool-throw
      "Headline title cannot contain newlines")))
 
+(defun org-mcp--validate-body-no-headlines (body level)
+  "Validate that BODY doesn't contain headlines at LEVEL or higher.
+LEVEL is the Org outline level (1 for *, 2 for **, etc).
+Throws an MCP tool error if invalid headlines are found."
+  ;; Build regex to match headlines at the current level or higher
+  ;; For level 3, this matches ^*, ^**, or ^***
+  ;; The regex matches asterisks followed by space or tab (headlines need content)
+  (let ((regex (format "^\\*\\{1,%d\\}[ \t]" level)))
+    (when (string-match regex body)
+      (mcp-server-lib-tool-throw
+       (format "Body cannot contain headlines at level %d or higher"
+               level)))))
+
 (defun org-mcp--normalize-tags-to-list (tags)
   "Normalize TAGS parameter to a list format.
 TAGS can be:
@@ -861,6 +874,8 @@ MCP Parameters:
 
           ;; Add body if provided
           (when body
+            (org-mcp--validate-body-no-headlines
+             body (org-current-level))
             (end-of-line)
             (insert "\n" body)
             (unless (string-suffix-p "\n" body)
