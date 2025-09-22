@@ -1486,6 +1486,11 @@ Another task."))
   "Test that adding TODO with mixed whitespace title throws error."
   (org-mcp-test--assert-add-todo-invalid-title "	  	"))
 
+(ert-deftest org-mcp-test-add-todo-unicode-nbsp-title ()
+  "Test that adding TODO with Unicode non-breaking space throws error."
+  ;; U+00A0 is the non-breaking space character
+  (org-mcp-test--assert-add-todo-invalid-title "\u00A0"))
+
 (ert-deftest org-mcp-test-add-todo-tag-reject-invalid-with-alist ()
   "Test that tags not in `org-tag-alist' are rejected."
   (org-mcp-test--with-add-todo-setup test-file
