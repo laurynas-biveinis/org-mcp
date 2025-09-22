@@ -2220,22 +2220,23 @@ Third review content."))
           (with-temp-buffer
             (insert-file-contents test-file)
             (let ((content (buffer-string)))
-              ;; First occurrence should be renamed
-              (should (string-match-p "^\\*\\* Q1 Review$" content))
-              ;; Count occurrences
-              (goto-char (point-min))
-              (let ((q1-count 0)
-                    (proj-count 0))
-                (while (re-search-forward "^\\*\\* \\(.*\\)$" nil t)
-                  (let ((title (match-string 1)))
-                    (cond
-                     ((string= title "Q1 Review")
-                      (setq q1-count (1+ q1-count)))
-                     ((string= title "Project Review")
-                      (setq proj-count (1+ proj-count))))))
-                ;; Should have exactly 1 renamed and 2 unchanged
-                (should (= q1-count 1))
-                (should (= proj-count 2))))))))))
+              ;; Check entire structure: first renamed with ID, others unchanged
+              (should
+               (string-match-p
+                (concat
+                 "\\`\\* Team Updates\n"
+                 "\\*\\* Q1 Review\n" ; First renamed
+                 ":PROPERTIES:\n"
+                 ":ID: +[A-F0-9-]+\n" ; ID added
+                 ":END:\n"
+                 "First review content\\.\n"
+                 "\\* Development Tasks\n"
+                 "\\*\\* Project Review\n" ; Second unchanged
+                 "Second review content\\.\n"
+                 "\\* Planning\n"
+                 "\\*\\* Project Review\n" ; Third unchanged
+                 "Third review content\\.\\'")
+                content)))))))))
 
 (ert-deftest org-mcp-test-rename-headline-creates-id ()
   "Test that renaming a headline creates an Org ID and returns it."
