@@ -523,6 +523,8 @@ unchanged after."
          (response-json (mcp-server-lib-process-jsonrpc request))
          (response
           (json-parse-string response-json :object-type 'alist)))
+    (unless (assoc 'error response)
+      (error "Expected error but got success for URI: %s" uri))
     (mcp-server-lib-ert-check-error-object
      response
      mcp-server-lib-jsonrpc-error-invalid-params
@@ -978,17 +980,9 @@ Very deep content."))
       (let ((org-mcp-allowed-files (list allowed-file)))
         (org-mcp-test--with-enabled
           ;; Try to read the forbidden file
-          (let* ((uri (format "org://%s" forbidden-file))
-                 (request
-                  (mcp-server-lib-create-resources-read-request uri))
-                 (response-json
-                  (mcp-server-lib-process-jsonrpc request))
-                 (response
-                  (json-parse-string response-json
-                                     :object-type 'alist)))
-            ;; Should get an error response
-            (mcp-server-lib-ert-check-error-object
-             response mcp-server-lib-jsonrpc-error-invalid-params
+          (let ((uri (format "org://%s" forbidden-file)))
+            (org-mcp-test--read-resource-expecting-error
+             uri
              (format "File not in allowed list: %s"
                      forbidden-file))))))))
 
@@ -1046,20 +1040,10 @@ Content of subsection 2.1."))
     (org-mcp-test--with-temp-org-file test-file test-content
       (let ((org-mcp-allowed-files (list test-file)))
         (org-mcp-test--with-enabled
-          (let* ((uri
-                  (format "org-headline://%s#Nonexistent" test-file))
-                 (request
-                  (mcp-server-lib-create-resources-read-request uri))
-                 (response-json
-                  (mcp-server-lib-process-jsonrpc request))
-                 (response
-                  (json-parse-string response-json
-                                     :object-type 'alist)))
-            ;; Should get an error response
-            (mcp-server-lib-ert-check-error-object
-             response
-             mcp-server-lib-jsonrpc-error-invalid-params
-             "Headline not found: Nonexistent")))))))
+          (let ((uri
+                 (format "org-headline://%s#Nonexistent" test-file)))
+            (org-mcp-test--read-resource-expecting-error
+             uri "Headline not found: Nonexistent")))))))
 
 (ert-deftest org-mcp-test-headline-resource-file-with-hash ()
   "Test headline resource with # in filename."
@@ -1184,19 +1168,9 @@ Content of subsection 2.1."))
             (org-id-locations-file nil)
             (org-id-locations nil)) ; Make sure no IDs are registered
         (org-mcp-test--with-enabled
-          (let* ((uri "org-id://nonexistent-id-12345")
-                 (request
-                  (mcp-server-lib-create-resources-read-request uri))
-                 (response-json
-                  (mcp-server-lib-process-jsonrpc request))
-                 (response
-                  (json-parse-string response-json
-                                     :object-type 'alist)))
-            ;; Should get an error response
-            (mcp-server-lib-ert-check-error-object
-             response
-             mcp-server-lib-jsonrpc-error-invalid-params
-             "ID not found: nonexistent-id-12345")))))))
+          (let ((uri "org-id://nonexistent-id-12345"))
+            (org-mcp-test--read-resource-expecting-error
+             uri "ID not found: nonexistent-id-12345")))))))
 
 (ert-deftest org-mcp-test-id-resource-file-not-allowed ()
   "Test ID resource validates file is in allowed list."
@@ -1215,18 +1189,10 @@ Content of subsection 2.1."))
         (setq org-id-locations (make-hash-table :test 'equal))
         (puthash "test-id-789" other-file org-id-locations)
         (org-mcp-test--with-enabled
-          (let* ((uri "org-id://test-id-789")
-                 (request
-                  (mcp-server-lib-create-resources-read-request uri))
-                 (response-json
-                  (mcp-server-lib-process-jsonrpc request))
-                 (response
-                  (json-parse-string response-json
-                                     :object-type 'alist)))
+          (let ((uri "org-id://test-id-789"))
             ;; Should get an error for file not allowed
-            (mcp-server-lib-ert-check-error-object
-             response
-             mcp-server-lib-jsonrpc-error-invalid-params
+            (org-mcp-test--read-resource-expecting-error
+             uri
              (format "File not in allowed list: %s" other-file))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-success ()
