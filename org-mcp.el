@@ -599,7 +599,10 @@ Throws an MCP tool error if validation fails."
   (when (or (string-empty-p title)
             (string-match-p "^[[:space:]]*$" title))
     (mcp-server-lib-tool-throw
-     "Headline title cannot be empty or contain only whitespace")))
+     "Headline title cannot be empty or contain only whitespace"))
+  (when (string-match-p "[\n\r]" title)
+    (mcp-server-lib-tool-throw
+     "Headline title cannot contain newlines")))
 
 (defun org-mcp--normalize-tags-to-list (tags)
   "Normalize TAGS parameter to a list format.

@@ -1497,6 +1497,11 @@ Another task."))
   ;; U+00A0 is the non-breaking space character
   (org-mcp-test--assert-add-todo-invalid-title "\u00A0"))
 
+(ert-deftest org-mcp-test-add-todo-embedded-newline-title ()
+  "Test that adding TODO with embedded newline in title throws error."
+  (org-mcp-test--assert-add-todo-invalid-title
+   "First Line\nSecond Line"))
+
 (ert-deftest org-mcp-test-add-todo-tag-reject-invalid-with-alist ()
   "Test that tags not in `org-tag-alist' are rejected."
   (org-mcp-test--with-add-todo-setup test-file
