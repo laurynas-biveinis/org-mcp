@@ -593,6 +593,14 @@ Throws an error if multiple tags from the same mutex group are present."
                        tags-in-group
                        ", "))))))))
 
+(defun org-mcp--validate-headline-title (title)
+  "Validate that TITLE is not empty or whitespace-only.
+Throws an MCP tool error if validation fails."
+  (when (or (string-empty-p title)
+            (string-match-p "^[[:space:]]*$" title))
+    (mcp-server-lib-tool-throw
+     "Headline title cannot be empty or contain only whitespace")))
+
 (defun org-mcp--tool-add-todo
     (title todoState tags body parentUri afterUri)
   "Add a new TODO item to an Org file.
@@ -611,11 +619,7 @@ MCP Parameters:
   body - Optional body text content
   parentUri - Parent item URI (required)
   afterUri - Sibling to insert after (optional)"
-  ;; Validate title is not empty or whitespace-only
-  (when (or (string-empty-p title)
-            (string-match-p "^[[:space:]]*$" title))
-    (mcp-server-lib-tool-throw
-     "Headline title cannot be empty or contain only whitespace"))
+  (org-mcp--validate-headline-title title)
 
   ;; Validate TODO state
   (let ((valid-states
@@ -868,11 +872,7 @@ MCP Parameters:
   uri - URI of the headline (org-headline:// or org-id://)
   currentTitle - Current title without TODO state or tags
   newTitle - New title without TODO state or tags"
-  ;; Validate newTitle is not empty or whitespace-only
-  (when (or (string-empty-p newTitle)
-            (string-match-p "^[[:space:]]*$" newTitle))
-    (mcp-server-lib-tool-throw
-     "Headline title cannot be empty or contain only whitespace"))
+  (org-mcp--validate-headline-title newTitle)
 
   ;; Parse the resource URI
   (let* ((parsed (org-mcp--parse-resource-uri uri))
