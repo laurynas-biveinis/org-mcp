@@ -2205,44 +2205,37 @@ Second review content.
 * Planning
 ** Project Review
 Third review content."))
-    (let ((test-file
-           (make-temp-file "test-duplicate"
-                           nil
-                           ".org"
-                           initial-content))
-          (org-mcp-allowed-files nil))
-      (unwind-protect
-          (progn
-            (setq org-mcp-allowed-files (list test-file))
-            ;; Use headline:// URI with ambiguous path
-            (let ((resource-uri
-                   (format "org-headline://%s#Project%%20Review"
-                           test-file)))
-              ;; Should succeed - renames first match
-              (org-mcp--tool-rename-headline
-               resource-uri "Project Review" "Q1 Review"))
+    (org-mcp-test--with-temp-org-file test-file initial-content
+      (let ((org-mcp-allowed-files (list test-file)))
+        (org-mcp-test--with-enabled
+          ;; Use headline:// URI with ambiguous path
+          (let ((resource-uri
+                 (format "org-headline://%s#Project%%20Review"
+                         test-file)))
+            ;; Should succeed - renames first match
+            (org-mcp--tool-rename-headline
+             resource-uri "Project Review" "Q1 Review"))
 
-            ;; Verify only first occurrence was renamed
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              (let ((content (buffer-string)))
-                ;; First occurrence should be renamed
-                (should (string-match-p "^\\*\\* Q1 Review$" content))
-                ;; Count occurrences
-                (goto-char (point-min))
-                (let ((q1-count 0)
-                      (proj-count 0))
-                  (while (re-search-forward "^\\*\\* \\(.*\\)$" nil t)
-                    (let ((title (match-string 1)))
-                      (cond
-                       ((string= title "Q1 Review")
-                        (setq q1-count (1+ q1-count)))
-                       ((string= title "Project Review")
-                        (setq proj-count (1+ proj-count))))))
-                  ;; Should have exactly 1 renamed and 2 unchanged
-                  (should (= q1-count 1))
-                  (should (= proj-count 2))))))
-        (delete-file test-file)))))
+          ;; Verify only first occurrence was renamed
+          (with-temp-buffer
+            (insert-file-contents test-file)
+            (let ((content (buffer-string)))
+              ;; First occurrence should be renamed
+              (should (string-match-p "^\\*\\* Q1 Review$" content))
+              ;; Count occurrences
+              (goto-char (point-min))
+              (let ((q1-count 0)
+                    (proj-count 0))
+                (while (re-search-forward "^\\*\\* \\(.*\\)$" nil t)
+                  (let ((title (match-string 1)))
+                    (cond
+                     ((string= title "Q1 Review")
+                      (setq q1-count (1+ q1-count)))
+                     ((string= title "Project Review")
+                      (setq proj-count (1+ proj-count))))))
+                ;; Should have exactly 1 renamed and 2 unchanged
+                (should (= q1-count 1))
+                (should (= proj-count 2))))))))))
 
 (ert-deftest org-mcp-test-rename-headline-creates-id ()
   "Test that renaming a headline creates an Org ID and returns it."
@@ -2354,39 +2347,32 @@ The navigation function should find headlines even when they have TODO keywords.
 This task needs to be renamed
 ** DONE Review Code
 This is already done"))
-    (let ((test-file
-           (make-temp-file "test-todo-headline"
-                           nil
-                           ".org"
-                           initial-content))
-          (org-mcp-allowed-files nil))
-      (unwind-protect
-          (progn
-            (setq org-mcp-allowed-files (list test-file))
-            ;; Try to rename using the headline title without TODO keyword
-            (let
-                ((resource-uri
-                  (format
-                   "org-headline://%s#Project%%20Management/Review%%20Documents"
-                   test-file)))
-              ;; This should work - finding "Review Documents" even though
-              ;; the actual headline is "TODO Review Documents"
-              (org-mcp--tool-rename-headline
-               resource-uri "Review Documents" "Q1 Planning Review"))
+    (org-mcp-test--with-temp-org-file test-file initial-content
+      (let ((org-mcp-allowed-files (list test-file)))
+        (org-mcp-test--with-enabled
+          ;; Try to rename using the headline title without TODO keyword
+          (let
+              ((resource-uri
+                (format
+                 "org-headline://%s#Project%%20Management/Review%%20Documents"
+                 test-file)))
+            ;; This should work - finding "Review Documents" even though
+            ;; the actual headline is "TODO Review Documents"
+            (org-mcp--tool-rename-headline
+             resource-uri "Review Documents" "Q1 Planning Review"))
 
-            ;; Verify the headline was renamed correctly
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              (let ((content (buffer-string)))
-                ;; The TODO keyword should be preserved
-                (should
-                 (string-match-p
-                  "^\\*\\* TODO Q1 Planning Review$" content))
-                ;; The DONE headline should be unchanged
-                (should
-                 (string-match-p
-                  "^\\*\\* DONE Review Code$" content)))))
-        (delete-file test-file)))))
+          ;; Verify the headline was renamed correctly
+          (with-temp-buffer
+            (insert-file-contents test-file)
+            (let ((content (buffer-string)))
+              ;; The TODO keyword should be preserved
+              (should
+               (string-match-p
+                "^\\*\\* TODO Q1 Planning Review$" content))
+              ;; The DONE headline should be unchanged
+              (should
+               (string-match-p
+                "^\\*\\* DONE Review Code$" content)))))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
