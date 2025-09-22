@@ -632,6 +632,8 @@ MCP Parameters:
   ;; Validate tags
   (let ((tag-list
          (cond
+          ((null tags)
+           nil) ; No tags
           ((vectorp tags)
            (append tags nil)) ; Convert JSON array (vector) to list
           ((stringp tags)

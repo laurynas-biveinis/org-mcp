@@ -226,6 +226,12 @@ Some content."
    "Third child content\\.")
   "Pattern for TODO added after specific sibling.")
 
+(defconst org-mcp-test--regex-todo-without-tags
+  (concat
+   "^\\* TODO Task Without Tags *\n" ; No tags, optional spaces
+   "\\(?::PROPERTIES:\n" ":ID: +[^\n]+\n" ":END:\n\\)?$")
+  "Pattern for TODO item without any tags.")
+
 ;; Helper functions for calling MCP tools
 
 (defun org-mcp-test--call-get-todo-config ()
@@ -1839,6 +1845,24 @@ Another task."))
                 (should (string-match-p ":work:" content))
                 (should (string-match-p ":@office:" content))
                 (should (string-match-p ":project:" content))))))))))
+
+(ert-deftest org-mcp-test-add-todo-nil-tags ()
+  "Test that adding TODO with nil tags creates headline without tags."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
+    (let* ((parent-uri (format "org-headline://%s#" test-file))
+           (result
+            (org-mcp-test--call-add-todo "Task Without Tags" "TODO"
+                                         nil ; nil for tags
+                                         nil ; no body
+                                         parent-uri
+                                         nil))) ; no afterUri
+      (org-mcp-test--check-add-todo-result
+       result
+       "Task Without Tags"
+       (file-name-nondirectory test-file)
+       test-file
+       org-mcp-test--regex-todo-without-tags))))
 
 (ert-deftest org-mcp-test-rename-headline-simple ()
   "Test renaming a simple TODO headline."
