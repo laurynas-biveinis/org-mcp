@@ -601,6 +601,27 @@ Throws an MCP tool error if validation fails."
     (mcp-server-lib-tool-throw
      "Headline title cannot be empty or contain only whitespace")))
 
+(defun org-mcp--normalize-tags-to-list (tags)
+  "Normalize TAGS parameter to a list format.
+TAGS can be:
+- nil or empty list -> returns nil
+- vector (JSON array) -> converts to list
+- string -> wraps in list
+- list -> returns as-is
+Throws error for invalid types."
+  (cond
+   ((null tags)
+    nil) ; No tags (nil or empty list)
+   ((vectorp tags)
+    (append tags nil)) ; Convert JSON array (vector) to list
+   ((listp tags)
+    tags) ; Already a list
+   ((stringp tags)
+    (list tags)) ; Single tag string
+   (t
+    (mcp-server-lib-tool-throw
+     (format "Invalid tags format: %s" tags)))))
+
 (defun org-mcp--tool-add-todo
     (title todoState tags body parentUri afterUri)
   "Add a new TODO item to an Org file.
@@ -621,26 +642,18 @@ MCP Parameters:
   afterUri - Sibling to insert after (optional)"
   (org-mcp--validate-headline-title title)
 
-  ;; Validate TODO state
-  (let ((valid-states
+  ;; Normalize tags and get valid TODO states
+  (let ((tag-list (org-mcp--normalize-tags-to-list tags))
+        (valid-states
          (apply 'append (mapcar 'cdr org-todo-keywords))))
+
+    ;; Validate TODO state
     (unless (member todoState valid-states)
       (mcp-server-lib-tool-throw
        (format "Invalid TODO state: '%s'. Valid states: %s"
-               todoState (mapconcat 'identity valid-states ", ")))))
+               todoState (mapconcat 'identity valid-states ", "))))
 
-  ;; Validate tags
-  (let ((tag-list
-         (cond
-          ((null tags)
-           nil) ; No tags (nil or empty list)
-          ((vectorp tags)
-           (append tags nil)) ; Convert JSON array (vector) to list
-          ((stringp tags)
-           (list tags)) ; Single tag string
-          (t
-           (mcp-server-lib-tool-throw
-            (format "Invalid tags format: %s" tags))))))
+    ;; Validate tags
     ;; Get all allowed tags from tag alists
     (let ((allowed-tags
            (append
@@ -671,196 +684,189 @@ MCP Parameters:
         (org-mcp--validate-mutex-tag-groups tag-list org-tag-alist))
       (when org-tag-persistent-alist
         (org-mcp--validate-mutex-tag-groups
-         tag-list org-tag-persistent-alist))))
+         tag-list org-tag-persistent-alist)))
 
-  ;; Parse parent URI to get file path
-  (let (file-path)
-    (org-mcp--with-uri-prefix-dispatch
-     parentUri
-     ;; Handle org-headline:// URIs
-     (let* ((split-result
-             (org-mcp--split-headline-uri uri-without-prefix))
-            (filename (car split-result))
-            (allowed-file (org-mcp--validate-file-access filename)))
-       (setq file-path (expand-file-name allowed-file)))
-     ;; Handle org-id:// URIs
-     (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
-       (unless allowed-file
-         (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
-       (setq file-path allowed-file)))
+    ;; Parse parent URI to get file path
+    (let (file-path)
+      (org-mcp--with-uri-prefix-dispatch
+       parentUri
+       ;; Handle org-headline:// URIs
+       (let* ((split-result
+               (org-mcp--split-headline-uri uri-without-prefix))
+              (filename (car split-result))
+              (allowed-file (org-mcp--validate-file-access filename)))
+         (setq file-path (expand-file-name allowed-file)))
+       ;; Handle org-id:// URIs
+       (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
+         (unless allowed-file
+           (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
+         (setq file-path allowed-file)))
 
-    ;; Check for unsaved changes
-    (org-mcp--check-buffer-modifications file-path "add TODO")
+      ;; Check for unsaved changes
+      (org-mcp--check-buffer-modifications file-path "add TODO")
 
-    ;; Add the TODO item
-    (with-temp-buffer
-      (set-visited-file-name file-path t)
-      (insert-file-contents file-path)
-      (org-mode)
+      ;; Add the TODO item
+      (with-temp-buffer
+        (set-visited-file-name file-path t)
+        (insert-file-contents file-path)
+        (org-mode)
 
-      ;; Navigate to insertion point based on parentUri
-      (let ((parent-path nil)
-            (parent-id nil))
-        ;; Parse the parent URI - either org-headline:// or org-id://
-        (org-mcp--with-uri-prefix-dispatch
-         parentUri
-         ;; org-headline:// format
-         (let* ((split-result
-                 (org-mcp--split-headline-uri uri-without-prefix))
-                (path-str (cdr split-result)))
-           (when (and path-str (> (length path-str) 0))
-             (setq parent-path
-                   (mapcar
-                    #'url-unhex-string (split-string path-str "/")))))
-         ;; org-id:// format
-         (setq parent-id id))
+        ;; Navigate to insertion point based on parentUri
+        (let ((parent-path nil)
+              (parent-id nil))
+          ;; Parse the parent URI - either org-headline:// or org-id://
+          (org-mcp--with-uri-prefix-dispatch
+           parentUri
+           ;; org-headline:// format
+           (let* ((split-result
+                   (org-mcp--split-headline-uri uri-without-prefix))
+                  (path-str (cdr split-result)))
+             (when (and path-str (> (length path-str) 0))
+               (setq parent-path
+                     (mapcar
+                      #'url-unhex-string
+                      (split-string path-str "/")))))
+           ;; org-id:// format
+           (setq parent-id id))
 
-        ;; Navigate to parent if specified
-        (cond
-         ;; Navigate by path
-         (parent-path
-          (goto-char (point-min))
-          (dolist (title parent-path)
-            (unless (re-search-forward (format "^\\*+ %s"
-                                               (regexp-quote title))
-                                       nil t)
-              (mcp-server-lib-tool-throw
-               (format "Parent headline not found: %s" title))))
-          ;; Parent found, point is at the parent heading
-          )
-         ;; Navigate by ID
-         (parent-id
-          (goto-char (point-min))
-          (let ((found nil))
-            (while (and (not found)
-                        (re-search-forward "^\\*+ " nil t))
-              (when (string= (org-entry-get nil "ID") parent-id)
-                (setq found t)))
-            (unless found
-              (mcp-server-lib-tool-throw
-               (format "Parent with ID not found: %s" parent-id))))
-          ;; Parent found, point is at the parent heading
-          )
-         ;; No parent specified - top level
-         (t
-          (goto-char (point-min))
-          ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
-          (while (and (not (eobp)) (looking-at "^#\\+"))
-            (forward-line))
-          ;; Position at the right place: if there's a blank line after headers,
-          ;; move past it; if there's a headline immediately after, stay there
-          (when (and (not (eobp)) (looking-at "^[ \t]*$"))
-            ;; We're on a blank line after headers, skip to next non-blank
-            (while (and (not (eobp)) (looking-at "^[ \t]*$"))
-              (forward-line)))))
+          ;; Navigate to parent if specified
+          (cond
+           ;; Navigate by path
+           (parent-path
+            (goto-char (point-min))
+            (dolist (title parent-path)
+              (unless (re-search-forward (format "^\\*+ %s"
+                                                 (regexp-quote title))
+                                         nil t)
+                (mcp-server-lib-tool-throw
+                 (format "Parent headline not found: %s" title))))
+            ;; Parent found, point is at the parent heading
+            )
+           ;; Navigate by ID
+           (parent-id
+            (goto-char (point-min))
+            (let ((found nil))
+              (while (and (not found)
+                          (re-search-forward "^\\*+ " nil t))
+                (when (string= (org-entry-get nil "ID") parent-id)
+                  (setq found t)))
+              (unless found
+                (mcp-server-lib-tool-throw
+                 (format "Parent with ID not found: %s" parent-id))))
+            ;; Parent found, point is at the parent heading
+            )
+           ;; No parent specified - top level
+           (t
+            (goto-char (point-min))
+            ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
+            (while (and (not (eobp)) (looking-at "^#\\+"))
+              (forward-line))
+            ;; Position at the right place: if there's a blank line after headers,
+            ;; move past it; if there's a headline immediately after, stay there
+            (when (and (not (eobp)) (looking-at "^[ \t]*$"))
+              ;; We're on a blank line after headers, skip to next non-blank
+              (while (and (not (eobp)) (looking-at "^[ \t]*$"))
+                (forward-line)))))
 
-        ;; Handle positioning after navigation to parent
-        (when (or parent-path parent-id)
-          ;; Handle afterUri positioning
-          (if afterUri
-              (progn
-                ;; Parse afterUri to get the ID
-                (let
-                    ((after-id
-                      (if (string-match
-                           "^org-id://\\(.+\\)$" afterUri)
-                          (match-string 1 afterUri)
+          ;; Handle positioning after navigation to parent
+          (when (or parent-path parent-id)
+            ;; Handle afterUri positioning
+            (if afterUri
+                (progn
+                  ;; Parse afterUri to get the ID
+                  (let
+                      ((after-id
+                        (if (string-match
+                             "^org-id://\\(.+\\)$" afterUri)
+                            (match-string 1 afterUri)
+                          (mcp-server-lib-tool-throw
+                           (format
+                            "afterUri must be org-id:// format, got: %s"
+                            afterUri)))))
+                    ;; Find the sibling with the specified ID
+                    (org-back-to-heading t) ;; Ensure we're at the parent heading
+                    (let ((found nil)
+                          (parent-end
+                           (save-excursion
+                             (org-end-of-subtree t t)
+                             (point))))
+                      ;; Search for the sibling within parent's subtree
+                      ;; Move to first child
+                      (if (org-goto-first-child)
+                          (progn
+                            ;; Now search among siblings
+                            (while (and (not found)
+                                        (< (point) parent-end))
+                              (let ((current-id
+                                     (org-entry-get nil "ID")))
+                                (when (string= current-id after-id)
+                                  (setq found t)
+                                  ;; Move to end of this sibling's subtree
+                                  (org-end-of-subtree t t)))
+                              (unless found
+                                ;; Move to next sibling
+                                (unless (org-get-next-sibling)
+                                  ;; No more siblings
+                                  (goto-char parent-end)))))
+                        ;; No children
+                        (goto-char parent-end))
+                      (unless found
                         (mcp-server-lib-tool-throw
                          (format
-                          "afterUri must be org-id:// format, got: %s"
-                          afterUri)))))
-                  ;; Find the sibling with the specified ID
-                  (org-back-to-heading t) ;; Ensure we're at the parent heading
-                  (let ((found nil)
-                        (parent-end
-                         (save-excursion
-                           (org-end-of-subtree t t)
-                           (point))))
-                    ;; Search for the sibling within parent's subtree
-                    ;; Move to first child
-                    (if (org-goto-first-child)
-                        (progn
-                          ;; Now search among siblings
-                          (while (and (not found)
-                                      (< (point) parent-end))
-                            (let ((current-id
-                                   (org-entry-get nil "ID")))
-                              (when (string= current-id after-id)
-                                (setq found t)
-                                ;; Move to end of this sibling's subtree
-                                (org-end-of-subtree t t)))
-                            (unless found
-                              ;; Move to next sibling
-                              (unless (org-get-next-sibling)
-                                ;; No more siblings
-                                (goto-char parent-end)))))
-                      ;; No children
-                      (goto-char parent-end))
-                    (unless found
-                      (mcp-server-lib-tool-throw
-                       (format
-                        "Sibling with ID %s not found under parent"
-                        after-id))))))
-            ;; No afterUri - insert at end of parent's subtree
-            (org-end-of-subtree t t)))
+                          "Sibling with ID %s not found under parent"
+                          after-id))))))
+              ;; No afterUri - insert at end of parent's subtree
+              (org-end-of-subtree t t)))
 
-        ;; Insert the new heading using Org functions
-        (if (or parent-path parent-id)
-            ;; We're inside a parent
+          ;; Insert the new heading using Org functions
+          (if (or parent-path parent-id)
+              ;; We're inside a parent
+              (progn
+                ;; Ensure we have a newline before inserting
+                (unless (or (bobp) (looking-back "\n" 1))
+                  (insert "\n"))
+                (if afterUri
+                    ;; When afterUri is specified, we've positioned after a specific sibling
+                    ;; Use org-insert-heading to insert right here
+                    (progn
+                      (org-insert-heading)
+                      (insert title))
+                  ;; No afterUri - we're at the end of the parent's subtree
+                  ;; Need to create a child heading
+                  (progn
+                    ;; Ensure blank line before child heading if there's content
+                    (unless (or (bobp) (looking-back "\n\n" 2))
+                      (insert "\n"))
+                    ;; Use org-insert-subheading to create a proper child
+                    (org-insert-subheading nil)
+                    (insert title))))
+            ;; Top-level heading
             (progn
-              ;; Ensure we have a newline before inserting
+              ;; Ensure proper spacing before inserting
               (unless (or (bobp) (looking-back "\n" 1))
                 (insert "\n"))
-              (if afterUri
-                  ;; When afterUri is specified, we've positioned after a specific sibling
-                  ;; Use org-insert-heading to insert right here
-                  (progn
-                    (org-insert-heading)
-                    (insert title))
-                ;; No afterUri - we're at the end of the parent's subtree
-                ;; Need to create a child heading
-                (progn
-                  ;; Ensure blank line before child heading if there's content
-                  (unless (or (bobp) (looking-back "\n\n" 2))
-                    (insert "\n"))
-                  ;; Use org-insert-subheading to create a proper child
-                  (org-insert-subheading nil)
-                  (insert title))))
-          ;; Top-level heading
-          (progn
-            ;; Ensure proper spacing before inserting
-            (unless (or (bobp) (looking-back "\n" 1))
-              (insert "\n"))
-            ;; Use org-insert-heading for top-level
-            (org-insert-heading nil nil t)
-            (insert title)))
+              ;; Use org-insert-heading for top-level
+              (org-insert-heading nil nil t)
+              (insert title)))
 
-        ;; Set the TODO state using Org functions
-        (org-todo todoState)
+          ;; Set the TODO state using Org functions
+          (org-todo todoState)
 
-        ;; Set tags using Org functions
-        (when tags
-          (let ((tag-list
-                 (cond
-                  ((vectorp tags)
-                   (append tags nil)) ; Convert vector to list
-                  ((listp tags)
-                   tags)
-                  (t
-                   (list tags)))))
-            (org-set-tags tag-list)))
+          ;; Set tags using Org functions
+          (when tag-list
+            (org-set-tags tag-list))
 
-        ;; Add body if provided
-        (when body
-          (end-of-line)
-          (insert "\n" body)
-          (unless (string-suffix-p "\n" body)
-            (insert "\n")))
+          ;; Add body if provided
+          (when body
+            (end-of-line)
+            (insert "\n" body)
+            (unless (string-suffix-p "\n" body)
+              (insert "\n")))
 
-        (org-mcp--complete-and-save
-         file-path
-         `((file . ,(file-name-nondirectory file-path))
-           (title . ,title)))))))
+          (org-mcp--complete-and-save
+           file-path
+           `((file . ,(file-name-nondirectory file-path))
+             (title . ,title))))))))
 
 (defun org-mcp--tool-rename-headline (uri currentTitle newTitle)
   "Rename the title of a headline while preserving TODO state and tags.
