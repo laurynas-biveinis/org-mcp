@@ -811,6 +811,42 @@ Tests that the given title is rejected when creating a TODO."
          ,invalid-title "TODO" nil nil ,parent-uri
          nil)))))
 
+(defun org-mcp-test--assert-rename-headline-rejected
+    (initial-content headline-title new-title)
+  "Assert renaming headline to NEW-TITLE is rejected.
+INITIAL-CONTENT is the Org content to test with.
+HEADLINE-TITLE is the current headline to rename.
+NEW-TITLE is the invalid new title that should be rejected."
+  (org-mcp-test--with-temp-org-file test-file initial-content
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; Try to rename - should fail
+        (let* ((resource-uri
+                (format "org-headline://%s#%s"
+                        test-file
+                        (url-hexify-string headline-title)))
+               (request
+                (mcp-server-lib-create-tools-call-request
+                 "org-rename-headline" 1
+                 `((uri . ,resource-uri)
+                   (currentTitle . ,headline-title)
+                   (newTitle . ,new-title))))
+               (response
+                (mcp-server-lib-process-jsonrpc-parsed request)))
+          (should-error
+           (mcp-server-lib-ert-process-tool-response response)
+           :type 'mcp-server-lib-tool-error))
+        ;; Verify that file wasn't changed
+        (with-temp-buffer
+          (insert-file-contents test-file)
+          (let ((content (buffer-string)))
+            ;; Headline should be unchanged
+            (should
+             (string-match-p
+              (format "^\\* %s$"
+                      (regexp-quote headline-title))
+              content))))))))
+
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
   (let ((org-mcp-allowed-files '("test.org")))
@@ -2166,55 +2202,19 @@ Documentation about URL encoding."))
                 "^\\* 75% Complete\n:PROPERTIES:\n:ID: +[A-F0-9-]+\n:END:\nThis task is half done\\.\n\\* Use %20 for spaces\nDocumentation about URL encoding\\.$"
                 (buffer-string))))))))))
 
-(ert-deftest org-mcp-test-rename-headline-reject-empty ()
-  "Test that renaming to an empty headline is rejected.
-Empty headlines are not useful and likely a mistake."
-  (let ((initial-content
-         "* Important Task
-This task has content.
-* Another Task
-More content."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; Try to rename to empty string - should fail
-          (let* ((resource-uri
-                  (format "org-headline://%s#Important%%20Task"
-                          test-file))
-                 (request
-                  (mcp-server-lib-create-tools-call-request
-                   "org-rename-headline" 1
-                   `((uri . ,resource-uri)
-                     (currentTitle . "Important Task")
-                     (newTitle . ""))))
-                 (response
-                  (mcp-server-lib-process-jsonrpc-parsed request)))
-            (should-error
-             (mcp-server-lib-ert-process-tool-response response)
-             :type 'mcp-server-lib-tool-error))
-          ;; Try to rename to whitespace only - should also fail
-          (let* ((resource-uri
-                  (format "org-headline://%s#Another%%20Task"
-                          test-file))
-                 (request
-                  (mcp-server-lib-create-tools-call-request
-                   "org-rename-headline" 1
-                   `((uri . ,resource-uri)
-                     (currentTitle . "Another Task")
-                     (newTitle . "   "))))
-                 (response
-                  (mcp-server-lib-process-jsonrpc-parsed request)))
-            (should-error
-             (mcp-server-lib-ert-process-tool-response response)
-             :type 'mcp-server-lib-tool-error))
-          ;; Verify that files weren't changed
-          (with-temp-buffer
-            (insert-file-contents test-file)
-            (let ((content (buffer-string)))
-              ;; Headlines should be unchanged
-              (should (string-match-p "^\\* Important Task$" content))
-              (should
-               (string-match-p "^\\* Another Task$" content)))))))))
+(ert-deftest org-mcp-test-rename-headline-reject-empty-string ()
+  "Test that renaming to an empty string is rejected."
+  (org-mcp-test--assert-rename-headline-rejected
+   "* Important Task
+This task has content."
+   "Important Task" ""))
+
+(ert-deftest org-mcp-test-rename-headline-reject-whitespace-only ()
+  "Test that renaming to whitespace-only is rejected."
+  (org-mcp-test--assert-rename-headline-rejected
+   "* Another Task
+More content."
+   "Another Task" "   "))
 
 (ert-deftest org-mcp-test-rename-headline-duplicate-first-match ()
   "Test that when multiple headlines have the same name, first match is renamed.
