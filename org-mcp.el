@@ -54,8 +54,9 @@
   "Dispatch tool URI handling based on prefix.
 URI is the URI string to dispatch on.
 HEADLINE-BODY is executed when URI starts with `org-mcp--org-headline-prefix',
-ID-BODY is executed when URI starts with `org-mcp--org-id-prefix'.
-In both cases the URI after the prefix is bound to `uri-without-prefix'.
+with the URI after the prefix bound to `uri-without-prefix'.
+ID-BODY is executed when URI starts with `org-mcp--org-id-prefix',
+with the URI after the prefix bound to `id'.
 Throws an error if neither prefix matches."
   `(cond
     ((string-prefix-p org-mcp--org-headline-prefix ,uri)
@@ -63,8 +64,7 @@ Throws an error if neither prefix matches."
             (substring ,uri (length org-mcp--org-headline-prefix))))
        ,headline-body))
     ((string-prefix-p org-mcp--org-id-prefix ,uri)
-     (let ((uri-without-prefix
-            (substring ,uri (length org-mcp--org-id-prefix))))
+     (let ((id (substring ,uri (length org-mcp--org-id-prefix))))
        ,id-body))
     (t
      (mcp-server-lib-tool-throw
@@ -381,7 +381,7 @@ Validates file access and returns expanded file path."
                 #'url-unhex-string
                 (split-string headline-path-str "/")))))
      ;; Handle org-id:// URIs
-     (let ((id uri-without-prefix))
+     (progn
        (setq file-path (org-mcp--find-allowed-file-with-id id))
        (unless file-path
          (mcp-server-lib-tool-throw
@@ -673,12 +673,9 @@ MCP Parameters:
             (allowed-file (org-mcp--validate-file-access filename)))
        (setq file-path (expand-file-name allowed-file)))
      ;; Handle org-id:// URIs
-     (let* ((parent-id uri-without-prefix)
-            (allowed-file
-             (org-mcp--find-allowed-file-with-id parent-id)))
+     (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
        (unless allowed-file
-         (mcp-server-lib-tool-throw
-          (format "ID not found: %s" parent-id)))
+         (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
        (setq file-path allowed-file)))
 
     ;; Check for unsaved changes
@@ -705,7 +702,7 @@ MCP Parameters:
                    (mapcar
                     #'url-unhex-string (split-string path-str "/")))))
          ;; org-id:// format
-         (setq parent-id uri-without-prefix))
+         (setq parent-id id))
 
         ;; Navigate to parent if specified
         (cond
