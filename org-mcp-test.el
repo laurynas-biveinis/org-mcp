@@ -516,6 +516,18 @@ unchanged after."
       (insert-file-contents test-file)
       (should (string= (buffer-string) original-content)))))
 
+(defun org-mcp-test--read-resource-expecting-error
+    (uri expected-error-message)
+  "Read resource at URI expecting an error with EXPECTED-ERROR-MESSAGE."
+  (let* ((request (mcp-server-lib-create-resources-read-request uri))
+         (response-json (mcp-server-lib-process-jsonrpc request))
+         (response
+          (json-parse-string response-json :object-type 'alist)))
+    (mcp-server-lib-ert-check-error-object
+     response
+     mcp-server-lib-jsonrpc-error-invalid-params
+     expected-error-message)))
+
 (ert-deftest org-mcp-test-tool-get-todo-config-empty ()
   "Test org-get-todo-config with empty `org-todo-keywords'."
   (org-mcp-test--with-config nil
@@ -1106,6 +1118,37 @@ Content of subsection 2.1."))
 (ert-deftest org-mcp-test-headline-resource-no-extension ()
   "Test that headline resource works with files having no extension."
   (org-mcp-test--test-headline-resource-with-extension nil))
+
+(ert-deftest org-mcp-test-headline-resource-path-traversal ()
+  "Test that path traversal with ../ in org-headline URIs is rejected."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-task-simple
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; Test with ../ in the filename part
+        (let ((uri
+               (format "org-headline://../%s#Parent%%20Task"
+                       (file-name-nondirectory test-file))))
+          (org-mcp-test--read-resource-expecting-error
+           uri
+           (format "Path must be absolute: ../%s"
+                   (file-name-nondirectory test-file))))))))
+
+(ert-deftest org-mcp-test-headline-resource-encoded-path-traversal ()
+  "Test that URL-encoded path traversal in org-headline URIs is rejected."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-task-simple
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; Test with URL-encoded ../ (%2E%2E%2F) in the filename part
+        ;; The encoding is NOT decoded, so %2E%2E%2F remains literal
+        (let ((uri
+               (format "org-headline://%%2E%%2E%%2F%s#Parent%%20Task"
+                       (file-name-nondirectory test-file))))
+          (org-mcp-test--read-resource-expecting-error
+           uri
+           (format "Path must be absolute: %%2E%%2E%%2F%s"
+                   (file-name-nondirectory test-file))))))))
 
 (ert-deftest org-mcp-test-id-resource-returns-content ()
   "Test that ID resource returns content for valid ID."
