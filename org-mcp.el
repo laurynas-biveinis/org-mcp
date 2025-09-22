@@ -633,7 +633,7 @@ MCP Parameters:
   (let ((tag-list
          (cond
           ((null tags)
-           nil) ; No tags
+           nil) ; No tags (nil or empty list)
           ((vectorp tags)
            (append tags nil)) ; Convert JSON array (vector) to list
           ((stringp tags)
