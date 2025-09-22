@@ -137,6 +137,34 @@ Returns nil if the file is not in the allowed list."
      org-mcp-allowed-files
      :test #'org-mcp--paths-equal-p)))
 
+(defun org-mcp--find-allowed-file-with-id (id)
+  "Find an allowed file containing the Org ID.
+First looks up in the org-id database, then validates the file is in
+the allowed list.
+Returns the expanded file path if found and allowed,
+nil otherwise.
+Throws a tool error if ID exists but file is not allowed."
+  (if-let* ((id-file (org-id-find-id-file id)))
+    ;; ID found in database, check if file is allowed
+    (let ((allowed-file (org-mcp--find-allowed-file id-file)))
+      (unless allowed-file
+        (mcp-server-lib-tool-throw
+         (format "File not in allowed list: %s" id-file)))
+      (expand-file-name allowed-file))
+    ;; ID not in database - could mean it doesn't exist or database is stale
+    ;; Fall back to searching allowed files manually
+    (let ((found-file nil))
+      (dolist (allowed-file org-mcp-allowed-files)
+        (unless found-file
+          (when (file-exists-p allowed-file)
+            (with-temp-buffer
+              (insert-file-contents allowed-file)
+              (org-mode)
+              (goto-char (point-min))
+              (when (org-find-property "ID" id)
+                (setq found-file (expand-file-name allowed-file)))))))
+      found-file)))
+
 (defun org-mcp--validate-file-access (filename)
   "Validate that FILENAME is in the allowed list.
 FILENAME must be an absolute path.
@@ -353,16 +381,14 @@ Validates file access and returns expanded file path."
                 #'url-unhex-string
                 (split-string headline-path-str "/")))))
      ;; Handle org-id:// URIs
-     (let* ((id uri-without-prefix)
-            (id-file (org-id-find-id-file id)))
-       (unless id-file
-         (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
-       (let ((allowed-file (org-mcp--find-allowed-file id-file)))
-         (unless allowed-file
-           (mcp-server-lib-tool-throw
-            (format "File not in allowed list: %s" id-file)))
-         (setq file-path (expand-file-name allowed-file))
-         (setq headline-path (list id)))))
+     (let ((id uri-without-prefix))
+       (setq file-path (org-mcp--find-allowed-file-with-id id))
+       (unless file-path
+         (mcp-server-lib-tool-throw
+          (format
+           "ID not found or the containing file not in allowed list: %s"
+           id)))
+       (setq headline-path (list id))))
     (cons file-path headline-path)))
 
 (defun org-mcp--find-headline-by-path (headline-path)
@@ -647,27 +673,13 @@ MCP Parameters:
             (allowed-file (org-mcp--validate-file-access filename)))
        (setq file-path (expand-file-name allowed-file)))
      ;; Handle org-id:// URIs
-     (let ((parent-id uri-without-prefix)
-           (found nil))
-       ;; For org-id, we need to find which file contains this ID
-       ;; We'll search through allowed files
-       (dolist (allowed-file org-mcp-allowed-files)
-         (unless found
-           (when (file-exists-p allowed-file)
-             (with-temp-buffer
-               (insert-file-contents allowed-file)
-               (org-mode)
-               (goto-char (point-min))
-               (while (and (not found)
-                           (re-search-forward "^\\*+ " nil t))
-                 (when (string= (org-entry-get nil "ID") parent-id)
-                   (setq found t)
-                   (setq file-path
-                         (expand-file-name allowed-file))))))))
-       (unless found
+     (let* ((parent-id uri-without-prefix)
+            (allowed-file
+             (org-mcp--find-allowed-file-with-id parent-id)))
+       (unless allowed-file
          (mcp-server-lib-tool-throw
-          (format "Parent with ID %s not found in allowed files"
-                  parent-id)))))
+          (format "ID not found: %s" parent-id)))
+       (setq file-path allowed-file)))
 
     ;; Check for unsaved changes
     (org-mcp--check-buffer-modifications file-path "add TODO")
