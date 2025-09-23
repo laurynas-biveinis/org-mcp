@@ -413,20 +413,28 @@ Validates file access and returns expanded file path."
        (setq headline-path (list id))))
     (cons file-path headline-path)))
 
-(defun org-mcp--goto-headline (headline-path)
+(defun org-mcp--require-headline (headline-path)
   "Navigate to headline specified by HEADLINE-PATH or ID.
 HEADLINE-PATH can be either a list of headline titles forming a path,
 or a single-element list containing an Org ID.
-Returns t if found, nil otherwise.  Point is left at the headline."
-  (if (and (= (length headline-path) 1)
-           (string-match "^[a-f0-9-]+$" (car headline-path)))
-      ;; ID-based search
-      (let ((pos (org-find-property "ID" (car headline-path))))
-        (when pos
-          (goto-char pos)
-          t))
-    ;; Path-based search
-    (org-mcp--navigate-to-headline headline-path)))
+Throws an MCP tool error if headline not found.
+Point is left at the headline if found."
+  (let ((found
+         (if (and (= (length headline-path) 1)
+                  (string-match "^[a-f0-9-]+$" (car headline-path)))
+             ;; ID-based search
+             (let ((pos (org-find-property "ID" (car headline-path))))
+               (when pos
+                 (goto-char pos)
+                 t))
+           ;; Path-based search
+           (org-mcp--navigate-to-headline headline-path))))
+    (unless found
+      (mcp-server-lib-tool-throw
+       (format "Headline not found: %s"
+               (if (= (length headline-path) 1)
+                   (car headline-path)
+                 (mapconcat 'identity headline-path "/")))))))
 
 (defun org-mcp--check-buffer-modifications (file-path operation)
   "Check if FILE-PATH has unsaved change in any buffer.
@@ -510,11 +518,7 @@ MCP Parameters:
       (insert-file-contents file-path)
       (org-mode)
       (goto-char (point-min))
-
-      (unless (org-mcp--goto-headline headline-path)
-        (mcp-server-lib-tool-throw
-         (format "Headline not found: %s"
-                 (mapconcat 'identity headline-path "/"))))
+      (org-mcp--require-headline headline-path)
 
       ;; Check current state matches
       (beginning-of-line)
@@ -956,11 +960,7 @@ MCP Parameters:
       (insert-file-contents file-path)
       (org-mode)
       (goto-char (point-min))
-
-      (unless (org-mcp--goto-headline headline-path)
-        (mcp-server-lib-tool-throw
-         (format "Headline not found: %s"
-                 (mapconcat 'identity headline-path "/"))))
+      (org-mcp--require-headline headline-path)
 
       ;; Verify current title matches
       (beginning-of-line)
