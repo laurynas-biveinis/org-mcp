@@ -307,6 +307,40 @@ The filename parameter includes both file and headline path."
       ;; No headline path means get entire file
       (org-mcp--read-file-resource (expand-file-name allowed-file)))))
 
+(defun org-mcp--navigate-to-headline (headline-path)
+  "Navigate to headline in HEADLINE-PATH.
+HEADLINE-PATH is a list of headline titles forming a path.
+Returns t if found, nil otherwise.  Point is left at the headline."
+  (catch 'not-found
+    (let ((search-start (point-min))
+          (search-end (point-max))
+          (current-level 0)
+          (found nil)
+          (path-index 0))
+      (dolist (target-title headline-path)
+        (setq found nil)
+        (goto-char search-start)
+        (while (and (not found)
+                    (re-search-forward "^\\*+ " search-end t))
+          (let ((title (org-get-heading t t t t))
+                (level (org-current-level)))
+            (when (and (string= title target-title)
+                       (or (= current-level 0)
+                           (= level (1+ current-level))))
+              (setq found t)
+              (setq current-level level)
+              ;; For nested searches, limit next search to this subtree
+              (when (< (1+ path-index) (length headline-path))
+                (setq search-start (point))
+                (setq search-end
+                      (save-excursion
+                        (org-end-of-subtree t t)
+                        (point)))))))
+        (unless found
+          (throw 'not-found nil))
+        (setq path-index (1+ path-index))))
+    t))
+
 (defun org-mcp--get-headline-content (file-path headline-path)
   "Get content for headline at HEADLINE-PATH in FILE-PATH.
 HEADLINE-PATH is a list of headline titles to traverse.
@@ -315,19 +349,7 @@ Returns the content string or nil if not found."
     (insert-file-contents file-path)
     (org-mode)
     (goto-char (point-min))
-    ;; Find the headline by traversing the path
-    (catch 'not-found
-      (dolist (target-title headline-path)
-        (let ((found nil))
-          ;; Search for the headline at the current level
-          (while (and (not found) (re-search-forward "^\\*+ " nil t))
-            (let ((title (org-get-heading t t t t)))
-              (when (string= title target-title)
-                (setq found t))))
-          (unless found
-            ;; Headline not found, return nil
-            (throw 'not-found nil))))
-      ;; All parts of path found, extract content
+    (when (org-mcp--navigate-to-headline headline-path)
       (org-mcp--extract-headline-content))))
 
 (defun org-mcp--extract-headline-content ()
@@ -391,47 +413,20 @@ Validates file access and returns expanded file path."
        (setq headline-path (list id))))
     (cons file-path headline-path)))
 
-(defun org-mcp--find-headline-by-path (headline-path)
-  "Navigate to headline specified by HEADLINE-PATH.
+(defun org-mcp--goto-headline (headline-path)
+  "Navigate to headline specified by HEADLINE-PATH or ID.
+HEADLINE-PATH can be either a list of headline titles forming a path,
+or a single-element list containing an Org ID.
 Returns t if found, nil otherwise.  Point is left at the headline."
-  (let ((found nil))
-    (if (and (= (length headline-path) 1)
-             (string-match "^[a-f0-9-]+$" (car headline-path)))
-        ;; ID-based search
-        (let ((pos (org-find-property "ID" (car headline-path))))
-          (when pos
-            (goto-char pos)
-            (setq found t)))
-      ;; Path-based search
-      (catch 'not-found
-        (let ((search-start (point-min))
-              (search-end (point-max))
-              (current-level 0))
-          (dolist (target-title headline-path)
-            (setq found nil)
-            (goto-char search-start)
-            (while (and (not found)
-                        (re-search-forward "^\\*+ " search-end t))
-              (let ((title (org-get-heading t t t t))
-                    (level (org-current-level)))
-                (when (and (string= title target-title)
-                           (or (= current-level 0)
-                               (= level (1+ current-level))))
-                  (setq found t)
-                  (setq current-level level)
-                  ;; For nested searches, limit next search to this subtree
-                  (when (< (1+ (seq-position
-                                headline-path target-title))
-                           (length headline-path))
-                    (setq search-start (point))
-                    (setq search-end
-                          (save-excursion
-                            (org-end-of-subtree t t)
-                            (point)))))))
-            (unless found
-              (throw 'not-found nil))))
-        (setq found t)))
-    found))
+  (if (and (= (length headline-path) 1)
+           (string-match "^[a-f0-9-]+$" (car headline-path)))
+      ;; ID-based search
+      (let ((pos (org-find-property "ID" (car headline-path))))
+        (when pos
+          (goto-char pos)
+          t))
+    ;; Path-based search
+    (org-mcp--navigate-to-headline headline-path)))
 
 (defun org-mcp--check-buffer-modifications (file-path operation)
   "Check if FILE-PATH has unsaved change in any buffer.
@@ -516,8 +511,7 @@ MCP Parameters:
       (org-mode)
       (goto-char (point-min))
 
-      ;; Find the headline
-      (unless (org-mcp--find-headline-by-path headline-path)
+      (unless (org-mcp--goto-headline headline-path)
         (mcp-server-lib-tool-throw
          (format "Headline not found: %s"
                  (mapconcat 'identity headline-path "/"))))
@@ -963,8 +957,7 @@ MCP Parameters:
       (org-mode)
       (goto-char (point-min))
 
-      ;; Find the headline
-      (unless (org-mcp--find-headline-by-path headline-path)
+      (unless (org-mcp--goto-headline headline-path)
         (mcp-server-lib-tool-throw
          (format "Headline not found: %s"
                  (mapconcat 'identity headline-path "/"))))

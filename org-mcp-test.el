@@ -94,6 +94,18 @@ Third review content.
 Code review content."
   "Multiple headlines with the same name.")
 
+(defconst org-mcp-test--content-wrong-levels
+  "* First Parent
+Some content in first parent.
+* Second Parent
+** Other Child
+*** Target Headline
+Wrong content at level 3 - should NOT be found via First Parent/Target Headline path.
+* Third Parent
+** Target Headline
+This is actually a child of Third Parent, not First Parent!"
+  "Test content with same headline names at different levels.")
+
 (defconst org-mcp-test--content-nested-targets
   "* First Section
 ** Target
@@ -1133,6 +1145,26 @@ Content of subsection 2.1."))
            uri
            (format "Path must be absolute: %%2E%%2E%%2F%s"
                    (file-name-nondirectory test-file))))))))
+
+(ert-deftest org-mcp-test-headline-resource-navigation ()
+  "Test that headline navigation respects structure.
+This test verifies that `org-mcp--get-headline-content'
+properly checks parent-child relationships and levels."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-wrong-levels
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; Test accessing "Target Headline" under "First Parent"
+        ;; Should get the level-2 headline, NOT the level-3 one
+        (let ((uri
+               (format
+                "org-headline://%s#First%%20Parent/Target%%20Headline"
+                test-file)))
+          ;; This SHOULD throw an error because First Parent has no such child
+          ;; But the bug causes it to return the wrong headline
+          (org-mcp-test--read-resource-expecting-error
+           uri "Headline not found: Target Headline"))))))
+
 
 (ert-deftest org-mcp-test-id-resource-returns-content ()
   "Test that ID resource returns content for valid ID."
