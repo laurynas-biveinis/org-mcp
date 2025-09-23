@@ -453,23 +453,18 @@ Validates file access and returns expanded file path."
        (setq headline-path (list id))))
     (cons file-path headline-path)))
 
-(defun org-mcp--require-headline (headline-path)
-  "Navigate to headline specified by HEADLINE-PATH or ID.
-HEADLINE-PATH can be either a list of headline titles forming a path,
-or a single-element list containing an Org ID.
-Throws an MCP tool error if headline not found.
-Point is left at the headline if found."
-  (let ((found
-         (if (and (= (length headline-path) 1)
-                  (string-match "^[a-f0-9-]+$" (car headline-path)))
-             ;; ID-based search
-             (let ((pos (org-find-property "ID" (car headline-path))))
-               (when pos
-                 (goto-char pos)
-                 t))
-           ;; Path-based search
-           (org-mcp--navigate-to-headline headline-path))))
-    (unless found
+(defun org-mcp--goto-headline-from-uri (headline-path is-id)
+  "Navigate to headline based on HEADLINE-PATH and IS-ID flag.
+If IS-ID is non-nil, treats HEADLINE-PATH as containing an ID.
+Otherwise, navigates using HEADLINE-PATH as title hierarchy."
+  (if is-id
+      ;; ID case - headline-path contains single ID
+      (let ((pos (org-find-property "ID" (car headline-path))))
+        (if pos
+            (goto-char pos)
+          (org-mcp--id-not-found-error (car headline-path))))
+    ;; Path case - headline-path contains title hierarchy
+    (unless (org-mcp--navigate-to-headline headline-path)
       (org-mcp--headline-not-found-error headline-path))))
 
 (defun org-mcp--check-buffer-modifications (file-path operation)
@@ -554,7 +549,8 @@ MCP Parameters:
       (insert-file-contents file-path)
       (org-mode)
       (goto-char (point-min))
-      (org-mcp--require-headline headline-path)
+      (org-mcp--goto-headline-from-uri
+       headline-path (string-prefix-p org-mcp--org-id-prefix uri))
 
       ;; Check current state matches
       (beginning-of-line)
@@ -822,8 +818,10 @@ MCP Parameters:
 
           ;; Navigate to parent if specified
           (if (or parent-path parent-id)
-              (org-mcp--require-headline
-               (or parent-path (list parent-id)))
+              (org-mcp--goto-headline-from-uri
+               (or (and parent-id (list parent-id))
+                   parent-path)
+               parent-id)
             ;; No parent specified - top level
             (goto-char (point-min))
             ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
@@ -966,7 +964,9 @@ MCP Parameters:
       (insert-file-contents file-path)
       (org-mode)
       (goto-char (point-min))
-      (org-mcp--require-headline headline-path)
+      ;; Navigate to the headline
+      (org-mcp--goto-headline-from-uri
+       headline-path (string-prefix-p org-mcp--org-id-prefix uri))
 
       ;; Verify current title matches
       (beginning-of-line)

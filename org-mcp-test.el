@@ -117,6 +117,18 @@ Other content.
 This Target is under Second Section, not First Section."
   "Multiple targets in different sections.")
 
+(defconst org-mcp-test--content-timestamp-id
+  "* TODO Task with timestamp ID
+:PROPERTIES:
+:ID:       20240101T120000
+:END:
+Task content."
+  "Task with a timestamp-format ID property.")
+
+(defconst org-mcp-test--expected-timestamp-id-done
+  "* DONE Task with timestamp ID"
+  "Expected first line after updating timestamp ID task to DONE.")
+
 (defconst org-mcp-test--content-title-header-only
   "#+TITLE: Test Org File
 
@@ -1258,6 +1270,22 @@ properly checks parent-child relationships and levels."
              test-file
              `(org-mcp-test--call-update-todo-state-expecting-error
                ,resource-uri "IN-PROGRESS" "DONE"))))))))
+
+(ert-deftest org-mcp-test-update-todo-with-timestamp-id ()
+  "Test updating TODO state using timestamp-format ID (not UUID)."
+  (let ((test-content org-mcp-test--content-timestamp-id))
+    (org-mcp-test--with-temp-org-file test-file test-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            (org-id-locations-file nil))
+        (setq org-id-locations (make-hash-table :test 'equal))
+        (puthash "20240101T120000" test-file org-id-locations)
+        (org-mcp-test--with-enabled
+          (let ((uri "org-id://20240101T120000"))
+            (org-mcp-test--update-and-verify-todo
+             uri "TODO" "DONE"
+             test-file
+             org-mcp-test--expected-timestamp-id-done)))))))
 
 (ert-deftest org-mcp-test-update-todo-state-empty-newstate-invalid ()
   "Test that empty string for newState is rejected."
