@@ -790,33 +790,10 @@ MCP Parameters:
            (setq parent-id id))
 
           ;; Navigate to parent if specified
-          (cond
-           ;; Navigate by path
-           (parent-path
-            (goto-char (point-min))
-            (dolist (title parent-path)
-              (unless (re-search-forward (format "^\\*+ %s"
-                                                 (regexp-quote title))
-                                         nil t)
-                (mcp-server-lib-tool-throw
-                 (format "Parent headline not found: %s" title))))
-            ;; Parent found, point is at the parent heading
-            )
-           ;; Navigate by ID
-           (parent-id
-            (goto-char (point-min))
-            (let ((found nil))
-              (while (and (not found)
-                          (re-search-forward "^\\*+ " nil t))
-                (when (string= (org-entry-get nil "ID") parent-id)
-                  (setq found t)))
-              (unless found
-                (mcp-server-lib-tool-throw
-                 (format "Parent with ID not found: %s" parent-id))))
-            ;; Parent found, point is at the parent heading
-            )
-           ;; No parent specified - top level
-           (t
+          (if (or parent-path parent-id)
+              (org-mcp--require-headline
+               (or parent-path (list parent-id)))
+            ;; No parent specified - top level
             (goto-char (point-min))
             ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
             (while (and (not (eobp)) (looking-at "^#\\+"))
@@ -826,7 +803,7 @@ MCP Parameters:
             (when (and (not (eobp)) (looking-at "^[ \t]*$"))
               ;; We're on a blank line after headers, skip to next non-blank
               (while (and (not (eobp)) (looking-at "^[ \t]*$"))
-                (forward-line)))))
+                (forward-line))))
 
           ;; Handle positioning after navigation to parent
           (when (or parent-path parent-id)
