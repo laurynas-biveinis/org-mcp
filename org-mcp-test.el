@@ -283,6 +283,20 @@ Some content."
          (mcp-server-lib-ert-with-server :tools t :resources t ,@body)
        (org-mcp-disable))))
 
+(defmacro org-mcp-test--with-id-setup (id-locations &rest body)
+  "Set up org-id tracking with ID-LOCATIONS and run BODY.
+ID-LOCATIONS is a list of (ID . FILE) cons cells to register.
+Sets up `org-id-track-globally' and `org-id-locations-file',
+then registers each ID location and enables MCP for BODY."
+  (declare (indent 1) (debug t))
+  `(let ((org-id-track-globally t)
+         (org-id-locations-file nil)) ; Prevent saving to disk
+     (dolist (id-loc ,id-locations)
+       (org-id-add-location (car id-loc) (cdr id-loc)))
+     (org-mcp-test--with-enabled
+       ,@body)))
+
+
 (defmacro org-mcp-test--with-temp-org-file (var content &rest args)
   "Create a temporary Org file, execute BODY, and ensure cleanup.
 VAR is the variable to bind the temp file path to.
@@ -1189,15 +1203,9 @@ properly checks parent-child relationships and levels."
           ":END:\n"
           "Content of section with ID.")))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-id-locations-file nil)) ; Prevent saving ID locations
-        ;; Manually register the ID location
-        (setq org-id-locations (make-hash-table :test 'equal))
-        (puthash
-         "12345678-abcd-efgh-ijkl-1234567890ab"
-         test-file
-         org-id-locations)
-        (org-mcp-test--with-enabled
+      (let ((org-mcp-allowed-files (list test-file)))
+        (org-mcp-test--with-id-setup
+            `(("12345678-abcd-efgh-ijkl-1234567890ab" . ,test-file))
           (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
             (mcp-server-lib-ert-verify-resource-read
              uri
@@ -1228,12 +1236,8 @@ properly checks parent-child relationships and levels."
          ":ID: test-id-789\n"
          ":END:\n"
          "This file is not in allowed list.")
-      (let ((org-mcp-allowed-files (list allowed-file))
-            (org-id-locations-file nil)) ; Prevent saving ID locations
-        ;; Manually register the ID location
-        (setq org-id-locations (make-hash-table :test 'equal))
-        (puthash "test-id-789" other-file org-id-locations)
-        (org-mcp-test--with-enabled
+      (let ((org-mcp-allowed-files (list allowed-file)))
+        (org-mcp-test--with-id-setup `(("test-id-789" . ,other-file))
           (let ((uri "org-id://test-id-789"))
             ;; Should get an error for file not allowed
             (org-mcp-test--read-resource-expecting-error
@@ -1276,11 +1280,10 @@ properly checks parent-child relationships and levels."
   (let ((test-content org-mcp-test--content-timestamp-id))
     (org-mcp-test--with-temp-org-file test-file test-content
       (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            (org-id-locations-file nil))
-        (setq org-id-locations (make-hash-table :test 'equal))
-        (puthash "20240101T120000" test-file org-id-locations)
-        (org-mcp-test--with-enabled
+            (org-todo-keywords '((sequence "TODO" "|" "DONE"))))
+        (org-mcp-test--with-id-setup `(("20240101T120000"
+                                        .
+                                        ,test-file))
           (let ((uri "org-id://20240101T120000"))
             (org-mcp-test--update-and-verify-todo
              uri "TODO" "DONE"
@@ -1817,8 +1820,7 @@ This is valid Org-mode syntax and should be allowed."
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            (org-tag-alist '("work"))
-            (org-id-locations-file nil))
+            (org-tag-alist '("work")))
         ;; First add IDs to existing items so we can reference them
         (let ((second-id nil))
           (with-temp-buffer
@@ -1835,11 +1837,8 @@ This is valid Org-mode syntax and should be allowed."
           (let ((buf (find-buffer-visiting test-file)))
             (when buf
               (kill-buffer buf)))
-          ;; Register the ID location
-          (setq org-id-locations (make-hash-table :test 'equal))
-          (puthash second-id test-file org-id-locations)
 
-          (org-mcp-test--with-enabled
+          (org-mcp-test--with-id-setup `((,second-id . ,test-file))
             (let* ((parent-uri
                     (format "org-headline://%s#Parent%%20Task"
                             test-file))
@@ -1867,8 +1866,7 @@ This is valid Org-mode syntax and should be allowed."
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            (org-tag-alist '("work"))
-            (org-id-locations-file nil))
+            (org-tag-alist '("work")))
         ;; Add ID to "Other Child" - not a child of Parent Task
         (with-temp-buffer
           (set-visited-file-name test-file t)
@@ -1884,11 +1882,8 @@ This is valid Org-mode syntax and should be allowed."
               (when buf
                 (kill-buffer buf)))
 
-            ;; Register the ID location manually
-            (setq org-id-locations (make-hash-table :test 'equal))
-            (puthash other-id test-file org-id-locations)
 
-            (org-mcp-test--with-enabled
+            (org-mcp-test--with-id-setup `((,other-id . ,test-file))
               (let* ((parent-uri
                       (format "org-headline://%s#Parent%%20Task"
                               test-file))
