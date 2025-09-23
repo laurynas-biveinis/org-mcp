@@ -1055,7 +1055,7 @@ Content of subsection 2.1."))
           (let ((uri
                  (format "org-headline://%s#Nonexistent" test-file)))
             (org-mcp-test--read-resource-expecting-error
-             uri "Headline not found: Nonexistent")))))))
+             uri "Cannot find headline: 'Nonexistent'")))))))
 
 (ert-deftest org-mcp-test-headline-resource-file-with-hash ()
   "Test headline resource with # in filename."
@@ -1163,7 +1163,8 @@ properly checks parent-child relationships and levels."
           ;; This SHOULD throw an error because First Parent has no such child
           ;; But the bug causes it to return the wrong headline
           (org-mcp-test--read-resource-expecting-error
-           uri "Headline not found: Target Headline"))))))
+           uri
+           "Cannot find headline: 'First Parent/Target Headline'"))))))
 
 
 (ert-deftest org-mcp-test-id-resource-returns-content ()
@@ -1202,7 +1203,7 @@ properly checks parent-child relationships and levels."
         (org-mcp-test--with-enabled
           (let ((uri "org-id://nonexistent-id-12345"))
             (org-mcp-test--read-resource-expecting-error
-             uri "ID not found: nonexistent-id-12345")))))))
+             uri "Cannot find ID: 'nonexistent-id-12345'")))))))
 
 (ert-deftest org-mcp-test-id-resource-file-not-allowed ()
   "Test ID resource validates file is in allowed list."

@@ -49,6 +49,59 @@
 (defconst org-mcp--org-id-prefix "org-id://"
   "URI prefix for ID-based resources.")
 
+;; Error handling helpers
+
+(defun org-mcp--headline-not-found-error (headline-path)
+  "Throw error for HEADLINE-PATH not found."
+  (mcp-server-lib-tool-throw
+   (format "Cannot find headline: %s"
+           (mapconcat 'identity headline-path "/"))))
+
+(defun org-mcp--id-not-found-error (id)
+  "Throw error for ID not found."
+  (mcp-server-lib-tool-throw (format "Cannot find ID '%s'" id)))
+
+(defun org-mcp--tool-validation-error (message &rest args)
+  "Throw validation error for tool operations.
+MESSAGE is the format string, ARGS are format arguments."
+  (mcp-server-lib-tool-throw (apply #'format message args)))
+
+(defun org-mcp--resource-validation-error (message &rest args)
+  "Signal validation error for resource operations.
+MESSAGE is the format string, ARGS are format arguments."
+  (mcp-server-lib-resource-signal-error
+   mcp-server-lib-jsonrpc-error-invalid-params
+   (apply #'format message args)))
+
+(defun org-mcp--state-mismatch-error (expected found context)
+  "Throw state mismatch error.
+EXPECTED is the expected value, FOUND is the actual value,
+CONTEXT describes what is being compared (e.g., \='Title\=', \='State\=')."
+  (mcp-server-lib-tool-throw
+   (format "%s mismatch: expected '%s', found '%s'"
+           context expected found)))
+
+(defun org-mcp--resource-not-found-error (resource-type identifier)
+  "Signal resource not found error.
+RESOURCE-TYPE is the type of resource (e.g., \\='headline\\=', \\='ID\\='),
+IDENTIFIER is the resource identifier."
+  (mcp-server-lib-resource-signal-error
+   mcp-server-lib-jsonrpc-error-invalid-params
+   (format "Cannot find %s: '%s'" resource-type identifier)))
+
+(defun org-mcp--tool-file-access-error (file-path)
+  "Throw file access error for tool operations.
+FILE-PATH is the file that cannot be accessed."
+  (mcp-server-lib-tool-throw
+   (format "File not in allowed list: %s" file-path)))
+
+(defun org-mcp--resource-file-access-error (file-path)
+  "Signal file access error for resource operations.
+FILE-PATH is the file that cannot be accessed."
+  (mcp-server-lib-resource-signal-error
+   mcp-server-lib-jsonrpc-error-invalid-params
+   (format "File not in allowed list: %s" file-path)))
+
 (defmacro org-mcp--with-uri-prefix-dispatch
     (uri headline-body id-body)
   "Dispatch tool URI handling based on prefix.
@@ -67,8 +120,8 @@ Throws an error if neither prefix matches."
      (let ((id (substring ,uri (length org-mcp--org-id-prefix))))
        ,id-body))
     (t
-     (mcp-server-lib-tool-throw
-      (format "Invalid resource URI format: %s" ,uri)))))
+     (org-mcp--tool-validation-error "Invalid resource URI format: %s"
+                                     ,uri))))
 
 (defun org-mcp--tool-get-todo-config ()
   "Return the TODO keyword configuration."
@@ -148,8 +201,7 @@ Throws a tool error if ID exists but file is not allowed."
     ;; ID found in database, check if file is allowed
     (let ((allowed-file (org-mcp--find-allowed-file id-file)))
       (unless allowed-file
-        (mcp-server-lib-tool-throw
-         (format "File not in allowed list: %s" id-file)))
+        (org-mcp--tool-file-access-error id-file))
       (expand-file-name allowed-file))
     ;; ID not in database - could mean it doesn't exist or database is stale
     ;; Fall back to searching allowed files manually
@@ -170,14 +222,11 @@ Throws a tool error if ID exists but file is not allowed."
 FILENAME must be an absolute path.
 Returns the full path if allowed, signals an error otherwise."
   (unless (file-name-absolute-p filename)
-    (mcp-server-lib-resource-signal-error
-     mcp-server-lib-jsonrpc-error-invalid-params
-     (format "Path must be absolute: %s" filename)))
+    (org-mcp--resource-validation-error "Path must be absolute: %s"
+                                        filename))
   (let ((allowed-file (org-mcp--find-allowed-file filename)))
     (unless allowed-file
-      (mcp-server-lib-resource-signal-error
-       mcp-server-lib-jsonrpc-error-invalid-params
-       (format "File not in allowed list: %s" filename)))
+      (org-mcp--resource-file-access-error filename))
     allowed-file))
 
 (defun org-mcp--generate-outline (file-path)
@@ -299,10 +348,8 @@ The filename parameter includes both file and headline path."
                (org-mcp--get-headline-content
                 (expand-file-name allowed-file) headline-path)))
           (unless content
-            (mcp-server-lib-resource-signal-error
-             mcp-server-lib-jsonrpc-error-invalid-params
-             (format "Headline not found: %s"
-                     (car (last headline-path)))))
+            (org-mcp--resource-not-found-error
+             "headline" (mapconcat 'identity headline-path "/")))
           content)
       ;; No headline path means get entire file
       (org-mcp--read-file-resource (expand-file-name allowed-file)))))
@@ -370,15 +417,11 @@ PARAMS is an alist containing the uuid parameter."
          ;; Use org-id-find-id-file to get the file path
          (file-path (org-id-find-id-file id)))
     (unless file-path
-      (mcp-server-lib-resource-signal-error
-       mcp-server-lib-jsonrpc-error-invalid-params
-       (format "ID not found: %s" id)))
+      (org-mcp--resource-not-found-error "ID" id))
     ;; Validate that the file is in allowed list
     (let ((allowed-file (org-mcp--find-allowed-file file-path)))
       (unless allowed-file
-        (mcp-server-lib-resource-signal-error
-         mcp-server-lib-jsonrpc-error-invalid-params
-         (format "File not in allowed list: %s" file-path)))
+        (org-mcp--resource-file-access-error file-path))
       ;; Get the content
       (org-mcp--get-content-by-id
        (expand-file-name allowed-file) id))))
@@ -406,10 +449,7 @@ Validates file access and returns expanded file path."
      (progn
        (setq file-path (org-mcp--find-allowed-file-with-id id))
        (unless file-path
-         (mcp-server-lib-tool-throw
-          (format
-           "ID not found or the containing file not in allowed list: %s"
-           id)))
+         (org-mcp--id-not-found-error id))
        (setq headline-path (list id))))
     (cons file-path headline-path)))
 
@@ -430,11 +470,7 @@ Point is left at the headline if found."
            ;; Path-based search
            (org-mcp--navigate-to-headline headline-path))))
     (unless found
-      (mcp-server-lib-tool-throw
-       (format "Headline not found: %s"
-               (if (= (length headline-path) 1)
-                   (car headline-path)
-                 (mapconcat 'identity headline-path "/")))))))
+      (org-mcp--headline-not-found-error headline-path))))
 
 (defun org-mcp--check-buffer-modifications (file-path operation)
   "Check if FILE-PATH has unsaved change in any buffer.
@@ -444,9 +480,9 @@ OPERATION is a string describing the operation for error messages."
       (when (and (buffer-file-name)
                  (string= (buffer-file-name) file-path)
                  (buffer-modified-p))
-        (mcp-server-lib-tool-throw
-         (format "Cannot %s: file has unsaved changes in buffer"
-                 operation))))))
+        (org-mcp--tool-validation-error
+         "Cannot %s: file has unsaved changes in buffer"
+         operation)))))
 
 (defun org-mcp--refresh-file-buffers (file-path)
   "Refresh all buffers visiting FILE-PATH."
@@ -504,9 +540,9 @@ MCP Parameters:
     (let ((valid-states
            (apply 'append (mapcar 'cdr org-todo-keywords))))
       (unless (member newState valid-states)
-        (mcp-server-lib-tool-throw
-         (format "Invalid TODO state: '%s'. Valid states: %s"
-                 newState (mapconcat 'identity valid-states ", ")))))
+        (org-mcp--tool-validation-error
+         "Invalid TODO state: '%s'. Valid states: %s"
+         newState (mapconcat 'identity valid-states ", "))))
 
     ;; Check for unsaved changes
     (org-mcp--check-buffer-modifications file-path "update")
@@ -524,10 +560,9 @@ MCP Parameters:
       (beginning-of-line)
       (let ((actual-state (org-get-todo-state)))
         (unless (string= actual-state currentState)
-          (mcp-server-lib-tool-throw
-           (format "State mismatch: expected %s, found %s"
-                   (or currentState "(no state)")
-                   (or actual-state "(no state)"))))
+          (org-mcp--state-mismatch-error
+           (or currentState "(no state)")
+           (or actual-state "(no state)") "State"))
 
         ;; Update the state
         (org-todo newState)
@@ -583,23 +618,20 @@ Throws an error if multiple tags from the same mutex group are present."
       (let ((tags-in-group
              (cl-intersection tags group :test #'string=)))
         (when (> (length tags-in-group) 1)
-          (mcp-server-lib-tool-throw
-           (format
-            "Tags %s are mutually exclusive (cannot use together)"
-            (mapconcat (lambda (tag)
-                         (format "'%s'" tag))
-                       tags-in-group
-                       ", "))))))))
+          (org-mcp--tool-validation-error
+           "Tags %s are mutually exclusive (cannot use together)"
+           (mapconcat (lambda (tag) (format "'%s'" tag)) tags-in-group
+                      ", ")))))))
 
 (defun org-mcp--validate-headline-title (title)
   "Validate that TITLE is not empty or whitespace-only.
 Throws an MCP tool error if validation fails."
   (when (or (string-empty-p title)
             (string-match-p "^[[:space:]]*$" title))
-    (mcp-server-lib-tool-throw
+    (org-mcp--tool-validation-error
      "Headline title cannot be empty or contain only whitespace"))
   (when (string-match-p "[\n\r]" title)
-    (mcp-server-lib-tool-throw
+    (org-mcp--tool-validation-error
      "Headline title cannot contain newlines")))
 
 (defun org-mcp--validate-body-no-headlines (body level)
@@ -611,9 +643,9 @@ Throws an MCP tool error if invalid headlines are found."
   ;; The regex matches asterisks followed by space or tab (headlines need content)
   (let ((regex (format "^\\*\\{1,%d\\}[ \t]" level)))
     (when (string-match regex body)
-      (mcp-server-lib-tool-throw
-       (format "Body cannot contain headlines at level %d or higher"
-               level)))))
+      (org-mcp--tool-validation-error
+       "Body cannot contain headlines at level %d or higher"
+       level))))
 
 (defun org-mcp--validate-body-no-unbalanced-blocks (body)
   "Validate that BODY doesn't contain unbalanced blocks.
@@ -646,10 +678,9 @@ Throws an MCP tool error if unbalanced blocks are found."
             (cond
              ;; Not in any block - this END is orphaned
              ((null current-block)
-              (mcp-server-lib-tool-throw
-               (format
-                "Body contains orphaned END_%s without matching BEGIN_%s"
-                block-type block-type)))
+              (org-mcp--tool-validation-error
+               "Body contains orphaned END_%s without matching BEGIN_%s"
+               block-type block-type))
              ;; In matching block - exit the block
              ((string= current-block block-type)
               (setq current-block nil))
@@ -658,8 +689,9 @@ Throws an MCP tool error if unbalanced blocks are found."
               nil))))))
       ;; After scanning everything, check if we're still in a block
       (when current-block
-        (mcp-server-lib-tool-throw
-         (format "Body contains unclosed %s block" current-block))))))
+        (org-mcp--tool-validation-error
+         "Body contains unclosed %s block"
+         current-block)))))
 
 (defun org-mcp--normalize-tags-to-list (tags)
   "Normalize TAGS parameter to a list format.
@@ -679,8 +711,7 @@ Throws error for invalid types."
    ((stringp tags)
     (list tags)) ; Single tag string
    (t
-    (mcp-server-lib-tool-throw
-     (format "Invalid tags format: %s" tags)))))
+    (org-mcp--tool-validation-error "Invalid tags format: %s" tags))))
 
 (defun org-mcp--tool-add-todo
     (title todoState tags body parentUri afterUri)
@@ -709,9 +740,9 @@ MCP Parameters:
 
     ;; Validate TODO state
     (unless (member todoState valid-states)
-      (mcp-server-lib-tool-throw
-       (format "Invalid TODO state: '%s'. Valid states: %s"
-               todoState (mapconcat 'identity valid-states ", "))))
+      (org-mcp--tool-validation-error
+       "Invalid TODO state: '%s'. Valid states: %s"
+       todoState (mapconcat 'identity valid-states ", ")))
 
     ;; Validate tags
     ;; Get all allowed tags from tag alists
@@ -730,15 +761,15 @@ MCP Parameters:
       (when allowed-tags
         (dolist (tag tag-list)
           (unless (member tag allowed-tags)
-            (mcp-server-lib-tool-throw
-             (format "Tag not in configured tag alist: %s" tag)))))
+            (org-mcp--tool-validation-error
+             "Tag not in configured tag alist: %s"
+             tag))))
       ;; Always validate tag names follow Org's rules
       (dolist (tag tag-list)
         (unless (string-match "^[[:alnum:]_@]+$" tag)
-          (mcp-server-lib-tool-throw
-           (format
-            "Invalid tag name (must be alphanumeric, _, or @): %s"
-            tag))))
+          (org-mcp--tool-validation-error
+           "Invalid tag name (must be alphanumeric, _, or @): %s"
+           tag)))
       ;; Validate mutual exclusivity if tag-alist is configured
       (when org-tag-alist
         (org-mcp--validate-mutex-tag-groups tag-list org-tag-alist))
@@ -759,7 +790,7 @@ MCP Parameters:
        ;; Handle org-id:// URIs
        (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
          (unless allowed-file
-           (mcp-server-lib-tool-throw (format "ID not found: %s" id)))
+           (org-mcp--id-not-found-error id))
          (setq file-path allowed-file)))
 
       ;; Check for unsaved changes
@@ -816,10 +847,9 @@ MCP Parameters:
                         (if (string-match
                              "^org-id://\\(.+\\)$" afterUri)
                             (match-string 1 afterUri)
-                          (mcp-server-lib-tool-throw
-                           (format
-                            "afterUri must be org-id:// format, got: %s"
-                            afterUri)))))
+                          (org-mcp--tool-validation-error
+                           "afterUri must be org-id:// format, got: %s"
+                           afterUri))))
                     ;; Find the sibling with the specified ID
                     (org-back-to-heading t) ;; Ensure we're at the parent heading
                     (let ((found nil)
@@ -848,10 +878,9 @@ MCP Parameters:
                         ;; No children
                         (goto-char parent-end))
                       (unless found
-                        (mcp-server-lib-tool-throw
-                         (format
-                          "Sibling with ID %s not found under parent"
-                          after-id))))))
+                        (org-mcp--tool-validation-error
+                         "Sibling with ID %s not found under parent"
+                         after-id)))))
               ;; No afterUri - insert at end of parent's subtree
               (org-end-of-subtree t t)))
 
@@ -943,9 +972,8 @@ MCP Parameters:
       (beginning-of-line)
       (let ((actual-title (org-get-heading t t t t)))
         (unless (string= actual-title currentTitle)
-          (mcp-server-lib-tool-throw
-           (format "Title mismatch: expected '%s', found '%s'"
-                   currentTitle actual-title))))
+          (org-mcp--state-mismatch-error
+           currentTitle actual-title "Title")))
 
       (org-edit-headline newTitle)
 
