@@ -15,3 +15,6 @@ User-facing documentation is in README.org.
 
 In the ERT tests, always use defconst constants for before and after Org file
 images.
+
+To verify the changed Org content, use a single regular expression, matching
+the complete Org file.
