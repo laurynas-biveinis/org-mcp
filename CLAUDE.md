@@ -12,3 +12,6 @@ This repository is for org-mcp, which is an integration between Emacs Org-mode
 and the Model Context Protocol (MCP).
 
 User-facing documentation is in README.org.
+
+In the ERT tests, always use defconst constants for before and after Org file
+images.
