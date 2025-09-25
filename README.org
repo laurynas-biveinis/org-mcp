@@ -264,6 +264,54 @@ Example:
 }
 #+end_src
 
+*** org-edit-body
+- *Description:* Edit body content of an Org node using partial string replacement
+- *Parameters:*
+  - =resourceUri= (string, required): URI of the node to edit (supports =org-headline://= or =org-id://=)
+  - =oldBody= (string, required): Substring to search for within the node's body (must be unique unless replaceAll is true). Use empty string "" to add content to an empty node
+  - =newBody= (string, required): Replacement text
+  - =replaceAll= (boolean, optional): Replace all occurrences (default: false)
+- *Returns:* Success status with ID-based URI of the updated node
+- *Special behavior:* When =oldBody= is an empty string (""), the tool will only work if the node has no body content, allowing you to add initial content to empty nodes
+
+Example:
+#+begin_src json
+# Request:
+{
+  "resourceUri": "org-id://abc-123",
+  "oldBody": "This is a placeholder.",
+  "newBody": "Implementation started - using Strategy pattern."
+}
+
+# Success response:
+{
+  "success": true,
+  "uri": "org-id://abc-123"
+}
+
+# Adding content to empty node:
+{
+  "resourceUri": "org-id://new-task",
+  "oldBody": "",
+  "newBody": "Initial task description."
+}
+
+# Error when text not found:
+{
+  "error": "Body text not found: This is a placeholder."
+}
+
+# Error when multiple occurrences without replaceAll:
+{
+  "error": "Body text appears 3 times (use replaceAll for multiple)"
+}
+
+# Error when using empty oldBody on non-empty content:
+{
+  "error": "Cannot use empty oldBody with non-empty body content"
+}
+#+end_src
+
 * Contributing
 
 TODO: Contribution guidelines

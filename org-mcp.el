@@ -846,7 +846,7 @@ MCP Parameters:
                              "^org-id://\\(.+\\)$" afterUri)
                             (match-string 1 afterUri)
                           (org-mcp--tool-validation-error
-                           "afterUri must be org-id:// format, got: %s"
+                           "Parameter afterUri must be org-id:// format, got: %s"
                            afterUri))))
                     ;; Find the sibling with the specified ID
                     (org-back-to-heading t) ;; Ensure we're at the parent heading
@@ -981,6 +981,154 @@ MCP Parameters:
        file-path
        `((previousTitle . ,currentTitle) (newTitle . ,newTitle))))))
 
+(defun org-mcp--tool-edit-body
+    (resourceUri oldBody newBody replaceAll)
+  "Edit body content of an Org node using partial string replacement.
+RESOURCEURI is the URI of the node to edit.
+OLDBODY is the substring to search for within the node's body.
+         Use empty string \"\" to add content to an empty node.
+NEWBODY is the replacement text.
+REPLACEALL if non-nil, replace all occurrences.
+
+MCP Parameters:
+  resourceUri - URI of the node (org-headline:// or org-id://)
+  oldBody - Substring to replace within the body (must be unique
+            unless replaceAll).  Use \"\" to add to empty nodes
+  newBody - Replacement text
+  replaceAll - Replace all occurrences (optional, default false)
+
+Special behavior:
+  When oldBody is an empty string (\"\"), the tool will only work if
+  the node has no body content, allowing you to add initial content
+  to empty nodes."
+  ;; Check for unbalanced blocks in newBody
+  (org-mcp--validate-body-no-unbalanced-blocks newBody)
+
+  ;; Parse the resource URI
+  (let* ((parsed (org-mcp--parse-resource-uri resourceUri))
+         (file-path (car parsed))
+         (headline-path (cdr parsed)))
+
+    ;; Check for unsaved changes
+    (org-mcp--check-buffer-modifications file-path "edit body")
+
+    ;; Process the file
+    (with-temp-buffer
+      ;; Make org-id work by setting the file name
+      (set-visited-file-name file-path t)
+      (insert-file-contents file-path)
+      (org-mode)
+      (goto-char (point-min))
+
+      ;; Navigate to the headline
+      (org-mcp--goto-headline-from-uri
+       headline-path
+       (string-prefix-p org-mcp--org-id-prefix resourceUri))
+
+      ;; Validate headlines in newBody based on current level
+      (org-mcp--validate-body-no-headlines
+       newBody (org-current-level))
+
+      ;; Skip past headline and properties
+      (org-end-of-meta-data t)
+
+      ;; Get body boundaries
+      (let ((body-begin (point))
+            (body-end nil)
+            (body-content nil)
+            (occurrence-count 0))
+
+        ;; Find end of body (before next headline or end of subtree)
+        (save-excursion
+          (if (org-goto-first-child)
+              ;; Has children - body ends before first child
+              (setq body-end (point))
+            ;; No children - body extends to end of subtree
+            (org-end-of-subtree t)
+            (setq body-end (point))))
+
+        ;; Extract body content
+        (setq body-content
+              (buffer-substring-no-properties body-begin body-end))
+
+        ;; Trim leading newline if present
+        ;; (org-end-of-meta-data includes it)
+        (when (and (> (length body-content) 0)
+                   (= (aref body-content 0) ?\n))
+          (setq body-content (substring body-content 1))
+          (setq body-begin (1+ body-begin)))
+
+        ;; Check if body is empty
+        (when (string-match-p "\\`[[:space:]]*\\'" body-content)
+          ;; Special case: empty oldBody with empty body -> add content
+          (if (string= oldBody "")
+              (setq occurrence-count 1) ; Treat as single replacement
+            (org-mcp--tool-validation-error
+             "Node has no body content")))
+
+        ;; Count occurrences (unless already handled above)
+        (unless (= occurrence-count 1) ; Skip if already set above
+          ;; Empty oldBody with non-empty body is an error
+          (if (and (string= oldBody "")
+                   (not
+                    (string-match-p
+                     "\\`[[:space:]]*\\'" body-content)))
+              (org-mcp--tool-validation-error
+               "Cannot use empty oldBody with non-empty body content")
+            ;; Normal occurrence counting
+            (let ((case-fold-search nil)
+                  (search-pos 0))
+              (while (string-match (regexp-quote oldBody) body-content
+                                   search-pos)
+                (setq occurrence-count (1+ occurrence-count))
+                (setq search-pos (match-end 0))))))
+
+        ;; Validate occurrences
+        (cond
+         ((= occurrence-count 0)
+          (org-mcp--tool-validation-error "Body text not found: %s"
+                                          oldBody))
+         ((and (> occurrence-count 1) (not replaceAll))
+          (org-mcp--tool-validation-error
+           (concat
+            "Body text appears %d times (use replaceAll for multiple)")
+           occurrence-count)))
+
+        ;; Perform replacement
+        (let ((new-body-content
+               (cond
+                ;; Special case: empty oldBody with empty body
+                ((and (string= oldBody "")
+                      (string-match-p
+                       "\\`[[:space:]]*\\'" body-content))
+                 newBody)
+                ;; Normal replacement with replaceAll
+                (replaceAll
+                 (replace-regexp-in-string
+                  (regexp-quote oldBody) newBody body-content
+                  t t))
+                ;; Normal single replacement
+                (t
+                 (let ((pos
+                        (string-match
+                         (regexp-quote oldBody) body-content)))
+                   (if pos
+                       (concat
+                        (substring body-content 0 pos) newBody
+                        (substring body-content
+                                   (+ pos (length oldBody))))
+                     body-content))))))
+
+          ;; Replace the body content
+          (if (< body-begin body-end)
+              (delete-region body-begin body-end)
+            ;; Empty body - ensure we're at the right position
+            (goto-char body-begin))
+          (insert new-body-content))
+
+        ;; Save and return success
+        (org-mcp--complete-and-save file-path nil)))))
+
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
   (mcp-server-lib-register-tool
@@ -1007,6 +1155,11 @@ MCP Parameters:
    #'org-mcp--tool-rename-headline
    :id "org-rename-headline"
    :description "Rename the title of a headline"
+   :read-only nil)
+  (mcp-server-lib-register-tool
+   #'org-mcp--tool-edit-body
+   :id "org-edit-body"
+   :description "Edit body content using partial string replacement"
    :read-only nil)
   ;; Register template resources for org files
   (mcp-server-lib-register-resource
@@ -1041,6 +1194,7 @@ MCP Parameters:
   (mcp-server-lib-unregister-tool "org-update-todo-state")
   (mcp-server-lib-unregister-tool "org-add-todo")
   (mcp-server-lib-unregister-tool "org-rename-headline")
+  (mcp-server-lib-unregister-tool "org-edit-body")
   ;; Unregister template resources
   (mcp-server-lib-unregister-resource "org://{filename}")
   (mcp-server-lib-unregister-resource "org-outline://{filename}")

@@ -29,6 +29,7 @@ More content."
   "* Parent Task
 ** First Child
 First child content.
+It spans multiple lines.
 ** Second Child
 Second child content.
 ** Third Child
@@ -37,8 +38,10 @@ Third child content."
 
 (defconst org-mcp-test--content-simple-todo
   "* TODO Original Task
-Task description."
-  "Simple TODO task.")
+First line of body.
+Second line of body.
+Third line of body."
+  "Simple TODO task with three-line body.")
 
 (defconst org-mcp-test--content-todo-with-tags
   "* TODO Task with Tags :work:urgent:
@@ -50,13 +53,37 @@ Task description."
 Some content."
   "Regular headline without TODO state.")
 
+(defconst org-mcp-test--content-with-id-id
+  "550e8400-e29b-41d4-a716-446655440000"
+  "ID value for org-mcp-test--content-with-id.")
+
 (defconst org-mcp-test--content-with-id
-  "* Task with ID
+  (format
+   "* Task with ID
 :PROPERTIES:
-:ID:       550e8400-e29b-41d4-a716-446655440000
+:ID:       %s
 :END:
-This is a task with an ID property."
-  "Task with an Org ID property.")
+First line of content.
+Second line of content.
+Third line of content."
+   org-mcp-test--content-with-id-id)
+  "Task with an Org ID property and multiline content.")
+
+(defconst org-mcp-test--content-with-id-todo
+  (format
+   "* TODO Task with ID
+:PROPERTIES:
+:ID:       %s
+:END:
+First line of content.
+Second line of content.
+Third line of content."
+   org-mcp-test--content-with-id-id)
+  "Task with an Org ID property, TODO state, and multiline content.")
+
+(defconst org-mcp-test--content-with-id-uri
+  (format "org-id://%s" org-mcp-test--content-with-id-id)
+  "URI for org-mcp-test--content-with-id.")
 
 (defconst org-mcp-test--content-slash-in-headline
   "* Project A/B Testing
@@ -117,13 +144,27 @@ Other content.
 This Target is under Second Section, not First Section."
   "Multiple targets in different sections.")
 
+(defconst org-mcp-test--timestamp-id "20240101T120000"
+  "Timestamp-format ID value.")
+
 (defconst org-mcp-test--content-timestamp-id
-  "* TODO Task with timestamp ID
+  (format
+   "* TODO Task with timestamp ID
 :PROPERTIES:
-:ID:       20240101T120000
+:ID:       %s
 :END:
 Task content."
+   org-mcp-test--timestamp-id)
   "Task with a timestamp-format ID property.")
+
+(defconst org-mcp-test--content-with-id-no-body
+  (format
+   "* TODO Task with ID but no body
+:PROPERTIES:
+:ID:       %s
+:END:"
+   org-mcp-test--timestamp-id)
+  "Task with an ID property but no body content.")
 
 (defconst org-mcp-test--expected-timestamp-id-done
   "* DONE Task with timestamp ID"
@@ -255,6 +296,117 @@ Some content."
    "^\\* TODO Task Without Tags *\n" ; No tags, optional spaces
    "\\(?::PROPERTIES:\n" ":ID: +[^\n]+\n" ":END:\n\\)?$")
   "Pattern for TODO item without any tags.")
+
+(defconst org-mcp-test--pattern-renamed-simple-todo
+  (concat
+   "^\\* TODO Updated Task\n"
+   ":PROPERTIES:\n"
+   ":ID: +[A-F0-9-]+\n"
+   ":END:\n"
+   "First line of body\\.$")
+  "Pattern for renamed simple TODO with generated ID.")
+
+(defconst org-mcp-test--content-with-id-repeated-text
+  "* Test Heading
+:PROPERTIES:
+:ID: test-id
+:END:
+First occurrence of pattern.
+Some other text.
+Second occurrence of pattern.
+More text.
+Third occurrence of pattern."
+  "Heading with ID and repeated text patterns.")
+
+;; Expected patterns for edit-body tests
+
+(defconst org-mcp-test--pattern-edit-body-single-line
+  (format (concat
+           "\\`\\* Task with ID\n"
+           ":PROPERTIES:\n"
+           ":ID: +%s\n"
+           ":END:\n"
+           "Updated first line\\.\n"
+           "Second line of content\\.\n"
+           "Third line of content\\.\n"
+           "?\\'")
+          org-mcp-test--content-with-id-id)
+  "Pattern for single-line edit-body test result.")
+
+(defconst org-mcp-test--pattern-edit-body-multiline
+  (format (concat
+           "\\`\\* TODO Task with ID\n"
+           ":PROPERTIES:\n"
+           ":ID: +%s\n"
+           ":END:\n"
+           "First line of content\\.\n"
+           "This has been replaced\n"
+           "with new multiline\n"
+           "content here\\.\n"
+           "Third line of content\\.\n"
+           "?\\'")
+          org-mcp-test--content-with-id-id)
+  "Pattern for multiline edit-body test result.")
+
+(defconst org-mcp-test--pattern-edit-body-replace-all
+  (concat
+   "\\`\\* Test Heading\n"
+   ":PROPERTIES:\n"
+   ":ID: +test-id\n"
+   ":END:\n"
+   "First REPLACED\\.\n"
+   "Some other text\\.\n"
+   "Second REPLACED\\.\n"
+   "More text\\.\n"
+   "Third REPLACED\\.\n"
+   "?\\'")
+  "Pattern for replace-all edit-body test result.")
+
+(defconst org-mcp-test--pattern-edit-body-nested-headlines
+  (concat
+   "\\`\\* Parent Task\n"
+   "Updated parent content\\.\n" ; No ID when using org-headline://
+   "\\*\\* Another Task\n"
+   "\\(?::PROPERTIES:\n" ; Child may get an ID
+   ":ID: +[A-F0-9-]+\n" ":END:\n\\)?" "More content\\.\n" "?\\'")
+  "Pattern for nested headlines edit-body test result.")
+
+
+(defconst org-mcp-test--pattern-edit-body-empty
+  (concat
+   "\\* Another TaskNew content added\\.\n"
+   ":PROPERTIES:\n"
+   ":ID: +[A-F0-9-]+\n"
+   ":END:")
+  "Pattern for edit-body test with empty body adding content.")
+
+(defconst org-mcp-test--pattern-edit-body-empty-with-props
+  (format (concat
+           ":PROPERTIES:\n"
+           ":ID: +[A-F0-9-]+\n"
+           ":END:\n"
+           ":PROPERTIES:\n"
+           ":ID: +%s\n"
+           ":END:Content added after properties\\.")
+          org-mcp-test--timestamp-id)
+  "Pattern for edit-body with existing properties adding content.")
+
+(defconst org-mcp-test--pattern-edit-body-accept-lower-level
+  (concat
+   "\\* Task with ID\n"
+   ":PROPERTIES:\n"
+   ":ID: +"
+   org-mcp-test--content-with-id-id
+   "\n"
+   ":END:\n"
+   "some text\n"
+   "\\*\\* Subheading content\n"
+   "\\(?::PROPERTIES:\n" ; Subheading gets ID
+   ":ID: +[A-F0-9-]+\n"
+   ":END:\n\\)?"
+   "Second line of content\\.\n"
+   "Third line of content\\.")
+  "Pattern for edit-body accepting lower-level headlines.")
 
 ;; Helper functions for calling MCP tools
 
@@ -1417,12 +1569,7 @@ Another task description."))
 
 (ert-deftest org-mcp-test-update-todo-state-by-id ()
   "Test updating TODO state using org-id:// URI."
-  (let ((test-content
-         "* TODO Task with ID
-:PROPERTIES:
-:ID:       550e8400-e29b-41d4-a716-446655440000
-:END:
-This is a task with an ID property."))
+  (let ((test-content org-mcp-test--content-with-id-todo))
     (org-mcp-test--with-temp-org-file test-file test-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords
@@ -1437,8 +1584,7 @@ This is a task with an ID property."))
           (org-id-update-id-locations (list test-file)))
         (org-mcp-test--with-enabled
           ;; Update using ID-based URI
-          (let* ((resource-uri
-                  "org-id://550e8400-e29b-41d4-a716-446655440000")
+          (let* ((resource-uri org-mcp-test--content-with-id-uri)
                  (result
                   (org-mcp-test--update-and-verify-todo
                    resource-uri "TODO" "IN-PROGRESS"
@@ -1447,7 +1593,7 @@ This is a task with an ID property."))
             (should
              (equal
               (alist-get 'uri result)
-              "org-id://550e8400-e29b-41d4-a716-446655440000"))
+              org-mcp-test--content-with-id-uri))
             ;; Verify file content with a single regex matching the whole buffer
             (with-temp-buffer
               (insert-file-contents test-file)
@@ -1464,7 +1610,9 @@ This is a task with an ID property."))
                      ":ID: +550e8400-e29b-41d4-a716-446655440000\n"
                      ":END:\n"
                      ;; Match the body text
-                     "This is a task with an ID property\\."
+                     "First line of content\\.\n"
+                     "Second line of content\\.\n"
+                     "Third line of content\\."
                      ;; Match end of buffer
                      "\\'")))
                 (should (string-match expected-regex content))))))))))
@@ -2106,7 +2254,7 @@ This is valid Org-mode syntax and should be allowed."
               (insert-file-contents test-file)
               (should
                (string-match-p
-                "^\\* TODO Updated Task\n:PROPERTIES:\n:ID: +[A-F0-9-]+\n:END:\nTask description\\.$"
+                org-mcp-test--pattern-renamed-simple-todo
                 (buffer-string))))))))))
 
 (ert-deftest org-mcp-test-rename-headline-title-mismatch ()
@@ -2235,12 +2383,7 @@ This Child is under Parent Three, not Parent Two."))
 
 (ert-deftest org-mcp-test-rename-headline-by-id ()
   "Test renaming a headline accessed by org-id URI."
-  (let ((initial-content
-         "* Task with ID
-:PROPERTIES:
-:ID:       550e8400-e29b-41d4-a716-446655440000
-:END:
-This is a task with an ID property."))
+  (let ((initial-content org-mcp-test--content-with-id))
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-id-track-globally t)
@@ -2250,8 +2393,7 @@ This is a task with an ID property."))
         (org-id-update-id-locations (list test-file))
         (org-mcp-test--with-enabled
           ;; Rename using ID-based URI
-          (let* ((resource-uri
-                  "org-id://550e8400-e29b-41d4-a716-446655440000")
+          (let* ((resource-uri org-mcp-test--content-with-id-uri)
                  (params
                   `((uri . ,resource-uri)
                     (currentTitle . "Task with ID")
@@ -2271,7 +2413,7 @@ This is a task with an ID property."))
             (should
              (equal
               (alist-get 'uri result)
-              "org-id://550e8400-e29b-41d4-a716-446655440000"))
+              org-mcp-test--content-with-id-uri))
             ;; Verify file content
             (with-temp-buffer
               (insert-file-contents test-file)
@@ -2640,6 +2782,321 @@ This is already done"))
               (should
                (string-match-p
                 "^\\*\\* DONE Review Code$" content)))))))))
+
+;;; org-edit-body tests
+
+(defun org-mcp-test--call-edit-body
+    (resource-uri old-body new-body &optional replace-all)
+  "Call org-edit-body tool via JSON-RPC and return the result.
+RESOURCE-URI is the URI of the node to edit.
+OLD-BODY is the substring to search for within the node's body.
+NEW-BODY is the replacement text.
+REPLACE-ALL if true, replace all occurrences (default: nil)."
+  (let* ((params
+          `((resourceUri . ,resource-uri)
+            (oldBody . ,old-body)
+            (newBody . ,new-body)
+            (replaceAll . ,replace-all)))
+         (request
+          (mcp-server-lib-create-tools-call-request
+           "org-edit-body" 1 params))
+         (response (mcp-server-lib-process-jsonrpc-parsed request)))
+    (mcp-server-lib-ert-process-tool-response response)))
+
+(defun org-mcp-test--verify-file-eq (test-file expected-content)
+  "Verify TEST-FILE containing exactly EXPECTED-CONTENT."
+  (with-temp-buffer
+    (insert-file-contents test-file)
+    (should (string= (buffer-string) expected-content))))
+
+(defmacro org-mcp-test--assert-error-and-unchanged
+    (error-form test-file expected-content)
+  "Assert ERROR-FORM throws an error and TEST-FILE remains unchanged.
+ERROR-FORM should be a form that is expected to signal an error.
+TEST-FILE is the file to verify.
+EXPECTED-CONTENT is the exact content the file should have."
+  `(progn
+     (should-error ,error-form :type 'mcp-server-lib-tool-error)
+     (org-mcp-test--verify-file-eq ,test-file ,expected-content)))
+
+(defun org-mcp-test--check-edit-body-result
+    (result test-file expected-pattern &optional expected-id)
+  "Check edit-body RESULT structure and file content.
+RESULT is the return value from `org-edit-body` tool.
+TEST-FILE is the path to the file to check.
+EXPECTED-PATTERN is a regexp that the file content should match.
+EXPECTED-ID if provided, check the returned URI has this exact ID."
+  (should (= (length result) 2))
+  (should (equal (alist-get 'success result) t))
+  (let ((uri (alist-get 'uri result)))
+    (if expected-id
+        (should (equal uri (concat "org-id://" expected-id)))
+      (should (string-prefix-p "org-id://" uri))))
+  (with-temp-buffer
+    (insert-file-contents test-file)
+    (should (string-match-p expected-pattern (buffer-string)))))
+
+(ert-deftest org-mcp-test-edit-body-single-line ()
+  "Test org-edit-body tool for single-line replacement."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (let ((result
+               (org-mcp-test--call-edit-body
+                org-mcp-test--content-with-id-uri
+                "First line of content."
+                "Updated first line."
+                nil)))
+          (org-mcp-test--check-edit-body-result
+           result
+           test-file
+           org-mcp-test--pattern-edit-body-single-line
+           org-mcp-test--content-with-id-id))))))
+
+(ert-deftest org-mcp-test-edit-body-multiline ()
+  "Test org-edit-body tool for multi-line replacement."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id-todo
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (let ((result
+               (org-mcp-test--call-edit-body
+                org-mcp-test--content-with-id-uri
+                "Second line of content."
+                "This has been replaced
+with new multiline
+content here."
+                nil)))
+          (org-mcp-test--check-edit-body-result
+           result test-file org-mcp-test--pattern-edit-body-multiline
+           org-mcp-test--content-with-id-id))))))
+
+(ert-deftest org-mcp-test-edit-body-multiple-without-replaceall ()
+  "Test error for multiple occurrences without replaceAll."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id-repeated-text
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup `(("test-id" . ,test-file))
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp--tool-edit-body
+          "org-id://test-id" "occurrence of pattern" "REPLACED" nil)
+         test-file org-mcp-test--content-with-id-repeated-text)))))
+
+(ert-deftest org-mcp-test-edit-body-replace-all ()
+  "Test org-edit-body tool with replaceAll functionality."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id-repeated-text
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup `(("test-id" . ,test-file))
+        (let ((result
+               (org-mcp-test--call-edit-body "org-id://test-id"
+                                             "occurrence of pattern"
+                                             "REPLACED"
+                                             t))) ; replaceAll = true
+          (org-mcp-test--check-edit-body-result
+           result
+           test-file
+           org-mcp-test--pattern-edit-body-replace-all))))))
+
+(ert-deftest org-mcp-test-edit-body-not-found ()
+  "Test org-edit-body tool error when text is not found."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp--tool-edit-body
+          org-mcp-test--content-with-id-uri
+          "nonexistent text"
+          "replacement"
+          nil)
+         test-file org-mcp-test--content-with-id)))))
+
+(ert-deftest org-mcp-test-edit-body-empty ()
+  "Test org-edit-body tool can add content to empty body."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-task-simple
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let* ((resource-uri
+                (format "org-headline://%s#Another%%20Task"
+                        test-file))
+               (result
+                (org-mcp-test--call-edit-body
+                 resource-uri "" "New content added."
+                 nil)))
+          (org-mcp-test--check-edit-body-result
+           result
+           test-file
+           org-mcp-test--pattern-edit-body-empty))))))
+
+(ert-deftest org-mcp-test-edit-body-empty-old-non-empty-body ()
+  "Test error when oldBody is empty but body has content."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp--tool-edit-body
+          org-mcp-test--content-with-id-uri
+          "" ; Empty oldBody
+          "replacement" nil)
+         test-file org-mcp-test--content-with-id)))))
+
+(ert-deftest org-mcp-test-edit-body-empty-with-properties ()
+  "Test adding content to empty body with properties drawer."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id-no-body
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup `((,org-mcp-test--timestamp-id
+                                      . ,test-file))
+        (let ((result
+               (org-mcp-test--call-edit-body
+                (format "org-id://%s" org-mcp-test--timestamp-id)
+                ""
+                "Content added after properties."
+                nil)))
+          (org-mcp-test--check-edit-body-result
+           result
+           test-file
+           org-mcp-test--pattern-edit-body-empty-with-props))))))
+
+(ert-deftest org-mcp-test-edit-body-nested-headlines ()
+  "Test org-edit-body preserves nested headlines."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-child
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let ((result
+               (org-mcp-test--call-edit-body
+                (format "org-headline://%s#Parent%%20Task" test-file)
+                "Some content here"
+                "Updated parent content"
+                nil)))
+          (org-mcp-test--check-edit-body-result
+           result
+           test-file
+           org-mcp-test--pattern-edit-body-nested-headlines))))))
+
+(ert-deftest org-mcp-test-edit-body-reject-headline-in-middle ()
+  "Test org-edit-body rejects newBody with headline marker in middle."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp--tool-edit-body
+          org-mcp-test--content-with-id-uri "First line of content."
+          "replacement text
+* This would become a headline"
+          nil)
+         test-file org-mcp-test--content-with-id)))))
+
+(ert-deftest org-mcp-test-edit-body-accept-lower-level-headline ()
+  "Test org-edit-body accepts newBody with lower-level headline."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (let ((result
+               (org-mcp-test--call-edit-body
+                org-mcp-test--content-with-id-uri
+                "First line of content."
+                "some text
+** Subheading content"
+                nil)))
+          (org-mcp-test--check-edit-body-result
+           result
+           test-file
+           org-mcp-test--pattern-edit-body-accept-lower-level))))))
+
+(ert-deftest org-mcp-test-edit-body-reject-higher-level-headline ()
+  "Test org-edit-body rejects newBody with higher-level headline.
+When editing a level 2 node, level 1 headlines should be rejected."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-child
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp--tool-edit-body
+          (format "org-headline://%s#Parent%%20Task/Another%%20Task"
+                  test-file)
+          "More content."
+          "New text
+* Top level heading"
+          nil)
+         test-file org-mcp-test--content-parent-child)))))
+
+(ert-deftest org-mcp-test-edit-body-reject-headline-at-start ()
+  "Test org-edit-body rejects newBody with headline at beginning."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp--tool-edit-body
+          org-mcp-test--content-with-id-uri
+          "First line of content."
+          "* Heading at start"
+          nil)
+         test-file org-mcp-test--content-with-id)))))
+
+(ert-deftest org-mcp-test-edit-body-reject-unbalanced-begin-block ()
+  "Test org-edit-body rejects newBody with unbalanced BEGIN block."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp--tool-edit-body
+          org-mcp-test--content-with-id-uri "First line of content."
+          "Some text
+#+BEGIN_EXAMPLE
+Code without END_EXAMPLE"
+          nil)
+         test-file org-mcp-test--content-with-id)))))
+
+(ert-deftest org-mcp-test-edit-body-reject-orphaned-end-block ()
+  "Test org-edit-body rejects newBody with orphaned END block."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp--tool-edit-body
+          org-mcp-test--content-with-id-uri "First line of content."
+          "Some text
+#+END_SRC
+Without BEGIN_SRC"
+          nil)
+         test-file org-mcp-test--content-with-id)))))
+
+(ert-deftest org-mcp-test-edit-body-reject-mismatched-blocks ()
+  "Test org-edit-body rejects newBody with mismatched blocks."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp--tool-edit-body
+          org-mcp-test--content-with-id-uri "First line of content."
+          "Text here
+#+BEGIN_QUOTE
+Some quote
+#+END_EXAMPLE"
+          nil)
+         test-file org-mcp-test--content-with-id)))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
