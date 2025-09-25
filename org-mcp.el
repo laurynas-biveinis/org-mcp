@@ -797,6 +797,7 @@ MCP Parameters:
         (set-visited-file-name file-path t)
         (insert-file-contents file-path)
         (org-mode)
+        (goto-char (point-min))
 
         ;; Navigate to insertion point based on parentUri
         (let ((parent-path nil)
@@ -823,7 +824,6 @@ MCP Parameters:
                    parent-path)
                parent-id)
             ;; No parent specified - top level
-            (goto-char (point-min))
             ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
             (while (and (not (eobp)) (looking-at "^#\\+"))
               (forward-line))
