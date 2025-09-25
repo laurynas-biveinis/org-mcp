@@ -49,6 +49,28 @@
 (defconst org-mcp--org-id-prefix "org-id://"
   "URI prefix for ID-based resources.")
 
+;; Helper macros
+
+(defmacro org-mcp--with-org-file-buffer
+    (file-path response-alist &rest body)
+  "Execute BODY in a temp buffer set up for Org file at FILE-PATH.
+Sets up the buffer with:
+- File name set for org-id functionality
+- File contents loaded
+- `org-mode' enabled
+- Point at beginning of buffer
+After BODY executes, saves the buffer and returns the result of
+`org-mcp--complete-and-save' with FILE-PATH and RESPONSE-ALIST.
+BODY can access FILE-PATH and RESPONSE-ALIST as variables."
+  (declare (indent 2) (debug (form form body)))
+  `(with-temp-buffer
+     (set-visited-file-name ,file-path t)
+     (insert-file-contents ,file-path)
+     (org-mode)
+     (goto-char (point-min))
+     ,@body
+     (org-mcp--complete-and-save ,file-path ,response-alist)))
+
 ;; Error handling helpers
 
 (defun org-mcp--headline-not-found-error (headline-path)
@@ -543,12 +565,9 @@ MCP Parameters:
     (org-mcp--check-buffer-modifications file-path "update")
 
     ;; Update the TODO state in the file
-    (with-temp-buffer
-      ;; Make org-id work by setting the file name
-      (set-visited-file-name file-path t)
-      (insert-file-contents file-path)
-      (org-mode)
-      (goto-char (point-min))
+    (org-mcp--with-org-file-buffer file-path
+        `((previousState . ,(or currentState ""))
+          (newState . ,newState))
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--org-id-prefix uri))
 
@@ -558,15 +577,10 @@ MCP Parameters:
         (unless (string= actual-state currentState)
           (org-mcp--state-mismatch-error
            (or currentState "(no state)")
-           (or actual-state "(no state)") "State"))
+           (or actual-state "(no state)") "State")))
 
-        ;; Update the state
-        (org-todo newState)
-
-        (org-mcp--complete-and-save
-         file-path
-         `((previousState . ,(or currentState ""))
-           (newState . ,newState)))))))
+      ;; Update the state
+      (org-todo newState))))
 
 (defun org-mcp--extract-tag-from-alist-entry (entry)
   "Extract tag name from an `org-tag-alist' ENTRY.
@@ -793,12 +807,9 @@ MCP Parameters:
       (org-mcp--check-buffer-modifications file-path "add TODO")
 
       ;; Add the TODO item
-      (with-temp-buffer
-        (set-visited-file-name file-path t)
-        (insert-file-contents file-path)
-        (org-mode)
-        (goto-char (point-min))
-
+      (org-mcp--with-org-file-buffer file-path
+          `((file . ,(file-name-nondirectory file-path))
+            (title . ,title))
         ;; Navigate to insertion point based on parentUri
         (let ((parent-path nil)
               (parent-id nil))
@@ -928,12 +939,7 @@ MCP Parameters:
             (end-of-line)
             (insert "\n" body)
             (unless (string-suffix-p "\n" body)
-              (insert "\n")))
-
-          (org-mcp--complete-and-save
-           file-path
-           `((file . ,(file-name-nondirectory file-path))
-             (title . ,title))))))))
+              (insert "\n"))))))))
 
 (defun org-mcp--tool-rename-headline (uri currentTitle newTitle)
   "Rename the title of a headline while preserving TODO state and tags.
@@ -958,12 +964,8 @@ MCP Parameters:
     (org-mcp--check-buffer-modifications file-path "rename")
 
     ;; Rename the headline in the file
-    (with-temp-buffer
-      ;; Make org-id work by setting the file name
-      (set-visited-file-name file-path t)
-      (insert-file-contents file-path)
-      (org-mode)
-      (goto-char (point-min))
+    (org-mcp--with-org-file-buffer file-path
+        `((previousTitle . ,currentTitle) (newTitle . ,newTitle))
       ;; Navigate to the headline
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--org-id-prefix uri))
@@ -975,11 +977,7 @@ MCP Parameters:
           (org-mcp--state-mismatch-error
            currentTitle actual-title "Title")))
 
-      (org-edit-headline newTitle)
-
-      (org-mcp--complete-and-save
-       file-path
-       `((previousTitle . ,currentTitle) (newTitle . ,newTitle))))))
+      (org-edit-headline newTitle))))
 
 (defun org-mcp--tool-edit-body
     (resourceUri oldBody newBody replaceAll)
@@ -1013,13 +1011,7 @@ Special behavior:
     (org-mcp--check-buffer-modifications file-path "edit body")
 
     ;; Process the file
-    (with-temp-buffer
-      ;; Make org-id work by setting the file name
-      (set-visited-file-name file-path t)
-      (insert-file-contents file-path)
-      (org-mode)
-      (goto-char (point-min))
-
+    (org-mcp--with-org-file-buffer file-path nil
       ;; Navigate to the headline
       (org-mcp--goto-headline-from-uri
        headline-path
@@ -1124,10 +1116,7 @@ Special behavior:
               (delete-region body-begin body-end)
             ;; Empty body - ensure we're at the right position
             (goto-char body-begin))
-          (insert new-body-content))
-
-        ;; Save and return success
-        (org-mcp--complete-and-save file-path nil)))))
+          (insert new-body-content))))))
 
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
