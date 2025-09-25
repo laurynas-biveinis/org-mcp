@@ -85,6 +85,24 @@ Third line of content."
   (format "org-id://%s" org-mcp-test--content-with-id-id)
   "URI for org-mcp-test--content-with-id.")
 
+(defconst org-mcp-test--expected-regex-todo-to-in-progress-with-id
+  (concat
+   ;; Match start of buffer
+   "\\`"
+   ;; Match the updated headline
+   "\\* IN-PROGRESS Task with ID\n"
+   ;; Match the PROPERTIES drawer with the specific ID
+   ":PROPERTIES:\n"
+   ":ID: +550e8400-e29b-41d4-a716-446655440000\n"
+   ":END:\n"
+   ;; Match the body text
+   "First line of content\\.\n"
+   "Second line of content\\.\n"
+   "Third line of content\\."
+   ;; Match end of buffer
+   "\\'")
+  "Expected regex for TODO to IN-PROGRESS state change with ID.")
+
 (defconst org-mcp-test--content-slash-in-headline
   "* Project A/B Testing
 This is a headline with a slash in it.
@@ -1573,49 +1591,25 @@ Another task description."))
     (org-mcp-test--with-temp-org-file test-file test-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords
-             '((sequence "TODO" "IN-PROGRESS" "|" "DONE")))
-            (org-id-track-globally t)
-            (org-id-locations-file
-             (make-temp-file "org-id-locations")))
-        ;; Initialize org-id system with the file
-        (with-temp-buffer
-          (insert-file-contents test-file)
-          (org-mode)
-          (org-id-update-id-locations (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; Update using ID-based URI
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+        (org-mcp-test--with-id-setup
+            `((,org-mcp-test--content-with-id-id . ,test-file))
           (let* ((resource-uri org-mcp-test--content-with-id-uri)
                  (result
                   (org-mcp-test--update-and-verify-todo
                    resource-uri "TODO" "IN-PROGRESS"
                    test-file "* IN-PROGRESS Task with ID")))
-            ;; Verify the returned URI is the same ID
             (should
              (equal
               (alist-get 'uri result)
               org-mcp-test--content-with-id-uri))
-            ;; Verify file content with a single regex matching the whole buffer
             (with-temp-buffer
               (insert-file-contents test-file)
-              (let*
-                  ((content (buffer-string))
-                   (expected-regex
-                    (concat
-                     ;; Match start of buffer
-                     "\\`"
-                     ;; Match the updated headline
-                     "\\* IN-PROGRESS Task with ID\n"
-                     ;; Match the PROPERTIES drawer with the specific ID
-                     ":PROPERTIES:\n"
-                     ":ID: +550e8400-e29b-41d4-a716-446655440000\n"
-                     ":END:\n"
-                     ;; Match the body text
-                     "First line of content\\.\n"
-                     "Second line of content\\.\n"
-                     "Third line of content\\."
-                     ;; Match end of buffer
-                     "\\'")))
-                (should (string-match expected-regex content))))))))))
+              (let ((content (buffer-string)))
+                (should
+                 (string-match
+                  org-mcp-test--expected-regex-todo-to-in-progress-with-id
+                  content))))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."
