@@ -558,7 +558,7 @@ MCP Parameters:
            (apply 'append (mapcar 'cdr org-todo-keywords))))
       (unless (member newState valid-states)
         (org-mcp--tool-validation-error
-         "Invalid TODO state: '%s'. Valid states: %s"
+         "Invalid TODO state: '%s'.  Valid states: %s"
          newState (mapconcat 'identity valid-states ", "))))
 
     ;; Check for unsaved changes
@@ -751,7 +751,7 @@ MCP Parameters:
     ;; Validate TODO state
     (unless (member todoState valid-states)
       (org-mcp--tool-validation-error
-       "Invalid TODO state: '%s'. Valid states: %s"
+       "Invalid TODO state: '%s'.  Valid states: %s"
        todoState (mapconcat 'identity valid-states ", ")))
 
     ;; Validate tags
