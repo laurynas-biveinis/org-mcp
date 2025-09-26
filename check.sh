@@ -224,6 +224,14 @@ else
 	echo "No markdown files to check"
 fi
 
+echo -n "Checking YAML formatting... $(echo .github/workflows/*.yml) "
+if prettier --log-level warn --check .github/workflows/*.yml; then
+	echo "OK!"
+else
+	echo "prettier check failed!"
+	ERRORS=$((ERRORS + 1))
+fi
+
 echo -n "Checking terminology... "
 if [ ${#MARKDOWN_FILES[@]} -gt 0 ]; then
 	if textlint --rule terminology "${MARKDOWN_FILES[@]}"; then
