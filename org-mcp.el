@@ -69,7 +69,8 @@ BODY can access FILE-PATH and RESPONSE-ALIST as variables."
      (org-mode)
      (goto-char (point-min))
      ,@body
-     (message "[TRACE] Before complete-and-save in macro: point=%s" (point))
+     (message "[TRACE] Before complete-and-save in macro: point=%s"
+              (point))
      (org-mcp--complete-and-save ,file-path ,response-alist)))
 
 ;; Error handling helpers
@@ -529,14 +530,18 @@ Returns the content string or nil if not found."
 Creates or gets an Org ID for the current headline and returns it.
 FILE-PATH is the path to save the buffer contents to.
 RESPONSE-ALIST is an alist of response fields."
-  (message "[TRACE] complete-and-save: point=%s, on-heading=%s, current-level=%s, buffer='%s...'"
-           (point) (org-at-heading-p) (org-current-level)
-           (buffer-substring (point-min) (min 100 (point-max))))
-  (let ((id (condition-case err
-                (org-id-get-create)
-              (error
-               (message "[TRACE] org-id-get-create failed: %s" err)
-               nil))))
+  (message
+   "[TRACE] complete-and-save: point=%s, on-heading=%s, current-level=%s, buffer='%s...'"
+   (point)
+   (org-at-heading-p)
+   (org-current-level)
+   (buffer-substring (point-min) (min 100 (point-max))))
+  (let ((id
+         (condition-case err
+             (org-id-get-create)
+           (error
+            (message "[TRACE] org-id-get-create failed: %s" err)
+            nil))))
     (message "[TRACE] org-id-get-create returned: %s" id)
     (when id
       (write-region (point-min) (point-max) file-path)
@@ -673,46 +678,75 @@ Throws an MCP tool error if invalid headlines are found."
 Uses a state machine: tracks if we're in a block, and which one.
 Text inside blocks is literal and doesn't start/end other blocks.
 Throws an MCP tool error if unbalanced blocks are found."
-  (message "[TRACE] validate-body-no-unbalanced-blocks called, body='%s'" body)
-  (with-temp-buffer
-    (insert body)
-    (goto-char (point-min))
-    (let
-        ((current-block nil)) ; Current block type or nil
-      ;; Scan forward for all block markers
-      ;; Block names can be any non-whitespace chars
-      (while (re-search-forward
-              "^#\\+\\(BEGIN\\|END\\|begin\\|end\\)_\\(\\S-+\\)"
-              nil t)
-        (let ((marker-type (upcase (match-string 1)))
-              (block-type (upcase (match-string 2))))
-          (cond
-           ;; Found BEGIN
-           ((string= marker-type "BEGIN")
-            (if current-block
-                ;; Already in block - BEGIN is literal
-                nil
-              ;; Not in a block - enter this block
-              (setq current-block block-type)))
-           ;; Found END
-           ((string= marker-type "END")
-            (cond
-             ;; Not in any block - this END is orphaned
-             ((null current-block)
-              (org-mcp--tool-validation-error
-               "Orphaned END_%s without BEGIN_%s"
-               block-type block-type))
-             ;; In matching block - exit the block
-             ((string= current-block block-type)
-              (setq current-block nil))
-             ;; In different block - this END is just literal text
-             (t
-              nil))))))
-      ;; After scanning everything, check if we're still in a block
-      (when current-block
-        (org-mcp--tool-validation-error
-         "Body contains unclosed %s block"
-         current-block)))))
+  (message
+   "[TRACE] validate-body-no-unbalanced-blocks called, body='%s'"
+   body)
+  (condition-case err
+      (with-temp-buffer
+        (insert body)
+        (goto-char (point-min))
+        (message "[TRACE] Buffer contents: '%s'" (buffer-string))
+        (message "[TRACE] Point at: %d, point-max: %d"
+                 (point)
+                 (point-max))
+        ;; Test a simple search first
+        (let ((simple-match (re-search-forward "BEGIN" nil t)))
+          (message "[TRACE] Simple BEGIN search result: %s at pos %s"
+                   simple-match
+                   (if simple-match
+                       (point)
+                     "N/A"))
+          (goto-char (point-min)))
+        (let
+            ((current-block nil)) ; Current block type or nil
+          ;; Scan forward for all block markers
+          ;; Block names can be any non-whitespace chars
+          (message "[TRACE] Starting regex search loop")
+          (while (re-search-forward
+                  "^#\\+\\(BEGIN\\|END\\|begin\\|end\\)_\\(\\S-+\\)"
+                  nil t)
+            (let ((marker-type (upcase (match-string 1)))
+                  (block-type (upcase (match-string 2))))
+              (message
+               "[TRACE] Found block marker: %s_%s, current-block=%s"
+               marker-type block-type current-block)
+              (cond
+               ;; Found BEGIN
+               ((string= marker-type "BEGIN")
+                (if current-block
+                    ;; Already in block - BEGIN is literal
+                    nil
+                  ;; Not in a block - enter this block
+                  (setq current-block block-type)))
+               ;; Found END
+               ((string= marker-type "END")
+                (cond
+                 ;; Not in any block - this END is orphaned
+                 ((null current-block)
+                  (message
+                   "[TRACE] About to throw orphaned END error for: %s"
+                   block-type)
+                  (org-mcp--tool-validation-error
+                   "Orphaned END_%s without BEGIN_%s"
+                   block-type block-type))
+                 ;; In matching block - exit the block
+                 ((string= current-block block-type)
+                  (setq current-block nil))
+                 ;; In different block - this END is just literal text
+                 (t
+                  nil))))))
+          (message "[TRACE] After regex search loop, current-block=%s"
+                   current-block)
+          ;; After scanning everything, check if we're still in a block
+          (when current-block
+            (org-mcp--tool-validation-error
+             "Body contains unclosed %s block"
+             current-block))
+          (message
+           "[TRACE] Block validation completed successfully")))
+    (error
+     (message "[TRACE] Error in validation: %s" err)
+     (signal (car err) (cdr err)))))
 
 (defun org-mcp--normalize-tags-to-list (tags)
   "Normalize TAGS parameter to a list format.
@@ -752,8 +786,12 @@ MCP Parameters:
   body - Optional body text content
   parent_uri - Parent item URI (required)
   after_uri - Sibling to insert after (optional)"
-  (message "[TRACE] org-mcp--tool-add-todo called: title='%s', body-length=%s"
-           title (if body (length body) "nil"))
+  (message
+   "[TRACE] org-mcp--tool-add-todo called: title='%s', body-length=%s"
+   title
+   (if body
+       (length body)
+     "nil"))
   (org-mcp--validate-headline-title title)
 
   ;; Normalize tags and get valid TODO states
@@ -960,14 +998,19 @@ MCP Parameters:
 
           ;; Add body if provided
           (when body
-            (message "[TRACE] Before body insert: point=%s, on-heading=%s, current-level=%s"
-                     (point) (org-at-heading-p) (org-current-level))
+            (message
+             "[TRACE] Before body insert: point=%s, on-heading=%s, current-level=%s"
+             (point) (org-at-heading-p) (org-current-level))
             (end-of-line)
             (insert "\n" body)
             (unless (string-suffix-p "\n" body)
               (insert "\n"))
-            (message "[TRACE] After body insert: point=%s, on-heading=%s, current-level=%s, buffer-size=%s"
-                     (point) (org-at-heading-p) (org-current-level) (buffer-size))))))))
+            (message
+             "[TRACE] After body insert: point=%s, on-heading=%s, current-level=%s, buffer-size=%s"
+             (point)
+             (org-at-heading-p)
+             (org-current-level)
+             (buffer-size))))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
