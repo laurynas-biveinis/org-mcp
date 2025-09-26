@@ -139,6 +139,14 @@ else
 	echo "Skipping shellcheck and shfmt due to previous errors"
 fi
 
+# GitHub Actions
+
+# Run checkov on GitHub Actions workflows
+echo "Checking GitHub Actions workflows..."
+if ! checkov --framework github_actions --directory .github/workflows --compact --quiet; then
+	ERRORS=$((ERRORS + 1))
+fi
+
 # Markdown
 
 echo -n "Checking Markdown files... "
