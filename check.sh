@@ -41,10 +41,6 @@ readonly MARKDOWN_FILES=(CLAUDE.md)
 
 readonly EMACS="emacs -Q --batch"
 
-# Elisp packages in ELPA
-MCP_SERVER_LIB=$(find ~/.emacs.d/elpa/ -maxdepth 1 -name "mcp-server-lib-*" -type d 2>/dev/null | head -1 | xargs basename)
-readonly MCP_SERVER_LIB
-
 ERRORS=0
 ELISP_SYNTAX_FAILED=0
 SHELL_SYNTAX_FAILED=0
@@ -95,11 +91,7 @@ rm -f ./*.elc
 # Only run ERT tests if there are no Elisp syntax errors
 if [ $ELISP_SYNTAX_FAILED -eq 0 ]; then
 	echo -n "Running all tests... "
-	if $EMACS --eval \
-		"(add-to-list 'load-path (locate-user-emacs-file \"elpa/$MCP_SERVER_LIB\"))" \
-		--eval "(add-to-list 'load-path (expand-file-name \".\"))" \
-		-l org-mcp-test.el --eval '(let ((ert-quiet t))
-          (ert-run-tests-batch-and-exit))'; then
+	if eask run script test; then
 		echo "OK!"
 	else
 		echo "ERT tests failed"
