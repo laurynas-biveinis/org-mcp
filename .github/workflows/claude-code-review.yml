@@ -10,6 +10,8 @@ on:
     #   - "src/**/*.js"
     #   - "src/**/*.jsx"
 
+permissions: {}
+
 jobs:
   claude-review:
     # Optional: Filter by PR author
