@@ -267,9 +267,9 @@ Some content."
    "#\\+OPTIONS: toc:nil\n"
    "\n"
    "\\* TODO New Top Task +.*:urgent:\n"
-   "\\(?::PROPERTIES:\n"
-   ":ID: +[^\n]+\n"
-   ":END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n"
+   " *:ID: +[^\n]+\n"
+   " *:END:\n\\)?"
    "\n?"
    "\\* Existing Task\n"
    "Some content here\\.")
@@ -282,13 +282,13 @@ Some content."
    "\\*\\* Another Task\n"
    "More content\\.\n"
    "\\*\\*\\* TODO Child Task +.*:work:.*\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?")
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
   "Pattern for child TODO added under parent with existing child.")
 
 (defconst org-mcp-test--regex-todo-with-body
   (concat
    "^\\* TODO Task with Body +:[^\n]*\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?" ; Optional properties
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?" ; Optional properties
    "This is the body text\\.\n"
    "It has multiple lines\\.\n"
    "With some content\\.\n?$")
@@ -298,13 +298,13 @@ Some content."
   (concat
    "^\\* Parent Task\n"
    "\\*\\* First Child\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "First child content\\.\n"
    "\\*\\* Second Child\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "Second child content\\.\n\n?"
    "\\*\\* TODO New Task After Second +:[^\n]*\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "\\*\\* Third Child\n"
    "Third child content\\.")
   "Pattern for TODO added after specific sibling.")
@@ -312,7 +312,7 @@ Some content."
 (defconst org-mcp-test--regex-todo-without-tags
   (concat
    "^\\* TODO Task Without Tags *\n" ; No tags, optional spaces
-   "\\(?::PROPERTIES:\n" ":ID: +[^\n]+\n" ":END:\n\\)?$")
+   "\\(?: *:PROPERTIES:\n" " *:ID: +[^\n]+\n" " *:END:\n\\)?$")
   "Pattern for TODO item without any tags.")
 
 (defconst org-mcp-test--pattern-renamed-simple-todo
