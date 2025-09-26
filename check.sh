@@ -147,6 +147,14 @@ if ! checkov --framework github_actions --directory .github/workflows --compact 
 	ERRORS=$((ERRORS + 1))
 fi
 
+echo -n "Checking GitHub Actions security... $(echo .github/workflows/*.yml) "
+if zizmor .github/workflows/*.yml; then
+	echo "OK!"
+else
+	echo "zizmor check failed!"
+	ERRORS=$((ERRORS + 1))
+fi
+
 # Markdown
 
 echo -n "Checking Markdown files... "
