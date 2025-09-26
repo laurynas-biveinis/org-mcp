@@ -14,6 +14,8 @@
 
 (setq network-security-level 'low)
 
+(package-file "org-mcp.el")
+
 (files "org-mcp.el")
 
 (script "test" "eask test ert org-mcp-test.el")
