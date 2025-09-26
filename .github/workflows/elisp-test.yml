@@ -67,7 +67,7 @@ jobs:
           retention-days: 30
 
       - name: Publish Test Results
-        uses: EnricoMi/publish-unit-test-result-action@v3
+        uses: EnricoMi/publish-unit-test-result-action@v2
         if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2')
         with:
           files: org-mcp-test.xml
