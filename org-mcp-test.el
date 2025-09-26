@@ -1762,9 +1762,9 @@ Another task."))
          test-file
          (concat
           "^\\* TODO ValidTask +:work:\n"
-          "\\(?::PROPERTIES:\n"
-          ":ID: +[^\n]+\n"
-          ":END:\n\\)?$"))))))
+          "\\(?: *:PROPERTIES:\n"
+          " *:ID: +[^\n]+\n"
+          " *:END:\n\\)?$"))))))
 
 (ert-deftest org-mcp-test-add-todo-tag-validation-without-alist ()
   "Test valid tag names are accepted when `org-tag-alist' is empty."
@@ -1788,9 +1788,9 @@ Another task."))
            (concat
             "^\\* TODO Task1 +:"
             ".*validtag.*tag123.*my_tag.*@home.*:\n"
-            "\\(?::PROPERTIES:\n"
-            ":ID: +[^\n]+\n"
-            ":END:\n\\)?$")))))))
+            "\\(?: *:PROPERTIES:\n"
+            " *:ID: +[^\n]+\n"
+            " *:END:\n\\)?$")))))))
 
 (ert-deftest org-mcp-test-add-todo-tag-invalid-characters ()
   "Test that tags with invalid characters are rejected."
@@ -2096,14 +2096,14 @@ This is valid Org-mode syntax and should be allowed."
                test-file
                (concat
                 "^\\* Parent Task\n"
-                "\\(?::PROPERTIES:\n"
-                ":ID: +[^\n]+\n"
-                ":END:\n\\)?"
+                "\\(?: *:PROPERTIES:\n"
+                " *:ID: +[^\n]+\n"
+                " *:END:\n\\)?"
                 "Some parent content\\.\n\n?"
                 "\\*\\* TODO Child via ID +:work:\n"
-                "\\(?::PROPERTIES:\n"
-                ":ID: +[^\n]+\n"
-                ":END:\n\\)?\n?"
+                "\\(?: *:PROPERTIES:\n"
+                " *:ID: +[^\n]+\n"
+                " *:END:\n\\)?\n?"
                 "\\* Another Task")))))))))
 
 
