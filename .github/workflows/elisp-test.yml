@@ -36,12 +36,12 @@ jobs:
           persist-credentials: false
 
       - name: Set up Emacs
-        uses: purcell/setup-emacs@master
+        uses: purcell/setup-emacs@master # zizmor: ignore[unpinned-uses]
         with:
           version: ${{ matrix.emacs_version }}
 
       - name: Set up Eask
-        uses: emacs-eask/setup-eask@master
+        uses: emacs-eask/setup-eask@master # zizmor: ignore[unpinned-uses]
         with:
           version: "snapshot"
 
@@ -67,7 +67,7 @@ jobs:
           retention-days: 30
 
       - name: Publish Test Results
-        uses: EnricoMi/publish-unit-test-result-action@v2
+        uses: EnricoMi/publish-unit-test-result-action@v2 # zizmor: ignore[unpinned-uses]
         if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2')
         with:
           files: org-mcp-test.xml
@@ -75,7 +75,7 @@ jobs:
           comment_mode: off
 
       - name: Publish Test Results (macOS)
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v1 # zizmor: ignore[unpinned-uses]
         if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2')
         with:
           name: Test Results (macOS, Emacs ${{ matrix.emacs_version }})
