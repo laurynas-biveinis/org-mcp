@@ -959,9 +959,13 @@ MCP Parameters:
               (org-mcp--validate-body-no-unbalanced-blocks body)))
 
           ;; Insert the new heading using Org functions
+          (message
+           "[TRACE] About to insert heading, parent-path=%s, parent-id=%s"
+           parent-path parent-id)
           (if (or parent-path parent-id)
               ;; We're inside a parent
               (progn
+                (message "[TRACE] Inserting child heading")
                 ;; Ensure we have a newline before inserting
                 (unless (or (bobp) (looking-back "\n" 1))
                   (insert "\n"))
@@ -969,11 +973,13 @@ MCP Parameters:
                     ;; With after_uri, positioned after sibling
                     ;; Use org-insert-heading to insert right here
                     (progn
+                      (message "[TRACE] Inserting after sibling")
                       (org-insert-heading)
                       (insert title))
                   ;; No after_uri - at parent's end
                   ;; Need to create a child heading
                   (progn
+                    (message "[TRACE] Inserting at parent's end")
                     ;; Ensure blank line before child
                     (unless (or (bobp) (looking-back "\n\n" 2))
                       (insert "\n"))
@@ -982,18 +988,25 @@ MCP Parameters:
                     (insert title))))
             ;; Top-level heading
             (progn
+              (message "[TRACE] Inserting top-level heading")
               ;; Ensure proper spacing before inserting
               (unless (or (bobp) (looking-back "\n" 1))
                 (insert "\n"))
               ;; Use org-insert-heading for top-level
               (org-insert-heading nil nil t)
               (insert title)))
+          (message "[TRACE] Heading inserted, point=%s, on-heading=%s"
+                   (point)
+                   (org-at-heading-p))
 
           ;; Set the TODO state using Org functions
+          (message "[TRACE] About to set TODO state: %s" todo_state)
           (org-todo todo_state)
+          (message "[TRACE] TODO state set successfully")
 
           ;; Set tags using Org functions
           (when tag-list
+            (message "[TRACE] Setting tags: %s" tag-list)
             (org-set-tags tag-list))
 
           ;; Add body if provided
@@ -1010,7 +1023,13 @@ MCP Parameters:
              (point)
              (org-at-heading-p)
              (org-current-level)
-             (buffer-size))))))))
+             (buffer-size)))
+
+          ;; Move back to the heading for org-id-get-create
+          (when body
+            (org-back-to-heading t)
+            (message
+             "[TRACE] Moved back to heading for ID creation")))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
