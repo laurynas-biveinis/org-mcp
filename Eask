@@ -7,8 +7,6 @@
 (website-url "https://github.com/laurynas-biveinis/org-mcp")
 (keywords "tools" "convenience")
 
-(package-file "org-mcp.el")
-
 (source "melpa")
 
 (depends-on "emacs" "27.1")
