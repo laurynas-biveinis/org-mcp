@@ -654,19 +654,11 @@ Errors if multiple tags from same mutex group."
 (defun org-mcp--validate-headline-title (title)
   "Validate that TITLE is not empty or whitespace-only.
 Throws an MCP tool error if validation fails."
-  (message "[TRACE] validate-title: title='%s', len=%d, first-char-code=%s"
-           title (length title)
-           (if (> (length title) 0) (aref title 0) "empty"))
-  (message "[TRACE] string-empty-p: %s" (string-empty-p title))
-  (message "[TRACE] match [[:space:]]: %s" (string-match-p "^[[:space:]]*$" title))
-  (message "[TRACE] match NBSP explicitly: %s" (string-match-p "^[\u00A0]*$" title))
-  (message "[TRACE] match char 160: %s" (string-match-p (format "^[%c]*$" 160) title))
   (when (or (string-empty-p title)
             (string-match-p "^[[:space:]]*$" title)
             ;; Explicitly match NBSP for Emacs 27.2 compatibility
-            (string-match-p "^[\u00A0]*$" title)
-            ;; Also try with char code directly
-            (string-match-p (format "^[%c]*$" 160) title))
+            ;; In Emacs 27.2, [[:space:]] doesn't match NBSP (U+00A0)
+            (string-match-p "^[\u00A0]*$" title))
     (org-mcp--tool-validation-error
      "Headline title cannot be empty or contain only whitespace"))
   (when (string-match-p "[\n\r]" title)
