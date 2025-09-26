@@ -790,19 +790,19 @@ MCP Parameters:
     ;; Parse parent URI to get file path
     (let (file-path)
       (org-mcp--with-uri-prefix-dispatch
-       parent_uri
-       ;; Handle org-headline:// URIs
-       (let* ((split-result
-               (org-mcp--split-headline-uri uri-without-prefix))
-              (filename (car split-result))
-              (allowed-file
-               (org-mcp--validate-file-access filename)))
-         (setq file-path (expand-file-name allowed-file)))
-       ;; Handle org-id:// URIs
-       (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
-         (unless allowed-file
-           (org-mcp--id-not-found-error id))
-         (setq file-path allowed-file)))
+          parent_uri
+        ;; Handle org-headline:// URIs
+        (let* ((split-result
+                (org-mcp--split-headline-uri uri-without-prefix))
+               (filename (car split-result))
+               (allowed-file
+                (org-mcp--validate-file-access filename)))
+          (setq file-path (expand-file-name allowed-file)))
+        ;; Handle org-id:// URIs
+        (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
+          (unless allowed-file
+            (org-mcp--id-not-found-error id))
+          (setq file-path allowed-file)))
 
       ;; Check for unsaved changes
       (org-mcp--check-buffer-modifications file-path "add TODO")
@@ -816,18 +816,18 @@ MCP Parameters:
               (parent-id nil))
           ;; Parse parent URI (org-headline:// or org-id://)
           (org-mcp--with-uri-prefix-dispatch
-           parent_uri
-           ;; org-headline:// format
-           (let* ((split-result
-                   (org-mcp--split-headline-uri uri-without-prefix))
-                  (path-str (cdr split-result)))
-             (when (and path-str (> (length path-str) 0))
-               (setq parent-path
-                     (mapcar
-                      #'url-unhex-string
-                      (split-string path-str "/")))))
-           ;; org-id:// format
-           (setq parent-id id))
+              parent_uri
+            ;; org-headline:// format
+            (let* ((split-result
+                    (org-mcp--split-headline-uri uri-without-prefix))
+                   (path-str (cdr split-result)))
+              (when (and path-str (> (length path-str) 0))
+                (setq parent-path
+                      (mapcar
+                       #'url-unhex-string
+                       (split-string path-str "/")))))
+            ;; org-id:// format
+            (setq parent-id id))
 
           ;; Navigate to parent if specified
           (if (or parent-path parent-id)
@@ -852,14 +852,13 @@ MCP Parameters:
             (if after_uri
                 (progn
                   ;; Parse afterUri to get the ID
-                  (let
-                      ((after-id
-                        (if (string-match
-                             "^org-id://\\(.+\\)$" after_uri)
-                            (match-string 1 after_uri)
-                          (org-mcp--tool-validation-error
-                           "Field after_uri is not org-id://: %s"
-                           after_uri))))
+                  (let ((after-id
+                         (if (string-match
+                              "^org-id://\\(.+\\)$" after_uri)
+                             (match-string 1 after_uri)
+                           (org-mcp--tool-validation-error
+                            "Field after_uri is not org-id://: %s"
+                            after_uri))))
                     ;; Find the sibling with the specified ID
                     (org-back-to-heading t) ;; At parent
                     (let ((found nil)
@@ -893,6 +892,20 @@ MCP Parameters:
                          after-id)))))
               ;; No after_uri - insert at end of parent's subtree
               (org-end-of-subtree t t)))
+
+          ;; Validate body before inserting heading
+          ;; Calculate the target level for validation
+          (let ((target-level
+                 (if (or parent-path parent-id)
+                     ;; Child heading - parent level + 1
+                     (1+ (or (org-current-level) 0))
+                   ;; Top-level heading
+                   1)))
+
+            ;; Validate body content if provided
+            (when body
+              (org-mcp--validate-body-no-headlines body target-level)
+              (org-mcp--validate-body-no-unbalanced-blocks body)))
 
           ;; Insert the new heading using Org functions
           (if (or parent-path parent-id)
@@ -934,9 +947,6 @@ MCP Parameters:
 
           ;; Add body if provided
           (when body
-            (org-mcp--validate-body-no-headlines
-             body (org-current-level))
-            (org-mcp--validate-body-no-unbalanced-blocks body)
             (end-of-line)
             (insert "\n" body)
             (unless (string-suffix-p "\n" body)
