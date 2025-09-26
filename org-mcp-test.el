@@ -412,16 +412,16 @@ Third occurrence of pattern."
 (defconst org-mcp-test--pattern-edit-body-accept-lower-level
   (concat
    "\\* Task with ID\n"
-   ":PROPERTIES:\n"
-   ":ID: +"
+   " *:PROPERTIES:\n"
+   " *:ID: +"
    org-mcp-test--content-with-id-id
    "\n"
-   ":END:\n"
+   " *:END:\n"
    "some text\n"
    "\\*\\* Subheading content\n"
-   "\\(?::PROPERTIES:\n" ; Subheading gets ID
-   ":ID: +[A-F0-9-]+\n"
-   ":END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n" ; Subheading gets ID
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:\n\\)?"
    "Second line of content\\.\n"
    "Third line of content\\.")
   "Pattern for edit-body accepting lower-level headlines.")
