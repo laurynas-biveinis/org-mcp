@@ -45,8 +45,6 @@ readonly EMACS="emacs -Q --batch"
 # Elisp packages in ELPA
 MCP_SERVER_LIB=$(find ~/.emacs.d/elpa/ -maxdepth 1 -name "mcp-server-lib-*" -type d 2>/dev/null | head -1 | xargs basename)
 readonly MCP_SERVER_LIB
-ELISP_AUTOFMT=$(find ~/.emacs.d/elpa/ -maxdepth 1 -name "elisp-autofmt-*" -type d 2>/dev/null | head -1 | xargs basename)
-readonly ELISP_AUTOFMT
 readonly ELISP_LINT="elisp-lint-20220419.252"
 readonly PACKAGE_LINT="package-lint-0.26"
 readonly DASH="dash-20250312.1307"
@@ -69,13 +67,7 @@ fi
 # Only run indentation if there are no syntax errors
 if [ $ELISP_SYNTAX_FAILED -eq 0 ]; then
 	echo -n "Running elisp-autofmt... "
-	if $EMACS --eval "(add-to-list 'load-path (locate-user-emacs-file \"elpa/$ELISP_AUTOFMT\"))" \
-		--eval "(add-to-list 'load-path (expand-file-name \".\"))" \
-		--eval "(require 'elisp-autofmt)" \
-		--eval "(dolist (file '($ELISP_FILES))
-                   (princ (format \"%s \" file))
-               (find-file file)
-               (elisp-autofmt-buffer-to-file))"; then
+	if eask format elisp-autofmt; then
 		echo "OK!"
 	else
 		echo "elisp-autofmt failed!"
