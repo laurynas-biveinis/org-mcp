@@ -393,19 +393,19 @@ Third occurrence of pattern."
 (defconst org-mcp-test--pattern-edit-body-empty
   (concat
    "\\* Another TaskNew content added\\.\n"
-   ":PROPERTIES:\n"
-   ":ID: +[A-F0-9-]+\n"
-   ":END:")
+   " *:PROPERTIES:\n"
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:")
   "Pattern for edit-body test with empty body adding content.")
 
 (defconst org-mcp-test--pattern-edit-body-empty-with-props
   (format (concat
-           ":PROPERTIES:\n"
-           ":ID: +[A-F0-9-]+\n"
-           ":END:\n"
-           ":PROPERTIES:\n"
-           ":ID: +%s\n"
-           ":END:Content added after properties\\.")
+           " *:PROPERTIES:\n"
+           " *:ID: +[A-F0-9-]+\n"
+           " *:END:\n"
+           " *:PROPERTIES:\n"
+           " *:ID: +%s\n"
+           " *:END:Content added after properties\\.")
           org-mcp-test--timestamp-id)
   "Pattern for edit-body with existing properties adding content.")
 
