@@ -974,7 +974,13 @@ MCP Parameters:
                     ;; Use org-insert-heading to insert right here
                     (progn
                       (message "[TRACE] Inserting after sibling")
-                      (org-insert-heading)
+                      (condition-case err
+                          (org-insert-heading)
+                        (error
+                         (message
+                          "[TRACE] org-insert-heading (sibling) failed: %s"
+                          err)
+                         (signal (car err) (cdr err))))
                       (insert title))
                   ;; No after_uri - at parent's end
                   ;; Need to create a child heading
@@ -984,7 +990,13 @@ MCP Parameters:
                     (unless (or (bobp) (looking-back "\n\n" 2))
                       (insert "\n"))
                     ;; Create child with subheading
-                    (org-insert-subheading nil)
+                    (condition-case err
+                        (org-insert-subheading nil)
+                      (error
+                       (message
+                        "[TRACE] org-insert-subheading failed: %s"
+                        err)
+                       (signal (car err) (cdr err))))
                     (insert title))))
             ;; Top-level heading
             (progn
@@ -993,7 +1005,16 @@ MCP Parameters:
               (unless (or (bobp) (looking-back "\n" 1))
                 (insert "\n"))
               ;; Use org-insert-heading for top-level
-              (org-insert-heading nil nil t)
+              (message
+               "[TRACE] About to call org-insert-heading, point=%s, buffer='%s'"
+               (point)
+               (buffer-substring (point-min) (min 50 (point-max))))
+              (condition-case err
+                  (org-insert-heading nil nil t)
+                (error
+                 (message "[TRACE] org-insert-heading failed: %s" err)
+                 (signal (car err) (cdr err))))
+              (message "[TRACE] org-insert-heading completed")
               (insert title)))
           (message "[TRACE] Heading inserted, point=%s, on-heading=%s"
                    (point)
@@ -1023,13 +1044,7 @@ MCP Parameters:
              (point)
              (org-at-heading-p)
              (org-current-level)
-             (buffer-size)))
-
-          ;; Move back to the heading for org-id-get-create
-          (when body
-            (org-back-to-heading t)
-            (message
-             "[TRACE] Moved back to heading for ID creation")))))))
+             (buffer-size))))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
