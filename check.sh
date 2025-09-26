@@ -34,12 +34,9 @@
 
 set -eu -o pipefail
 
-readonly ORG_FILES='"README.org"'
 readonly SHELL_FILES=(check.sh)
 # Explicitly list markdown files to lint, excluding uncommitted LLM scratch/memory files
 readonly MARKDOWN_FILES=(CLAUDE.md)
-
-readonly EMACS="emacs -Q --batch"
 
 ERRORS=0
 ELISP_SYNTAX_FAILED=0
@@ -103,18 +100,8 @@ fi
 
 # Org
 
-echo -n "Checking org files... $(echo "$ORG_FILES" | tr -d '"') "
-if $EMACS --eval "(require 'org)" --eval "(require 'org-lint)" \
-	--eval "(let ((all-checks-passed t))
-             (dolist (file '($ORG_FILES) all-checks-passed)
-               (with-temp-buffer
-                 (insert-file-contents file)
-                 (org-mode)
-                 (let ((results (org-lint)))
-                   (when results
-                     (message \"Found issues in %s: %S\" file results)
-                     (setq all-checks-passed nil)))))
-             (unless all-checks-passed (kill-emacs 1)))"; then
+echo -n "Checking org files... "
+if eask run script org-lint; then
 	echo "OK!"
 else
 	echo "org files check failed"
