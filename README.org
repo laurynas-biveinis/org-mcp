@@ -1,6 +1,7 @@
 #+TITLE: org-mcp
 
 [[https://github.com/laurynas-biveinis/org-mcp/actions/workflows/elisp-test.yml][https://github.com/laurynas-biveinis/org-mcp/actions/workflows/elisp-test.yml/badge.svg]]
+[[https://github.com/laurynas-biveinis/org-mcp/actions/workflows/super-linter.yml][https://github.com/laurynas-biveinis/org-mcp/actions/workflows/super-linter.yml/badge.svg]]
 
 * Overview
 
