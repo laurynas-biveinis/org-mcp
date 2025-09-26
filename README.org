@@ -1,5 +1,4 @@
 #+TITLE: org-mcp
-#+AUTHOR: org-mcp contributors
 
 [[https://github.com/laurynas-biveinis/org-mcp/actions/workflows/elisp-test.yml][https://github.com/laurynas-biveinis/org-mcp/actions/workflows/elisp-test.yml/badge.svg]]
 
