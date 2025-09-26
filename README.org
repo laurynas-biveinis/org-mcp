@@ -1,6 +1,8 @@
 #+TITLE: org-mcp
 #+AUTHOR: org-mcp contributors
 
+[[https://github.com/laurynas-biveinis/org-mcp/actions/workflows/elisp-test.yml][https://github.com/laurynas-biveinis/org-mcp/actions/workflows/elisp-test.yml/badge.svg]]
+
 * Overview
 
 org-mcp is an Emacs package that implements a Model Context Protocol (MCP) server for Org-mode. It enables AI assistants and other MCP clients to interact with your Org files through a secure, structured API.
