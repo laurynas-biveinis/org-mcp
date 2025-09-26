@@ -659,10 +659,14 @@ Throws an MCP tool error if validation fails."
            (if (> (length title) 0) (aref title 0) "empty"))
   (message "[TRACE] string-empty-p: %s" (string-empty-p title))
   (message "[TRACE] match [[:space:]]: %s" (string-match-p "^[[:space:]]*$" title))
+  (message "[TRACE] match NBSP explicitly: %s" (string-match-p "^[\u00A0]*$" title))
+  (message "[TRACE] match char 160: %s" (string-match-p (format "^[%c]*$" 160) title))
   (when (or (string-empty-p title)
             (string-match-p "^[[:space:]]*$" title)
             ;; Explicitly match NBSP for Emacs 27.2 compatibility
-            (string-match-p "^[\u00A0]*$" title))
+            (string-match-p "^[\u00A0]*$" title)
+            ;; Also try with char code directly
+            (string-match-p (format "^[%c]*$" 160) title))
     (org-mcp--tool-validation-error
      "Headline title cannot be empty or contain only whitespace"))
   (when (string-match-p "[\n\r]" title)
