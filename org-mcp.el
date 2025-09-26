@@ -1006,28 +1006,21 @@ MCP Parameters:
                      (save-excursion
                        (org-back-to-heading t)
                        (org-current-level)))
-                    ;; Ensure blank line before child
-                    (unless (or (bobp) (looking-back "\n\n" 2))
-                      (insert "\n"))
-                    (message
-                     "[TRACE] About to call org-insert-subheading")
-                    ;; Create child with subheading
-                    (condition-case err
-                        (org-insert-subheading nil)
-                      (error
-                       (message
-                        "[TRACE] org-insert-subheading failed: %s, trying fallback"
-                        err)
-                       ;; Fallback: manually insert the subheading
-                       (let ((parent-level
-                              (save-excursion
-                                (org-back-to-heading t)
-                                (org-current-level))))
-                         (insert
-                          (make-string (1+ parent-level) ?*) " "))))
+                    ;; We're at end of parent subtree, need to insert child
+                    ;; Manually insert the subheading at correct level
+                    (let ((parent-level
+                           (save-excursion
+                             (org-back-to-heading t)
+                             (org-current-level))))
+                      ;; Ensure blank line before child
+                      (unless (or (bobp) (looking-back "\n\n" 2))
+                        (insert "\n"))
+                      ;; Insert the heading stars
+                      (insert (make-string (1+ parent-level) ?*) " "))
                     (message
                      "[TRACE] After subheading insertion, point=%s"
                      (point))
+                    ;; Title will be inserted below
                     (insert title))))
             ;; Top-level heading
             (progn
@@ -1067,9 +1060,16 @@ MCP Parameters:
                        (insert "* ")))
                     (message "[TRACE] org-insert-heading completed")))
                 (insert title))))
-          (message "[TRACE] Heading inserted, point=%s, on-heading=%s"
-                   (point)
-                   (org-at-heading-p))
+          (message
+           "[TRACE] Heading inserted, point=%s, on-heading=%s, title='%s'"
+           (point) (org-at-heading-p) title)
+          ;; Ensure we're properly positioned after manual insertion
+          (when (and (or parent-path parent-id) (not after_uri))
+            ;; We manually inserted, ensure we're at beginning of heading
+            (beginning-of-line)
+            (message
+             "[TRACE] After manual insert fix, point=%s, on-heading=%s"
+             (point) (org-at-heading-p)))
 
           ;; Set the TODO state using Org functions
           (message "[TRACE] About to set TODO state: %s" todo_state)
