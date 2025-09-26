@@ -1,3 +1,5 @@
+;; -*- mode: eask; lexical-binding: t -*-
+
 (package "org-mcp"
          "0.1.0"
          "MCP server for Org-mode")
