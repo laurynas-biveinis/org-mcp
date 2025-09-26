@@ -117,14 +117,16 @@ IDENTIFIER is the resource identifier."
   "Throw file access error for tool operations.
 FILE-PATH is the file that cannot be accessed."
   (mcp-server-lib-tool-throw
-   (format "File not in allowed list: %s" file-path)))
+   (format "File not in allowed list: %s"
+           (expand-file-name file-path))))
 
 (defun org-mcp--resource-file-access-error (file-path)
   "Signal file access error for resource operations.
 FILE-PATH is the file that cannot be accessed."
   (mcp-server-lib-resource-signal-error
    mcp-server-lib-jsonrpc-error-invalid-params
-   (format "File not in allowed list: %s" file-path)))
+   (format "File not in allowed list: %s"
+           (expand-file-name file-path))))
 
 (defmacro org-mcp--with-uri-prefix-dispatch
     (uri headline-body id-body)
