@@ -34,7 +34,6 @@
 
 set -eu -o pipefail
 
-readonly ELISP_FILES='"org-mcp.el" "org-mcp-test.el"'
 readonly ORG_FILES='"README.org"'
 readonly SHELL_FILES=(check.sh)
 # Explicitly list markdown files to lint, excluding uncommitted LLM scratch/memory files
@@ -45,9 +44,6 @@ readonly EMACS="emacs -Q --batch"
 # Elisp packages in ELPA
 MCP_SERVER_LIB=$(find ~/.emacs.d/elpa/ -maxdepth 1 -name "mcp-server-lib-*" -type d 2>/dev/null | head -1 | xargs basename)
 readonly MCP_SERVER_LIB
-readonly ELISP_LINT="elisp-lint-20220419.252"
-readonly PACKAGE_LINT="package-lint-0.26"
-readonly DASH="dash-20250312.1307"
 
 ERRORS=0
 ELISP_SYNTAX_FAILED=0
@@ -83,26 +79,7 @@ rm -f ./*.elc
 # Only run elisp-lint if there are no errors so far
 if [ $ERRORS -eq 0 ]; then
 	echo -n "Running elisp-lint... "
-	if $EMACS --eval "(let ((pkg-dirs (list (locate-user-emacs-file \"elpa/$MCP_SERVER_LIB\")
-                                          (locate-user-emacs-file \"elpa/$ELISP_LINT\")
-                                          (locate-user-emacs-file \"elpa/$PACKAGE_LINT\")
-                                          (locate-user-emacs-file \"elpa/$DASH\")
-                                          (expand-file-name \".\"))))
-                         (dolist (dir pkg-dirs)
-                           (add-to-list 'load-path dir))
-                         (require 'elisp-lint)
-                         (let ((has-errors nil))
-                           (dolist (file (list $ELISP_FILES))
-                               (princ (format \"%s \" file))
-                               ;; Skip package-lint for test files
-                               (let ((elisp-lint-ignored-validators
-                                      (if (string-match-p \"test\" file)
-                                          '(\"package-lint\")
-                                        nil)))
-                                 (unless (elisp-lint-file file)
-                                   (setq has-errors t))))
-                           (when has-errors
-                             (kill-emacs 1))))"; then
+	if eask lint elisp-lint; then
 		echo "OK!"
 	else
 		echo "elisp-lint failed"
