@@ -98,14 +98,14 @@ MESSAGE is the format string, ARGS are format arguments."
 (defun org-mcp--state-mismatch-error (expected found context)
   "Throw state mismatch error.
 EXPECTED is the expected value, FOUND is the actual value,
-CONTEXT describes what is being compared (e.g., \='Title\=', \='State\=')."
+CONTEXT describes what is being compared."
   (mcp-server-lib-tool-throw
    (format "%s mismatch: expected '%s', found '%s'"
            context expected found)))
 
 (defun org-mcp--resource-not-found-error (resource-type identifier)
   "Signal resource not found error.
-RESOURCE-TYPE is the type of resource (e.g., \\='headline\\=', \\='ID\\='),
+RESOURCE-TYPE is the type of resource,
 IDENTIFIER is the resource identifier."
   (mcp-server-lib-resource-signal-error
    mcp-server-lib-jsonrpc-error-invalid-params
@@ -128,11 +128,12 @@ FILE-PATH is the file that cannot be accessed."
     (uri headline-body id-body)
   "Dispatch tool URI handling based on prefix.
 URI is the URI string to dispatch on.
-HEADLINE-BODY is executed when URI starts with `org-mcp--org-headline-prefix',
+HEADLINE-BODY is executed for org-headline:// URIs,
 with the URI after the prefix bound to `uri-without-prefix'.
 ID-BODY is executed when URI starts with `org-mcp--org-id-prefix',
 with the URI after the prefix bound to `id'.
 Throws an error if neither prefix matches."
+  (declare (indent 1))
   `(cond
     ((string-prefix-p org-mcp--org-headline-prefix ,uri)
      (let ((uri-without-prefix
@@ -225,7 +226,7 @@ Throws a tool error if ID exists but file is not allowed."
       (unless allowed-file
         (org-mcp--tool-file-access-error id-file))
       (expand-file-name allowed-file))
-    ;; ID not in database - could mean it doesn't exist or database is stale
+    ;; ID not in database - might not exist or DB is stale
     ;; Fall back to searching allowed files manually
     (let ((found-file nil))
       (dolist (allowed-file org-mcp-allowed-files)
@@ -329,7 +330,7 @@ PARAMS is an alist containing the filename parameter."
 
 (defun org-mcp--encode-file-path (file-path)
   "Encode special characters in FILE-PATH for URI.
-Specifically encodes # as %23 to avoid confusion with fragment separator."
+Encodes # as %23 to avoid fragment separator confusion."
   (replace-regexp-in-string "#" "%23" file-path))
 
 (defun org-mcp--decode-file-path (encoded-path)
@@ -398,7 +399,7 @@ Returns t if found, nil otherwise.  Point is left at the headline."
                            (= level (1+ current-level))))
               (setq found t)
               (setq current-level level)
-              ;; For nested searches, limit next search to this subtree
+              ;; Limit search to this subtree for nesting
               (when (< (1+ path-index) (length headline-path))
                 (setq search-start (point))
                 (setq search-end
@@ -454,25 +455,25 @@ Validates file access and returns expanded file path."
   (let (file-path
         headline-path)
     (org-mcp--with-uri-prefix-dispatch
-     uri
-     ;; Handle org-headline:// URIs
-     (let* ((split-result
-             (org-mcp--split-headline-uri uri-without-prefix))
-            (filename (car split-result))
-            (headline-path-str (cdr split-result))
-            (allowed-file (org-mcp--validate-file-access filename)))
-       (setq file-path (expand-file-name allowed-file))
-       (setq headline-path
-             (when headline-path-str
-               (mapcar
-                #'url-unhex-string
-                (split-string headline-path-str "/")))))
-     ;; Handle org-id:// URIs
-     (progn
-       (setq file-path (org-mcp--find-allowed-file-with-id id))
-       (unless file-path
-         (org-mcp--id-not-found-error id))
-       (setq headline-path (list id))))
+        uri
+      ;; Handle org-headline:// URIs
+      (let* ((split-result
+              (org-mcp--split-headline-uri uri-without-prefix))
+             (filename (car split-result))
+             (headline-path-str (cdr split-result))
+             (allowed-file (org-mcp--validate-file-access filename)))
+        (setq file-path (expand-file-name allowed-file))
+        (setq headline-path
+              (when headline-path-str
+                (mapcar
+                 #'url-unhex-string
+                 (split-string headline-path-str "/")))))
+      ;; Handle org-id:// URIs
+      (progn
+        (setq file-path (org-mcp--find-allowed-file-with-id id))
+        (unless file-path
+          (org-mcp--id-not-found-error id))
+        (setq headline-path (list id))))
     (cons file-path headline-path)))
 
 (defun org-mcp--goto-headline-from-uri (headline-path is-id)
@@ -523,7 +524,7 @@ Returns the content string or nil if not found."
         (org-mcp--extract-headline-content)))))
 
 (defun org-mcp--complete-and-save (file-path response-alist)
-  "Create ID if needed, save FILE-PATH, and return successful JSON response.
+  "Create ID if needed, save FILE-PATH, return JSON.
 Creates or gets an Org ID for the current headline and returns it.
 FILE-PATH is the path to save the buffer contents to.
 RESPONSE-ALIST is an alist of response fields."
@@ -622,7 +623,7 @@ that are mutually exclusive with each other."
 (defun org-mcp--validate-mutex-tag-groups (tags tag-alist)
   "Validate that TAGS don't violate mutex groups in TAG-ALIST.
 TAGS is a list of tag strings.
-Throws an error if multiple tags from the same mutex group are present."
+Errors if multiple tags from same mutex group."
   (let ((mutex-groups (org-mcp--parse-mutex-tag-groups tag-alist)))
     (dolist (group mutex-groups)
       (let ((tags-in-group
@@ -650,7 +651,7 @@ LEVEL is the Org outline level (1 for *, 2 for **, etc).
 Throws an MCP tool error if invalid headlines are found."
   ;; Build regex to match headlines at the current level or higher
   ;; For level 3, this matches ^*, ^**, or ^***
-  ;; The regex matches asterisks followed by space or tab (headlines need content)
+  ;; Matches asterisks + space/tab (headlines need content)
   (let ((regex (format "^\\*\\{1,%d\\}[ \t]" level)))
     (when (string-match regex body)
       (org-mcp--tool-validation-error
@@ -666,20 +667,19 @@ Throws an MCP tool error if unbalanced blocks are found."
     (insert body)
     (goto-char (point-min))
     (let
-        ((current-block nil)) ; nil or the block type we're currently in
+        ((current-block nil)) ; Current block type or nil
       ;; Scan forward for all block markers
-      ;; Per Org spec, block names can be any non-whitespace characters
-      (while
-          (re-search-forward
-           "^#\\+\\([Bb][Ee][Gg][Ii][Nn]\\|[Ee][Nn][Dd]\\)_\\(\\S-+\\)"
-           nil t)
+      ;; Block names can be any non-whitespace chars
+      (while (re-search-forward
+              "^#\\+\\(BEGIN\\|END\\|begin\\|end\\)_\\(\\S-+\\)"
+              nil t)
         (let ((marker-type (upcase (match-string 1)))
               (block-type (upcase (match-string 2))))
           (cond
            ;; Found BEGIN
            ((string= marker-type "BEGIN")
             (if current-block
-                ;; Already in a block - this BEGIN is just literal text
+                ;; Already in block - BEGIN is literal
                 nil
               ;; Not in a block - enter this block
               (setq current-block block-type)))
@@ -689,7 +689,7 @@ Throws an MCP tool error if unbalanced blocks are found."
              ;; Not in any block - this END is orphaned
              ((null current-block)
               (org-mcp--tool-validation-error
-               "Body contains orphaned END_%s without matching BEGIN_%s"
+               "Orphaned END_%s without BEGIN_%s"
                block-type block-type))
              ;; In matching block - exit the block
              ((string= current-block block-type)
@@ -790,18 +790,19 @@ MCP Parameters:
     ;; Parse parent URI to get file path
     (let (file-path)
       (org-mcp--with-uri-prefix-dispatch
-       parentUri
-       ;; Handle org-headline:// URIs
-       (let* ((split-result
-               (org-mcp--split-headline-uri uri-without-prefix))
-              (filename (car split-result))
-              (allowed-file (org-mcp--validate-file-access filename)))
-         (setq file-path (expand-file-name allowed-file)))
-       ;; Handle org-id:// URIs
-       (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
-         (unless allowed-file
-           (org-mcp--id-not-found-error id))
-         (setq file-path allowed-file)))
+          parentUri
+        ;; Handle org-headline:// URIs
+        (let* ((split-result
+                (org-mcp--split-headline-uri uri-without-prefix))
+               (filename (car split-result))
+               (allowed-file
+                (org-mcp--validate-file-access filename)))
+          (setq file-path (expand-file-name allowed-file)))
+        ;; Handle org-id:// URIs
+        (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
+          (unless allowed-file
+            (org-mcp--id-not-found-error id))
+          (setq file-path allowed-file)))
 
       ;; Check for unsaved changes
       (org-mcp--check-buffer-modifications file-path "add TODO")
@@ -813,20 +814,20 @@ MCP Parameters:
         ;; Navigate to insertion point based on parentUri
         (let ((parent-path nil)
               (parent-id nil))
-          ;; Parse the parent URI - either org-headline:// or org-id://
+          ;; Parse parent URI (org-headline:// or org-id://)
           (org-mcp--with-uri-prefix-dispatch
-           parentUri
-           ;; org-headline:// format
-           (let* ((split-result
-                   (org-mcp--split-headline-uri uri-without-prefix))
-                  (path-str (cdr split-result)))
-             (when (and path-str (> (length path-str) 0))
-               (setq parent-path
-                     (mapcar
-                      #'url-unhex-string
-                      (split-string path-str "/")))))
-           ;; org-id:// format
-           (setq parent-id id))
+              parentUri
+            ;; org-headline:// format
+            (let* ((split-result
+                    (org-mcp--split-headline-uri uri-without-prefix))
+                   (path-str (cdr split-result)))
+              (when (and path-str (> (length path-str) 0))
+                (setq parent-path
+                      (mapcar
+                       #'url-unhex-string
+                       (split-string path-str "/")))))
+            ;; org-id:// format
+            (setq parent-id id))
 
           ;; Navigate to parent if specified
           (if (or parent-path parent-id)
@@ -838,10 +839,10 @@ MCP Parameters:
             ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
             (while (and (not (eobp)) (looking-at "^#\\+"))
               (forward-line))
-            ;; Position at the right place: if there's a blank line after headers,
-            ;; move past it; if there's a headline immediately after, stay there
+            ;; Position correctly: if blank line after headers,
+            ;; skip it; if headline immediately after, stay
             (when (and (not (eobp)) (looking-at "^[ \t]*$"))
-              ;; We're on a blank line after headers, skip to next non-blank
+              ;; On blank line after headers, skip
               (while (and (not (eobp)) (looking-at "^[ \t]*$"))
                 (forward-line))))
 
@@ -851,22 +852,21 @@ MCP Parameters:
             (if afterUri
                 (progn
                   ;; Parse afterUri to get the ID
-                  (let
-                      ((after-id
-                        (if (string-match
-                             "^org-id://\\(.+\\)$" afterUri)
-                            (match-string 1 afterUri)
-                          (org-mcp--tool-validation-error
-                           "Parameter afterUri must be org-id:// format, got: %s"
-                           afterUri))))
+                  (let ((after-id
+                         (if (string-match
+                              "^org-id://\\(.+\\)$" afterUri)
+                             (match-string 1 afterUri)
+                           (org-mcp--tool-validation-error
+                            "AfterUri must be org-id://, got: %s"
+                            afterUri))))
                     ;; Find the sibling with the specified ID
-                    (org-back-to-heading t) ;; Ensure we're at the parent heading
+                    (org-back-to-heading t) ;; At parent
                     (let ((found nil)
                           (parent-end
                            (save-excursion
                              (org-end-of-subtree t t)
                              (point))))
-                      ;; Search for the sibling within parent's subtree
+                      ;; Search sibling in parent's subtree
                       ;; Move to first child
                       (if (org-goto-first-child)
                           (progn
@@ -877,7 +877,7 @@ MCP Parameters:
                                      (org-entry-get nil "ID")))
                                 (when (string= current-id after-id)
                                   (setq found t)
-                                  ;; Move to end of this sibling's subtree
+                                  ;; Move to sibling end
                                   (org-end-of-subtree t t)))
                               (unless found
                                 ;; Move to next sibling
@@ -901,18 +901,18 @@ MCP Parameters:
                 (unless (or (bobp) (looking-back "\n" 1))
                   (insert "\n"))
                 (if afterUri
-                    ;; When afterUri is specified, we've positioned after a specific sibling
+                    ;; With afterUri, positioned after sibling
                     ;; Use org-insert-heading to insert right here
                     (progn
                       (org-insert-heading)
                       (insert title))
-                  ;; No afterUri - we're at the end of the parent's subtree
+                  ;; No afterUri - at parent's end
                   ;; Need to create a child heading
                   (progn
-                    ;; Ensure blank line before child heading if there's content
+                    ;; Ensure blank line before child
                     (unless (or (bobp) (looking-back "\n\n" 2))
                       (insert "\n"))
-                    ;; Use org-insert-subheading to create a proper child
+                    ;; Create child with subheading
                     (org-insert-subheading nil)
                     (insert title))))
             ;; Top-level heading
@@ -942,7 +942,7 @@ MCP Parameters:
               (insert "\n"))))))))
 
 (defun org-mcp--tool-rename-headline (uri currentTitle newTitle)
-  "Rename the title of a headline while preserving TODO state and tags.
+  "Rename headline title, preserve TODO state and tags.
 Creates an Org ID for the headline if one doesn't exist.
 Returns the ID-based URI for the renamed headline.
 URI is the URI of the headline to rename.
@@ -1052,7 +1052,7 @@ Special behavior:
 
         ;; Check if body is empty
         (when (string-match-p "\\`[[:space:]]*\\'" body-content)
-          ;; Special case: empty oldBody with empty body -> add content
+          ;; Empty oldBody + empty body -> add content
           (if (string= oldBody "")
               (setq occurrence-count 1) ; Treat as single replacement
             (org-mcp--tool-validation-error
@@ -1082,8 +1082,7 @@ Special behavior:
                                           oldBody))
          ((and (> occurrence-count 1) (not replaceAll))
           (org-mcp--tool-validation-error
-           (concat
-            "Body text appears %d times (use replaceAll for multiple)")
+           (concat "Text appears %d times (use replaceAll)")
            occurrence-count)))
 
         ;; Perform replacement
