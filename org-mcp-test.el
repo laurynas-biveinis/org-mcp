@@ -318,9 +318,9 @@ Some content."
 (defconst org-mcp-test--pattern-renamed-simple-todo
   (concat
    "^\\* TODO Updated Task\n"
-   ":PROPERTIES:\n"
-   ":ID: +[A-F0-9-]+\n"
-   ":END:\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:\n"
    "First line of body\\.$")
   "Pattern for renamed simple TODO with generated ID.")
 
@@ -385,8 +385,8 @@ Third occurrence of pattern."
    "\\`\\* Parent Task\n"
    "Updated parent content\\.\n" ; No ID when using org-headline://
    "\\*\\* Another Task\n"
-   "\\(?::PROPERTIES:\n" ; Child may get an ID
-   ":ID: +[A-F0-9-]+\n" ":END:\n\\)?" "More content\\.\n" "?\\'")
+   "\\(?: *:PROPERTIES:\n" ; Child may get an ID
+   " *:ID: +[A-F0-9-]+\n" " *:END:\n\\)?" "More content\\.\n" "?\\'")
   "Pattern for nested headlines edit-body test result.")
 
 
@@ -2306,7 +2306,7 @@ This is valid Org-mode syntax and should be allowed."
               ;; org-edit-headline may add spaces for tag alignment
               (should
                (string-match-p
-                "^\\* TODO Renamed Task[ \t]+:work:urgent:\n:PROPERTIES:\n:ID: +[A-F0-9-]+\n:END:\nTask description\\.$"
+                "^\\* TODO Renamed Task[ \t]+:work:urgent:\n *:PROPERTIES:\n *:ID: +[A-F0-9-]+\n *:END:\nTask description\\.$"
                 (buffer-string))))))))))
 
 (ert-deftest org-mcp-test-rename-headline-no-todo ()
@@ -2334,7 +2334,7 @@ This is valid Org-mode syntax and should be allowed."
               (insert-file-contents test-file)
               (should
                (string-match-p
-                "^\\* Updated Headline\n:PROPERTIES:\n:ID: +[A-F0-9-]+\n:END:\nSome content\\.$"
+                "^\\* Updated Headline\n *:PROPERTIES:\n *:ID: +[A-F0-9-]+\n *:END:\nSome content\\.$"
                 (buffer-string))))))))))
 
 (ert-deftest org-mcp-test-rename-headline-nested-path-navigation ()
@@ -2486,7 +2486,7 @@ Some other content."))
               ;; Check complete buffer with single regex
               (should
                (string-match-p
-                "^\\* Project A/B Experiments\n:PROPERTIES:\n:ID: +[A-F0-9-]+\n:END:\nThis is a headline with a slash in it\\.\n\\* Other Task\nSome other content\\.$"
+                "^\\* Project A/B Experiments\n *:PROPERTIES:\n *:ID: +[A-F0-9-]+\n *:END:\nThis is a headline with a slash in it\\.\n\\* Other Task\nSome other content\\.$"
                 (buffer-string))))))))))
 
 (ert-deftest org-mcp-test-rename-headline-slash-not-nested ()
@@ -2570,7 +2570,7 @@ Documentation about URL encoding."))
               ;; Check complete buffer with single regex
               (should
                (string-match-p
-                "^\\* 75% Complete\n:PROPERTIES:\n:ID: +[A-F0-9-]+\n:END:\nThis task is half done\\.\n\\* Use %20 for spaces\nDocumentation about URL encoding\\.$"
+                "^\\* 75% Complete\n *:PROPERTIES:\n *:ID: +[A-F0-9-]+\n *:END:\nThis task is half done\\.\n\\* Use %20 for spaces\nDocumentation about URL encoding\\.$"
                 (buffer-string))))))))))
 
 (ert-deftest org-mcp-test-rename-headline-reject-empty-string ()
@@ -2628,9 +2628,9 @@ Third review content."))
                 (concat
                  "\\`\\* Team Updates\n"
                  "\\*\\* Q1 Review\n" ; First renamed
-                 ":PROPERTIES:\n"
-                 ":ID: +[A-F0-9-]+\n" ; ID added
-                 ":END:\n"
+                 " *:PROPERTIES:\n"
+                 " *:ID: +[A-F0-9-]+\n" ; ID added
+                 " *:END:\n"
                  "First review content\\.\n"
                  "\\* Development Tasks\n"
                  "\\*\\* Project Review\n" ; Second unchanged
