@@ -957,7 +957,13 @@ MCP Parameters:
                "[TRACE] After org-end-of-subtree, point=%s, looking-at='%.30s'"
                (point)
                (buffer-substring-no-properties
-                (point) (min (point-max) (+ (point) 30))))))
+                (point) (min (point-max) (+ (point) 30))))
+              ;; If we're at the start of a sibling, go back one char
+              ;; to be at the end of parent's content
+              (when (looking-at "^\\*+ ")
+                (backward-char 1)
+                (message "[TRACE] Moved back before sibling, point=%s"
+                         (point)))))
 
           ;; Validate body before inserting heading
           ;; Calculate the target level for validation
