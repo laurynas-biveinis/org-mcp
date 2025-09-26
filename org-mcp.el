@@ -882,10 +882,19 @@ MCP Parameters:
 
           ;; Navigate to parent if specified
           (if (or parent-path parent-id)
-              (org-mcp--goto-headline-from-uri
-               (or (and parent-id (list parent-id))
-                   parent-path)
-               parent-id)
+              (progn
+                (message
+                 "[TRACE] Navigating to parent, parent-path=%s, parent-id=%s"
+                 parent-path parent-id)
+                (org-mcp--goto-headline-from-uri
+                 (or (and parent-id (list parent-id))
+                     parent-path)
+                 parent-id)
+                (message
+                 "[TRACE] After navigation, point=%s, headline='%s', level=%s"
+                 (point)
+                 (org-get-heading t t t t)
+                 (org-current-level)))
             ;; No parent specified - top level
             ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
             (while (and (not (eobp)) (looking-at "^#\\+"))
@@ -942,7 +951,13 @@ MCP Parameters:
                          "Sibling with ID %s not found under parent"
                          after-id)))))
               ;; No after_uri - insert at end of parent's subtree
-              (org-end-of-subtree t t)))
+              (message "[TRACE] Moving to end of parent's subtree")
+              (org-end-of-subtree t t)
+              (message
+               "[TRACE] After org-end-of-subtree, point=%s, looking-at='%.30s'"
+               (point)
+               (buffer-substring-no-properties
+                (point) (min (point-max) (+ (point) 30))))))
 
           ;; Validate body before inserting heading
           ;; Calculate the target level for validation
@@ -985,18 +1000,34 @@ MCP Parameters:
                   ;; No after_uri - at parent's end
                   ;; Need to create a child heading
                   (progn
-                    (message "[TRACE] Inserting at parent's end")
+                    (message
+                     "[TRACE] Inserting at parent's end, point=%s, parent-level=%s"
+                     (point)
+                     (save-excursion
+                       (org-back-to-heading t)
+                       (org-current-level)))
                     ;; Ensure blank line before child
                     (unless (or (bobp) (looking-back "\n\n" 2))
                       (insert "\n"))
+                    (message
+                     "[TRACE] About to call org-insert-subheading")
                     ;; Create child with subheading
                     (condition-case err
                         (org-insert-subheading nil)
                       (error
                        (message
-                        "[TRACE] org-insert-subheading failed: %s"
+                        "[TRACE] org-insert-subheading failed: %s, trying fallback"
                         err)
-                       (signal (car err) (cdr err))))
+                       ;; Fallback: manually insert the subheading
+                       (let ((parent-level
+                              (save-excursion
+                                (org-back-to-heading t)
+                                (org-current-level))))
+                         (insert
+                          (make-string (1+ parent-level) ?*) " "))))
+                    (message
+                     "[TRACE] After subheading insertion, point=%s"
+                     (point))
                     (insert title))))
             ;; Top-level heading
             (progn
