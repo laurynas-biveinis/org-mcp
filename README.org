@@ -7,14 +7,29 @@ org-mcp is an Emacs package that implements a Model Context Protocol (MCP) serve
 
 * Installation
 
-TODO: Installation instructions
+On Emacs 29.1 or later:
+
+#+begin_src emacs-lisp
+(package-vc-install "https://github.com/laurynas-biveinis/org-mcp.git")
+#+end_src
+
+Eventually I plan to publish this package on MELPA.
 
 * Usage
 
-WARNING: some of the tools in this package give LLMs WRITE access to your Org files,
-and, once in a thousand invocations, LLMs *will* try to delete everything, because
-they are like that. Backups and automatic versioning on every change are strongly
-advised.
+**WARNING:** some of the tools in this package give LLMs WRITE access to your Org
+files, and, once in a thousand invocations, LLMs *will* try to delete everything,
+because they are like that. Backups and automatic versioning on every change are
+strongly advised.
+
+** Configuring allowed files
+
+Once you read and internalized the warning above, set the allowed Org file set, using
+absolute paths:
+
+#+begin_src emacs-lisp
+(setq org-mcp-allowed-files '("/path/to/foo.org" "/path/to/bar.org"))
+#+end_src
 
 ** Registering with an MCP Client
 
