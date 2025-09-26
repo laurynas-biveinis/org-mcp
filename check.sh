@@ -58,13 +58,7 @@ SHELL_SYNTAX_FAILED=0
 # Elisp
 
 echo -n "Checking Elisp syntax... "
-if $EMACS --eval "(setq byte-compile-warnings nil)" \
-	--eval "(add-to-list 'load-path \".\")" \
-	--eval "(add-to-list 'load-path (locate-user-emacs-file \"elpa/$MCP_SERVER_LIB\"))" \
-	--eval "(dolist (file '($ELISP_FILES))
-        (princ (format \"%s \" file))
-        (unless (byte-compile-file file)
-          (kill-emacs 1)))"; then
+if eask recompile; then
 	echo "OK!"
 else
 	echo "Elisp syntax check failed!"
