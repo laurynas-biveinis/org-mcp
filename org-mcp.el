@@ -69,6 +69,7 @@ BODY can access FILE-PATH and RESPONSE-ALIST as variables."
      (org-mode)
      (goto-char (point-min))
      ,@body
+     (message "[TRACE] Before complete-and-save in macro: point=%s" (point))
      (org-mcp--complete-and-save ,file-path ,response-alist)))
 
 ;; Error handling helpers
@@ -528,14 +529,23 @@ Returns the content string or nil if not found."
 Creates or gets an Org ID for the current headline and returns it.
 FILE-PATH is the path to save the buffer contents to.
 RESPONSE-ALIST is an alist of response fields."
-  (let ((id (org-id-get-create)))
-    (write-region (point-min) (point-max) file-path)
-    (org-mcp--refresh-file-buffers file-path)
-    (json-encode
-     (append
-      `((success . t))
-      response-alist
-      `((uri . ,(concat org-mcp--org-id-prefix id)))))))
+  (message "[TRACE] complete-and-save: point=%s, on-heading=%s, current-level=%s, buffer='%s...'"
+           (point) (org-at-heading-p) (org-current-level)
+           (buffer-substring (point-min) (min 100 (point-max))))
+  (let ((id (condition-case err
+                (org-id-get-create)
+              (error
+               (message "[TRACE] org-id-get-create failed: %s" err)
+               nil))))
+    (message "[TRACE] org-id-get-create returned: %s" id)
+    (when id
+      (write-region (point-min) (point-max) file-path)
+      (org-mcp--refresh-file-buffers file-path)
+      (json-encode
+       (append
+        `((success . t))
+        response-alist
+        `((uri . ,(concat org-mcp--org-id-prefix id))))))))
 
 (defun org-mcp--tool-update-todo-state (uri current_state new_state)
   "Update the TODO state of a headline.
@@ -947,10 +957,14 @@ MCP Parameters:
 
           ;; Add body if provided
           (when body
+            (message "[TRACE] Before body insert: point=%s, on-heading=%s, current-level=%s"
+                     (point) (org-at-heading-p) (org-current-level))
             (end-of-line)
             (insert "\n" body)
             (unless (string-suffix-p "\n" body)
-              (insert "\n"))))))))
+              (insert "\n"))
+            (message "[TRACE] After body insert: point=%s, on-heading=%s, current-level=%s, buffer-size=%s"
+                     (point) (org-at-heading-p) (org-current-level) (buffer-size))))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
