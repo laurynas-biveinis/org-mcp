@@ -567,11 +567,11 @@ PARENTURI is the URI of the parent item.
 AFTERURI is optional URI of sibling to insert after."
   (let* ((params
           `((title . ,title)
-            (todoState . ,todoState)
+            (todo_state . ,todoState)
             (tags . ,tags)
             (body . ,body)
-            (parentUri . ,parentUri)
-            (afterUri . ,afterUri)))
+            (parent_uri . ,parentUri)
+            (after_uri . ,afterUri)))
          (request
           (mcp-server-lib-create-tools-call-request
            "org-add-todo" 1 params))
@@ -588,8 +588,8 @@ NEW-STATE is the new TODO state to set."
           (mcp-server-lib-create-tools-call-request
            "org-update-todo-state" 1
            `((uri . ,resource-uri)
-             (currentState . ,current-state)
-             (newState . ,new-state))))
+             (current_state . ,current-state)
+             (new_state . ,new-state))))
          (response (mcp-server-lib-process-jsonrpc-parsed request))
          (result (mcp-server-lib-ert-process-tool-response response)))
     ;; If we get here, the tool succeeded when we expected failure
@@ -603,8 +603,8 @@ CURRENT-TITLE is the current title for validation.
 NEW-TITLE is the new title to set."
   (let* ((params
           `((uri . ,resource-uri)
-            (currentTitle . ,current-title)
-            (newTitle . ,new-title)))
+            (current_title . ,current-title)
+            (new_title . ,new-title)))
          (request
           (mcp-server-lib-create-tools-call-request
            "org-rename-headline" 1 params))
@@ -624,11 +624,11 @@ PARENTURI is the URI of the parent item.
 AFTERURI is optional URI of sibling to insert after."
   (let* ((params
           `((title . ,title)
-            (todoState . ,todoState)
+            (todo_state . ,todoState)
             (tags . ,tags)
             (body . ,body)
-            (parentUri . ,parentUri)
-            (afterUri . ,afterUri)))
+            (parent_uri . ,parentUri)
+            (after_uri . ,afterUri)))
          (request
           (mcp-server-lib-create-tools-call-request
            "org-add-todo" 1 params))
@@ -649,16 +649,16 @@ EXPECTED-CONTENT if provided with TEST-FILE, verify file contains this
 exact content."
   (let* ((params
           `((uri . ,resource-uri)
-            (currentState . ,old-state)
-            (newState . ,new-state)))
+            (current_state . ,old-state)
+            (new_state . ,new-state)))
          (result-text
           (mcp-server-lib-ert-call-tool
            "org-update-todo-state" params))
          (result (json-read-from-string result-text)))
     (should (= (length result) 4))
     (should (equal (alist-get 'success result) t))
-    (should (equal (alist-get 'previousState result) old-state))
-    (should (equal (alist-get 'newState result) new-state))
+    (should (equal (alist-get 'previous_state result) old-state))
+    (should (equal (alist-get 'new_state result) new-state))
     (should (stringp (alist-get 'uri result)))
     (should (string-prefix-p "org-id://" (alist-get 'uri result)))
     ;; Verify file content if test-file provided
@@ -1072,8 +1072,8 @@ NEW-TITLE is the invalid new title that should be rejected."
                 (mcp-server-lib-create-tools-call-request
                  "org-rename-headline" 1
                  `((uri . ,resource-uri)
-                   (currentTitle . ,headline-title)
-                   (newTitle . ,new-title))))
+                   (current_title . ,headline-title)
+                   (new_title . ,new-title))))
                (response
                 (mcp-server-lib-process-jsonrpc-parsed request)))
           (should-error
@@ -2226,8 +2226,8 @@ This is valid Org-mode syntax and should be allowed."
                           test-file))
                  (params
                   `((uri . ,resource-uri)
-                    (currentTitle . "Original Task")
-                    (newTitle . "Updated Task")))
+                    (current_title . "Original Task")
+                    (new_title . "Updated Task")))
                  (result-text
                   (mcp-server-lib-ert-call-tool
                    "org-rename-headline" params))
@@ -2237,9 +2237,9 @@ This is valid Org-mode syntax and should be allowed."
             (should (equal (alist-get 'success result) t))
             (should
              (equal
-              (alist-get 'previousTitle result) "Original Task"))
+              (alist-get 'previous_title result) "Original Task"))
             (should
-             (equal (alist-get 'newTitle result) "Updated Task"))
+             (equal (alist-get 'new_title result) "Updated Task"))
             ;; Should return an org-id:// URI
             (should
              (string-match "^org-id://" (alist-get 'uri result)))
@@ -2287,8 +2287,8 @@ This is valid Org-mode syntax and should be allowed."
                           test-file))
                  (params
                   `((uri . ,resource-uri)
-                    (currentTitle . "Task with Tags")
-                    (newTitle . "Renamed Task")))
+                    (current_title . "Task with Tags")
+                    (new_title . "Renamed Task")))
                  (result-text
                   (mcp-server-lib-ert-call-tool
                    "org-rename-headline" params))
@@ -2297,9 +2297,9 @@ This is valid Org-mode syntax and should be allowed."
             (should (equal (alist-get 'success result) t))
             (should
              (equal
-              (alist-get 'previousTitle result) "Task with Tags"))
+              (alist-get 'previous_title result) "Task with Tags"))
             (should
-             (equal (alist-get 'newTitle result) "Renamed Task"))
+             (equal (alist-get 'new_title result) "Renamed Task"))
             ;; Verify file content - tags should be preserved
             (with-temp-buffer
               (insert-file-contents test-file)
@@ -2321,8 +2321,8 @@ This is valid Org-mode syntax and should be allowed."
                           test-file))
                  (params
                   `((uri . ,resource-uri)
-                    (currentTitle . "Regular Headline")
-                    (newTitle . "Updated Headline")))
+                    (current_title . "Regular Headline")
+                    (new_title . "Updated Headline")))
                  (result-text
                   (mcp-server-lib-ert-call-tool
                    "org-rename-headline" params))
@@ -2366,8 +2366,8 @@ This Child is under Parent Three, not Parent Two."))
                     (mcp-server-lib-create-tools-call-request
                      "org-rename-headline" 1
                      `((uri . ,resource-uri)
-                       (currentTitle . "Child")
-                       (newTitle . "Renamed Child"))))
+                       (current_title . "Child")
+                       (new_title . "Renamed Child"))))
                    (response
                     (mcp-server-lib-process-jsonrpc-parsed request)))
               (should-error
@@ -2390,8 +2390,8 @@ This Child is under Parent Three, not Parent Two."))
           (let* ((resource-uri org-mcp-test--content-with-id-uri)
                  (params
                   `((uri . ,resource-uri)
-                    (currentTitle . "Task with ID")
-                    (newTitle . "Renamed Task with ID")))
+                    (current_title . "Task with ID")
+                    (new_title . "Renamed Task with ID")))
                  (result-text
                   (mcp-server-lib-ert-call-tool
                    "org-rename-headline" params))
@@ -2399,10 +2399,10 @@ This Child is under Parent Three, not Parent Two."))
             ;; Check result
             (should (equal (alist-get 'success result) t))
             (should
-             (equal (alist-get 'previousTitle result) "Task with ID"))
+             (equal (alist-get 'previous_title result) "Task with ID"))
             (should
              (equal
-              (alist-get 'newTitle result) "Renamed Task with ID"))
+              (alist-get 'new_title result) "Renamed Task with ID"))
             ;; URI should remain ID-based (not converted to path-based)
             (should
              (equal
@@ -2436,8 +2436,8 @@ This Child is under Parent Three, not Parent Two."))
                   (mcp-server-lib-create-tools-call-request
                    "org-rename-headline" 1
                    `((uri . ,resource-uri)
-                     (currentTitle . "Whatever")
-                     (newTitle . "Should Fail"))))
+                     (current_title . "Whatever")
+                     (new_title . "Should Fail"))))
                  (response
                   (mcp-server-lib-process-jsonrpc-parsed request)))
             (should-error
@@ -2462,8 +2462,8 @@ Some other content."))
                    test-file))
                  (params
                   `((uri . ,resource-uri)
-                    (currentTitle . "Project A/B Testing")
-                    (newTitle . "Project A/B Experiments")))
+                    (current_title . "Project A/B Testing")
+                    (new_title . "Project A/B Experiments")))
                  (result-text
                   (mcp-server-lib-ert-call-tool
                    "org-rename-headline" params))
@@ -2472,11 +2472,11 @@ Some other content."))
             (should (equal (alist-get 'success result) t))
             (should
              (equal
-              (alist-get 'previousTitle result)
+              (alist-get 'previous_title result)
               "Project A/B Testing"))
             (should
              (equal
-              (alist-get 'newTitle result) "Project A/B Experiments"))
+              (alist-get 'new_title result) "Project A/B Experiments"))
             ;; Should return an org-id:// URI
             (should
              (string-match "^org-id://" (alist-get 'uri result)))
@@ -2509,8 +2509,8 @@ This is a single headline with a slash, not nested under Parent."))
                           test-file))
                  (params
                   `((uri . ,resource-uri)
-                    (currentTitle . "Parent/Child")
-                    (newTitle . "Parent-Child Renamed")))
+                    (current_title . "Parent/Child")
+                    (new_title . "Parent-Child Renamed")))
                  (result-text
                   (mcp-server-lib-ert-call-tool
                    "org-rename-headline" params))
@@ -2549,8 +2549,8 @@ Documentation about URL encoding."))
                           test-file))
                  (params
                   `((uri . ,resource-uri)
-                    (currentTitle . "50% Complete")
-                    (newTitle . "75% Complete")))
+                    (current_title . "50% Complete")
+                    (new_title . "75% Complete")))
                  (result-text
                   (mcp-server-lib-ert-call-tool
                    "org-rename-headline" params))
@@ -2558,9 +2558,9 @@ Documentation about URL encoding."))
             ;; Check result
             (should (equal (alist-get 'success result) t))
             (should
-             (equal (alist-get 'previousTitle result) "50% Complete"))
+             (equal (alist-get 'previous_title result) "50% Complete"))
             (should
-             (equal (alist-get 'newTitle result) "75% Complete"))
+             (equal (alist-get 'new_title result) "75% Complete"))
             ;; Should return an org-id:// URI
             (should
              (string-match "^org-id://" (alist-get 'uri result)))
@@ -2657,8 +2657,8 @@ Content here."))
                    test-file))
                  (params
                   `((uri . ,resource-uri)
-                    (currentTitle . "Headline Without ID")
-                    (newTitle . "Renamed Headline")))
+                    (current_title . "Headline Without ID")
+                    (new_title . "Renamed Headline")))
                  (request
                   (mcp-server-lib-create-tools-call-request
                    "org-rename-headline" 1 params))
@@ -2671,10 +2671,10 @@ Content here."))
             (should (equal (alist-get 'success result) t))
             (should
              (equal
-              (alist-get 'previousTitle result)
+              (alist-get 'previous_title result)
               "Headline Without ID"))
             (should
-             (equal (alist-get 'newTitle result) "Renamed Headline"))
+             (equal (alist-get 'new_title result) "Renamed Headline"))
             ;; The returned URI should now be an org-id:// URI
             (let ((returned-uri (alist-get 'uri result)))
               (should (string-match "^org-id://" returned-uri))
@@ -2720,8 +2720,8 @@ This Target is under Second Section, not First Section."))
                           test-file))
                  (params
                   `((uri . ,resource-uri)
-                    (currentTitle . "Target")
-                    (newTitle . "Renamed Target")))
+                    (current_title . "Target")
+                    (new_title . "Renamed Target")))
                  (result-text
                   (mcp-server-lib-ert-call-tool
                    "org-rename-headline" params))
@@ -2787,10 +2787,10 @@ OLD-BODY is the substring to search for within the node's body.
 NEW-BODY is the replacement text.
 REPLACE-ALL if true, replace all occurrences (default: nil)."
   (let* ((params
-          `((resourceUri . ,resource-uri)
-            (oldBody . ,old-body)
-            (newBody . ,new-body)
-            (replaceAll . ,replace-all)))
+          `((resource_uri . ,resource-uri)
+            (old_body . ,old-body)
+            (new_body . ,new-body)
+            (replace_all . ,replace-all)))
          (request
           (mcp-server-lib-create-tools-call-request
            "org-edit-body" 1 params))

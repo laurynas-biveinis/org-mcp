@@ -1,0 +1,9 @@
+(org-mcp .
+	 [(0 1 0)
+	  ((emacs
+	    (27 1))
+	   (mcp-server-lib
+	    (0 2 0)))
+	  "MCP server for Org-mode" tar
+	  ((:url . "https://github.com/laurynas-biveinis/org-mcp")
+	   (:keywords "tools" "convenience"))])

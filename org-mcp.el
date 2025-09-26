@@ -537,18 +537,18 @@ RESPONSE-ALIST is an alist of response fields."
       response-alist
       `((uri . ,(concat org-mcp--org-id-prefix id)))))))
 
-(defun org-mcp--tool-update-todo-state (uri currentState newState)
+(defun org-mcp--tool-update-todo-state (uri current_state new_state)
   "Update the TODO state of a headline.
 Creates an Org ID for the headline if one doesn't exist.
 Returns the ID-based URI for the updated headline.
 URI is the URI of the headline to update.
-CURRENTSTATE is the current TODO state (empty string for no state).
-NEWSTATE is the new TODO state to set.
+CURRENT_STATE is the current TODO state (empty string for no state).
+NEW_STATE is the new TODO state to set.
 
 MCP Parameters:
   uri - URI of the headline (org-headline:// or org-id://)
-  currentState - Current TODO state (empty string for no state)
-  newState - New TODO state (must be in `org-todo-keywords')"
+  current_state - Current TODO state (empty string for no state)
+  new_state - New TODO state (must be in `org-todo-keywords')"
   ;; Parse the resource URI
   (let* ((parsed (org-mcp--parse-resource-uri uri))
          (file-path (car parsed))
@@ -557,31 +557,31 @@ MCP Parameters:
     ;; Validate new state is in org-todo-keywords
     (let ((valid-states
            (apply 'append (mapcar 'cdr org-todo-keywords))))
-      (unless (member newState valid-states)
+      (unless (member new_state valid-states)
         (org-mcp--tool-validation-error
          "Invalid TODO state: '%s'.  Valid states: %s"
-         newState (mapconcat 'identity valid-states ", "))))
+         new_state (mapconcat 'identity valid-states ", "))))
 
     ;; Check for unsaved changes
     (org-mcp--check-buffer-modifications file-path "update")
 
     ;; Update the TODO state in the file
     (org-mcp--with-org-file-buffer file-path
-        `((previousState . ,(or currentState ""))
-          (newState . ,newState))
+        `((previous_state . ,(or current_state ""))
+          (new_state . ,new_state))
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--org-id-prefix uri))
 
       ;; Check current state matches
       (beginning-of-line)
       (let ((actual-state (org-get-todo-state)))
-        (unless (string= actual-state currentState)
+        (unless (string= actual-state current_state)
           (org-mcp--state-mismatch-error
-           (or currentState "(no state)")
+           (or current_state "(no state)")
            (or actual-state "(no state)") "State")))
 
       ;; Update the state
-      (org-todo newState))))
+      (org-todo new_state))))
 
 (defun org-mcp--extract-tag-from-alist-entry (entry)
   "Extract tag name from an `org-tag-alist' ENTRY.
@@ -724,23 +724,23 @@ Throws error for invalid types."
     (org-mcp--tool-validation-error "Invalid tags format: %s" tags))))
 
 (defun org-mcp--tool-add-todo
-    (title todoState tags body parentUri afterUri)
+    (title todo_state tags body parent_uri after_uri)
   "Add a new TODO item to an Org file.
 Creates an Org ID for the new headline and returns its ID-based URI.
 TITLE is the headline text.
-TODOSTATE is the TODO state from `org-todo-keywords'.
+TODO_STATE is the TODO state from `org-todo-keywords'.
 TAGS is a single tag string or list of tag strings.
 BODY is optional body text.
-PARENTURI is the URI of the parent item.
-AFTERURI is optional URI of sibling to insert after.
+PARENT_URI is the URI of the parent item.
+AFTER_URI is optional URI of sibling to insert after.
 
 MCP Parameters:
   title - The headline text
-  todoState - TODO state from `org-todo-keywords'
+  todo_state - TODO state from `org-todo-keywords'
   tags - Tags to add (single string or array of strings)
   body - Optional body text content
-  parentUri - Parent item URI (required)
-  afterUri - Sibling to insert after (optional)"
+  parent_uri - Parent item URI (required)
+  after_uri - Sibling to insert after (optional)"
   (org-mcp--validate-headline-title title)
 
   ;; Normalize tags and get valid TODO states
@@ -749,10 +749,10 @@ MCP Parameters:
          (apply 'append (mapcar 'cdr org-todo-keywords))))
 
     ;; Validate TODO state
-    (unless (member todoState valid-states)
+    (unless (member todo_state valid-states)
       (org-mcp--tool-validation-error
        "Invalid TODO state: '%s'.  Valid states: %s"
-       todoState (mapconcat 'identity valid-states ", ")))
+       todo_state (mapconcat 'identity valid-states ", ")))
 
     ;; Validate tags
     ;; Get all allowed tags from tag alists
@@ -790,19 +790,19 @@ MCP Parameters:
     ;; Parse parent URI to get file path
     (let (file-path)
       (org-mcp--with-uri-prefix-dispatch
-          parentUri
-        ;; Handle org-headline:// URIs
-        (let* ((split-result
-                (org-mcp--split-headline-uri uri-without-prefix))
-               (filename (car split-result))
-               (allowed-file
-                (org-mcp--validate-file-access filename)))
-          (setq file-path (expand-file-name allowed-file)))
-        ;; Handle org-id:// URIs
-        (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
-          (unless allowed-file
-            (org-mcp--id-not-found-error id))
-          (setq file-path allowed-file)))
+       parent_uri
+       ;; Handle org-headline:// URIs
+       (let* ((split-result
+               (org-mcp--split-headline-uri uri-without-prefix))
+              (filename (car split-result))
+              (allowed-file
+               (org-mcp--validate-file-access filename)))
+         (setq file-path (expand-file-name allowed-file)))
+       ;; Handle org-id:// URIs
+       (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
+         (unless allowed-file
+           (org-mcp--id-not-found-error id))
+         (setq file-path allowed-file)))
 
       ;; Check for unsaved changes
       (org-mcp--check-buffer-modifications file-path "add TODO")
@@ -816,18 +816,18 @@ MCP Parameters:
               (parent-id nil))
           ;; Parse parent URI (org-headline:// or org-id://)
           (org-mcp--with-uri-prefix-dispatch
-              parentUri
-            ;; org-headline:// format
-            (let* ((split-result
-                    (org-mcp--split-headline-uri uri-without-prefix))
-                   (path-str (cdr split-result)))
-              (when (and path-str (> (length path-str) 0))
-                (setq parent-path
-                      (mapcar
-                       #'url-unhex-string
-                       (split-string path-str "/")))))
-            ;; org-id:// format
-            (setq parent-id id))
+           parent_uri
+           ;; org-headline:// format
+           (let* ((split-result
+                   (org-mcp--split-headline-uri uri-without-prefix))
+                  (path-str (cdr split-result)))
+             (when (and path-str (> (length path-str) 0))
+               (setq parent-path
+                     (mapcar
+                      #'url-unhex-string
+                      (split-string path-str "/")))))
+           ;; org-id:// format
+           (setq parent-id id))
 
           ;; Navigate to parent if specified
           (if (or parent-path parent-id)
@@ -848,17 +848,18 @@ MCP Parameters:
 
           ;; Handle positioning after navigation to parent
           (when (or parent-path parent-id)
-            ;; Handle afterUri positioning
-            (if afterUri
+            ;; Handle after_uri positioning
+            (if after_uri
                 (progn
                   ;; Parse afterUri to get the ID
-                  (let ((after-id
-                         (if (string-match
-                              "^org-id://\\(.+\\)$" afterUri)
-                             (match-string 1 afterUri)
-                           (org-mcp--tool-validation-error
-                            "AfterUri must be org-id://, got: %s"
-                            afterUri))))
+                  (let
+                      ((after-id
+                        (if (string-match
+                             "^org-id://\\(.+\\)$" after_uri)
+                            (match-string 1 after_uri)
+                          (org-mcp--tool-validation-error
+                           "Field after_uri is not org-id://: %s"
+                           after_uri))))
                     ;; Find the sibling with the specified ID
                     (org-back-to-heading t) ;; At parent
                     (let ((found nil)
@@ -890,7 +891,7 @@ MCP Parameters:
                         (org-mcp--tool-validation-error
                          "Sibling with ID %s not found under parent"
                          after-id)))))
-              ;; No afterUri - insert at end of parent's subtree
+              ;; No after_uri - insert at end of parent's subtree
               (org-end-of-subtree t t)))
 
           ;; Insert the new heading using Org functions
@@ -900,13 +901,13 @@ MCP Parameters:
                 ;; Ensure we have a newline before inserting
                 (unless (or (bobp) (looking-back "\n" 1))
                   (insert "\n"))
-                (if afterUri
-                    ;; With afterUri, positioned after sibling
+                (if after_uri
+                    ;; With after_uri, positioned after sibling
                     ;; Use org-insert-heading to insert right here
                     (progn
                       (org-insert-heading)
                       (insert title))
-                  ;; No afterUri - at parent's end
+                  ;; No after_uri - at parent's end
                   ;; Need to create a child heading
                   (progn
                     ;; Ensure blank line before child
@@ -925,7 +926,7 @@ MCP Parameters:
               (insert title)))
 
           ;; Set the TODO state using Org functions
-          (org-todo todoState)
+          (org-todo todo_state)
 
           ;; Set tags using Org functions
           (when tag-list
@@ -941,19 +942,19 @@ MCP Parameters:
             (unless (string-suffix-p "\n" body)
               (insert "\n"))))))))
 
-(defun org-mcp--tool-rename-headline (uri currentTitle newTitle)
+(defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
 Creates an Org ID for the headline if one doesn't exist.
 Returns the ID-based URI for the renamed headline.
 URI is the URI of the headline to rename.
-CURRENTTITLE is the current title (without TODO/tags) for validation.
-NEWTITLE is the new title to set (without TODO/tags).
+CURRENT_TITLE is the current title (without TODO/tags) for validation.
+NEW_TITLE is the new title to set (without TODO/tags).
 
 MCP Parameters:
   uri - URI of the headline (org-headline:// or org-id://)
-  currentTitle - Current title without TODO state or tags
-  newTitle - New title without TODO state or tags"
-  (org-mcp--validate-headline-title newTitle)
+  current_title - Current title without TODO state or tags
+  new_title - New title without TODO state or tags"
+  (org-mcp--validate-headline-title new_title)
 
   ;; Parse the resource URI
   (let* ((parsed (org-mcp--parse-resource-uri uri))
@@ -965,7 +966,7 @@ MCP Parameters:
 
     ;; Rename the headline in the file
     (org-mcp--with-org-file-buffer file-path
-        `((previousTitle . ,currentTitle) (newTitle . ,newTitle))
+        `((previous_title . ,current_title) (new_title . ,new_title))
       ;; Navigate to the headline
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--org-id-prefix uri))
@@ -973,37 +974,37 @@ MCP Parameters:
       ;; Verify current title matches
       (beginning-of-line)
       (let ((actual-title (org-get-heading t t t t)))
-        (unless (string= actual-title currentTitle)
+        (unless (string= actual-title current_title)
           (org-mcp--state-mismatch-error
-           currentTitle actual-title "Title")))
+           current_title actual-title "Title")))
 
-      (org-edit-headline newTitle))))
+      (org-edit-headline new_title))))
 
 (defun org-mcp--tool-edit-body
-    (resourceUri oldBody newBody replaceAll)
+    (resource_uri old_body new_body replace_all)
   "Edit body content of an Org node using partial string replacement.
-RESOURCEURI is the URI of the node to edit.
-OLDBODY is the substring to search for within the node's body.
+RESOURCE_URI is the URI of the node to edit.
+OLD_BODY is the substring to search for within the node's body.
          Use empty string \"\" to add content to an empty node.
-NEWBODY is the replacement text.
-REPLACEALL if non-nil, replace all occurrences.
+NEW_BODY is the replacement text.
+REPLACE_ALL if non-nil, replace all occurrences.
 
 MCP Parameters:
-  resourceUri - URI of the node (org-headline:// or org-id://)
-  oldBody - Substring to replace within the body (must be unique
-            unless replaceAll).  Use \"\" to add to empty nodes
-  newBody - Replacement text
-  replaceAll - Replace all occurrences (optional, default false)
+  resource_uri - URI of the node (org-headline:// or org-id://)
+  old_body - Substring to replace within the body (must be unique
+            unless replace_all).  Use \"\" to add to empty nodes
+  new_body - Replacement text
+  replace_all - Replace all occurrences (optional, default false)
 
 Special behavior:
-  When oldBody is an empty string (\"\"), the tool will only work if
+  When old_body is an empty string (\"\"), the tool will only work if
   the node has no body content, allowing you to add initial content
   to empty nodes."
-  ;; Check for unbalanced blocks in newBody
-  (org-mcp--validate-body-no-unbalanced-blocks newBody)
+  ;; Check for unbalanced blocks in new_body
+  (org-mcp--validate-body-no-unbalanced-blocks new_body)
 
   ;; Parse the resource URI
-  (let* ((parsed (org-mcp--parse-resource-uri resourceUri))
+  (let* ((parsed (org-mcp--parse-resource-uri resource_uri))
          (file-path (car parsed))
          (headline-path (cdr parsed)))
 
@@ -1015,11 +1016,11 @@ Special behavior:
       ;; Navigate to the headline
       (org-mcp--goto-headline-from-uri
        headline-path
-       (string-prefix-p org-mcp--org-id-prefix resourceUri))
+       (string-prefix-p org-mcp--org-id-prefix resource_uri))
 
       ;; Validate headlines in newBody based on current level
       (org-mcp--validate-body-no-headlines
-       newBody (org-current-level))
+       new_body (org-current-level))
 
       ;; Skip past headline and properties
       (org-end-of-meta-data t)
@@ -1053,7 +1054,7 @@ Special behavior:
         ;; Check if body is empty
         (when (string-match-p "\\`[[:space:]]*\\'" body-content)
           ;; Empty oldBody + empty body -> add content
-          (if (string= oldBody "")
+          (if (string= old_body "")
               (setq occurrence-count 1) ; Treat as single replacement
             (org-mcp--tool-validation-error
              "Node has no body content")))
@@ -1061,17 +1062,18 @@ Special behavior:
         ;; Count occurrences (unless already handled above)
         (unless (= occurrence-count 1) ; Skip if already set above
           ;; Empty oldBody with non-empty body is an error
-          (if (and (string= oldBody "")
+          (if (and (string= old_body "")
                    (not
                     (string-match-p
                      "\\`[[:space:]]*\\'" body-content)))
               (org-mcp--tool-validation-error
-               "Cannot use empty oldBody with non-empty body content")
+               "Cannot use empty old_body with non-empty body")
             ;; Normal occurrence counting
             (let ((case-fold-search nil)
                   (search-pos 0))
-              (while (string-match (regexp-quote oldBody) body-content
-                                   search-pos)
+              (while (string-match
+                      (regexp-quote old_body) body-content
+                      search-pos)
                 (setq occurrence-count (1+ occurrence-count))
                 (setq search-pos (match-end 0))))))
 
@@ -1079,35 +1081,35 @@ Special behavior:
         (cond
          ((= occurrence-count 0)
           (org-mcp--tool-validation-error "Body text not found: %s"
-                                          oldBody))
-         ((and (> occurrence-count 1) (not replaceAll))
+                                          old_body))
+         ((and (> occurrence-count 1) (not replace_all))
           (org-mcp--tool-validation-error
-           (concat "Text appears %d times (use replaceAll)")
+           (concat "Text appears %d times (use replace_all)")
            occurrence-count)))
 
         ;; Perform replacement
         (let ((new-body-content
                (cond
                 ;; Special case: empty oldBody with empty body
-                ((and (string= oldBody "")
+                ((and (string= old_body "")
                       (string-match-p
                        "\\`[[:space:]]*\\'" body-content))
-                 newBody)
+                 new_body)
                 ;; Normal replacement with replaceAll
-                (replaceAll
+                (replace_all
                  (replace-regexp-in-string
-                  (regexp-quote oldBody) newBody body-content
+                  (regexp-quote old_body) new_body body-content
                   t t))
                 ;; Normal single replacement
                 (t
                  (let ((pos
                         (string-match
-                         (regexp-quote oldBody) body-content)))
+                         (regexp-quote old_body) body-content)))
                    (if pos
                        (concat
-                        (substring body-content 0 pos) newBody
+                        (substring body-content 0 pos) new_body
                         (substring body-content
-                                   (+ pos (length oldBody))))
+                                   (+ pos (length old_body))))
                      body-content))))))
 
           ;; Replace the body content
