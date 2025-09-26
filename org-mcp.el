@@ -673,6 +673,7 @@ Throws an MCP tool error if invalid headlines are found."
 Uses a state machine: tracks if we're in a block, and which one.
 Text inside blocks is literal and doesn't start/end other blocks.
 Throws an MCP tool error if unbalanced blocks are found."
+  (message "[TRACE] validate-body-no-unbalanced-blocks called, body='%s'" body)
   (with-temp-buffer
     (insert body)
     (goto-char (point-min))
@@ -751,6 +752,8 @@ MCP Parameters:
   body - Optional body text content
   parent_uri - Parent item URI (required)
   after_uri - Sibling to insert after (optional)"
+  (message "[TRACE] org-mcp--tool-add-todo called: title='%s', body-length=%s"
+           title (if body (length body) "nil"))
   (org-mcp--validate-headline-title title)
 
   ;; Normalize tags and get valid TODO states
