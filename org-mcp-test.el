@@ -1649,9 +1649,9 @@ Another task."))
        result "New Task" (file-name-nondirectory test-file) test-file
        (concat
         "^\\* TODO New Task +:.*work.*urgent.*:\n"
-        "\\(?::PROPERTIES:\n"
-        ":ID: +[^\n]+\n"
-        ":END:\n\\)?$")))))
+        "\\(?: *:PROPERTIES:\n"
+        " *:ID: +[^\n]+\n"
+        " *:END:\n\\)?$")))))
 
 (ert-deftest org-mcp-test-add-todo-top-level-with-header ()
   "Test adding top-level TODO after header comments."
@@ -1687,9 +1687,9 @@ Another task."))
                "#\\+OPTIONS: toc:nil\n"
                "\n"
                "\\* TODO New Top Task +.*:urgent:\n"
-               "\\(?::PROPERTIES:\n"
-               ":ID: +[^\n]+\n"
-               ":END:\n\\)?"
+               "\\(?: *:PROPERTIES:\n"
+               " *:ID: +[^\n]+\n"
+               " *:END:\n\\)?"
                "\n?"
                "\\* Existing Task\n"
                "Some content here\\.")
