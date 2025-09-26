@@ -1001,21 +1001,41 @@ MCP Parameters:
             ;; Top-level heading
             (progn
               (message "[TRACE] Inserting top-level heading")
-              ;; Ensure proper spacing before inserting
-              (unless (or (bobp) (looking-back "\n" 1))
-                (insert "\n"))
-              ;; Use org-insert-heading for top-level
-              (message
-               "[TRACE] About to call org-insert-heading, point=%s, buffer='%s'"
-               (point)
-               (buffer-substring (point-min) (min 50 (point-max))))
-              (condition-case err
-                  (org-insert-heading nil nil t)
-                (error
-                 (message "[TRACE] org-insert-heading failed: %s" err)
-                 (signal (car err) (cdr err))))
-              (message "[TRACE] org-insert-heading completed")
-              (insert title)))
+              ;; Check if we're at a position where there are no headlines yet
+              ;; (empty buffer or only headers before us)
+              (let ((has-headline
+                     (save-excursion
+                       (goto-char (point-min))
+                       (re-search-forward "^\\*+ " nil t))))
+                (if (not has-headline)
+                    (progn
+                      (message
+                       "[TRACE] No headlines in buffer - inserting heading directly")
+                      (unless (or (bobp) (looking-back "\n" 1))
+                        (insert "\n"))
+                      (insert "* "))
+                  (progn
+                    ;; Has headlines - use org-insert-heading
+                    ;; Ensure proper spacing before inserting
+                    (unless (or (bobp) (looking-back "\n" 1))
+                      (insert "\n"))
+                    (message
+                     "[TRACE] About to call org-insert-heading, point=%s, buffer='%s'"
+                     (point)
+                     (buffer-substring
+                      (point-min) (min 50 (point-max))))
+                    (condition-case err
+                        (org-insert-heading nil nil t)
+                      (error
+                       (message
+                        "[TRACE] org-insert-heading failed: %s"
+                        err)
+                       ;; Fallback to direct insertion
+                       (unless (or (bobp) (looking-back "\n" 1))
+                         (insert "\n"))
+                       (insert "* ")))
+                    (message "[TRACE] org-insert-heading completed")))
+                (insert title))))
           (message "[TRACE] Heading inserted, point=%s, on-heading=%s"
                    (point)
                    (org-at-heading-p))
@@ -1044,7 +1064,14 @@ MCP Parameters:
              (point)
              (org-at-heading-p)
              (org-current-level)
-             (buffer-size))))))))
+             (buffer-size)))
+
+          ;; Move back to the heading for org-id-get-create
+          ;; org-id-get-create requires point to be on a heading
+          (when body
+            (org-back-to-heading t)
+            (message
+             "[TRACE] Moved back to heading for ID creation")))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
