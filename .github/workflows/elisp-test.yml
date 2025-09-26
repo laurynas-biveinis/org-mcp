@@ -1,0 +1,83 @@
+name: Emacs Lisp CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        emacs_version:
+          - "snapshot"
+          - "30.1"
+          - "29.4"
+          - "28.2"
+          - "27.2"
+
+    permissions:
+      contents: read
+      packages: read
+      statuses: write
+      checks: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs_version }}
+
+      - name: Set up Eask
+        uses: emacs-eask/setup-eask@master
+        with:
+          version: "snapshot"
+
+      - name: Run tests
+        env:
+          EMACS_TEST_JUNIT_REPORT: ${{ (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2') && 'org-mcp-test.xml' || '' }}
+        run: |
+          eask clean all
+          eask package
+          eask install
+          eask compile
+          eask lint elisp-lint
+          eask lint keywords
+          eask lint regexps
+          eask run script test
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2'
+        with:
+          name: test-results-${{ matrix.os }}-emacs-${{ matrix.emacs_version }}
+          path: org-mcp-test.xml
+          retention-days: 30
+
+      - name: Publish Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v3
+        if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2')
+        with:
+          files: org-mcp-test.xml
+          check_name: Test Results (Emacs ${{ matrix.emacs_version }})
+          comment_mode: off
+
+      - name: Publish Test Results (macOS)
+        uses: dorny/test-reporter@v1
+        if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2')
+        with:
+          name: Test Results (macOS, Emacs ${{ matrix.emacs_version }})
+          path: org-mcp-test.xml
+          reporter: java-junit
