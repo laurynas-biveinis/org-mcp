@@ -931,10 +931,7 @@ MCP Parameters:
                     ;; With after_uri, positioned after sibling
                     ;; Use org-insert-heading to insert right here
                     (progn
-                      (condition-case err
-                          (org-insert-heading)
-                        (error
-                         (signal (car err) (cdr err))))
+                      (org-insert-heading)
                       (insert title))
                   ;; No after_uri - at parent's end
                   ;; Need to create a child heading
