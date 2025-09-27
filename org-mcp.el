@@ -530,19 +530,14 @@ Returns the content string or nil if not found."
 Creates or gets an Org ID for the current headline and returns it.
 FILE-PATH is the path to save the buffer contents to.
 RESPONSE-ALIST is an alist of response fields."
-  (let ((id
-         (condition-case _err
-             (org-id-get-create)
-           (error
-            nil))))
-    (when id
-      (write-region (point-min) (point-max) file-path)
-      (org-mcp--refresh-file-buffers file-path)
-      (json-encode
-       (append
-        `((success . t))
-        response-alist
-        `((uri . ,(concat org-mcp--org-id-prefix id))))))))
+  (let ((id (org-id-get-create)))
+    (write-region (point-min) (point-max) file-path)
+    (org-mcp--refresh-file-buffers file-path)
+    (json-encode
+     (append
+      `((success . t))
+      response-alist
+      `((uri . ,(concat org-mcp--org-id-prefix id)))))))
 
 (defun org-mcp--tool-update-todo-state (uri current_state new_state)
   "Update the TODO state of a headline.
@@ -968,9 +963,13 @@ MCP Parameters:
                     ;; Ensure proper spacing before inserting
                     (unless (or (bobp) (looking-back "\n" 1))
                       (insert "\n"))
-                    (condition-case _err
+                    (condition-case err
                         (org-insert-heading nil nil t)
                       (error
+                       ;; Log the error for debugging
+                       (message
+                        "Warning: org-insert-heading failed: %s"
+                        err)
                        ;; Fallback to direct insertion
                        (unless (or (bobp) (looking-back "\n" 1))
                          (insert "\n"))
