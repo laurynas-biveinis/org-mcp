@@ -668,48 +668,45 @@ Throws an MCP tool error if invalid headlines are found."
 Uses a state machine: tracks if we're in a block, and which one.
 Text inside blocks is literal and doesn't start/end other blocks.
 Throws an MCP tool error if unbalanced blocks are found."
-  (condition-case err
-      (with-temp-buffer
-        (insert body)
-        (goto-char (point-min))
-        (let
-            ((current-block nil)) ; Current block type or nil
-          ;; Scan forward for all block markers
-          ;; Block names can be any non-whitespace chars
-          (while (re-search-forward
-                  "^#\\+\\(BEGIN\\|END\\|begin\\|end\\)_\\(\\S-+\\)"
-                  nil t)
-            (let ((marker-type (upcase (match-string 1)))
-                  (block-type (upcase (match-string 2))))
-              (cond
-               ;; Found BEGIN
-               ((string= marker-type "BEGIN")
-                (if current-block
-                    ;; Already in block - BEGIN is literal
-                    nil
-                  ;; Not in a block - enter this block
-                  (setq current-block block-type)))
-               ;; Found END
-               ((string= marker-type "END")
-                (cond
-                 ;; Not in any block - this END is orphaned
-                 ((null current-block)
-                  (org-mcp--tool-validation-error
-                   "Orphaned END_%s without BEGIN_%s"
-                   block-type block-type))
-                 ;; In matching block - exit the block
-                 ((string= current-block block-type)
-                  (setq current-block nil))
-                 ;; In different block - this END is just literal text
-                 (t
-                  nil))))))
-          ;; After scanning, check if we're still in a block
-          (when current-block
-            (org-mcp--tool-validation-error
-             "Body contains unclosed %s block"
-             current-block))))
-    (error
-     (signal (car err) (cdr err)))))
+  (with-temp-buffer
+    (insert body)
+    (goto-char (point-min))
+    (let
+        ((current-block nil)) ; Current block type or nil
+      ;; Scan forward for all block markers
+      ;; Block names can be any non-whitespace chars
+      (while (re-search-forward
+              "^#\\+\\(BEGIN\\|END\\|begin\\|end\\)_\\(\\S-+\\)"
+              nil t)
+        (let ((marker-type (upcase (match-string 1)))
+              (block-type (upcase (match-string 2))))
+          (cond
+           ;; Found BEGIN
+           ((string= marker-type "BEGIN")
+            (if current-block
+                ;; Already in block - BEGIN is literal
+                nil
+              ;; Not in a block - enter this block
+              (setq current-block block-type)))
+           ;; Found END
+           ((string= marker-type "END")
+            (cond
+             ;; Not in any block - this END is orphaned
+             ((null current-block)
+              (org-mcp--tool-validation-error
+               "Orphaned END_%s without BEGIN_%s"
+               block-type block-type))
+             ;; In matching block - exit the block
+             ((string= current-block block-type)
+              (setq current-block nil))
+             ;; In different block - this END is just literal text
+             (t
+              nil))))))
+      ;; After scanning, check if we're still in a block
+      (when current-block
+        (org-mcp--tool-validation-error
+         "Body contains unclosed %s block"
+         current-block)))))
 
 (defun org-mcp--normalize-tags-to-list (tags)
   "Normalize TAGS parameter to a list format.
