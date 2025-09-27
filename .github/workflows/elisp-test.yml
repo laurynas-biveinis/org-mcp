@@ -68,7 +68,7 @@ jobs:
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2 # zizmor: ignore[unpinned-uses]
-        if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2')
+        if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2' && matrix.os == 'ubuntu-latest')
         with:
           files: org-mcp-test.xml
           check_name: Test Results (Emacs ${{ matrix.emacs_version }})
@@ -76,7 +76,7 @@ jobs:
 
       - name: Publish Test Results (macOS)
         uses: dorny/test-reporter@v1 # zizmor: ignore[unpinned-uses]
-        if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2')
+        if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2' && matrix.os == 'macos-latest')
         with:
           name: Test Results (macOS, Emacs ${{ matrix.emacs_version }})
           path: org-mcp-test.xml
