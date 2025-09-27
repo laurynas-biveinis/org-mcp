@@ -374,7 +374,7 @@ The filename parameter includes both file and headline path."
                 (expand-file-name allowed-file) headline-path)))
           (unless content
             (org-mcp--resource-not-found-error
-             "headline" (mapconcat 'identity headline-path "/")))
+             "headline" (mapconcat #'identity headline-path "/")))
           content)
       ;; No headline path means get entire file
       (org-mcp--read-file-resource (expand-file-name allowed-file)))))
@@ -759,13 +759,13 @@ MCP Parameters:
   ;; Normalize tags and get valid TODO states
   (let ((tag-list (org-mcp--normalize-tags-to-list tags))
         (valid-states
-         (apply 'append (mapcar 'cdr org-todo-keywords))))
+         (apply #'append (mapcar #'cdr org-todo-keywords))))
 
     ;; Validate TODO state
     (unless (member todo_state valid-states)
       (org-mcp--tool-validation-error
        "Invalid TODO state: '%s'.  Valid states: %s"
-       todo_state (mapconcat 'identity valid-states ", ")))
+       todo_state (mapconcat #'identity valid-states ", ")))
 
     ;; Validate tags
     ;; Get all allowed tags from tag alists
