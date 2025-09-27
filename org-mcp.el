@@ -531,7 +531,7 @@ Creates or gets an Org ID for the current headline and returns it.
 FILE-PATH is the path to save the buffer contents to.
 RESPONSE-ALIST is an alist of response fields."
   (let ((id
-         (condition-case err
+         (condition-case _err
              (org-id-get-create)
            (error
             nil))))
@@ -677,9 +677,6 @@ Throws an MCP tool error if unbalanced blocks are found."
       (with-temp-buffer
         (insert body)
         (goto-char (point-min))
-        ;; Test a simple search first
-        (let ((simple-match (re-search-forward "BEGIN" nil t)))
-          (goto-char (point-min)))
         (let
             ((current-block nil)) ; Current block type or nil
           ;; Scan forward for all block markers
@@ -711,7 +708,7 @@ Throws an MCP tool error if unbalanced blocks are found."
                  ;; In different block - this END is just literal text
                  (t
                   nil))))))
-          ;; After scanning everything, check if we're still in a block
+          ;; After scanning, check if we're still in a block
           (when current-block
             (org-mcp--tool-validation-error
              "Body contains unclosed %s block"
@@ -955,7 +952,7 @@ MCP Parameters:
                     (insert title))))
             ;; Top-level heading
             (progn
-              ;; Check if we're at a position where there are no headlines yet
+              ;; Check if there are no headlines yet
               ;; (empty buffer or only headers before us)
               (let ((has-headline
                      (save-excursion
@@ -971,7 +968,7 @@ MCP Parameters:
                     ;; Ensure proper spacing before inserting
                     (unless (or (bobp) (looking-back "\n" 1))
                       (insert "\n"))
-                    (condition-case err
+                    (condition-case _err
                         (org-insert-heading nil nil t)
                       (error
                        ;; Fallback to direct insertion
