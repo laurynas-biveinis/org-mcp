@@ -977,8 +977,7 @@ MCP Parameters:
                        ;; Fallback to direct insertion
                        (unless (or (bobp) (looking-back "\n" 1))
                          (insert "\n"))
-                       (insert "* ")))
-))
+                       (insert "* ")))))
                 (insert title))))
           ;; Set the TODO state using Org functions
           (org-todo todo_state)
@@ -997,8 +996,7 @@ MCP Parameters:
           ;; Move back to the heading for org-id-get-create
           ;; org-id-get-create requires point to be on a heading
           (when body
-            (org-back-to-heading t)
-))))))
+            (org-back-to-heading t)))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
