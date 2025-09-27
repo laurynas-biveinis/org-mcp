@@ -111,20 +111,20 @@ IDENTIFIER is the resource identifier."
    mcp-server-lib-jsonrpc-error-invalid-params
    (format "Cannot find %s: '%s'" resource-type identifier)))
 
-(defun org-mcp--tool-file-access-error (file-path)
+(defun org-mcp--tool-file-access-error (locator)
   "Throw file access error for tool operations.
-FILE-PATH is the file that cannot be accessed."
+LOCATOR is the resource identifier (file path or ID) that was
+denied access."
   (mcp-server-lib-tool-throw
-   (format "File not in allowed list: %s"
-           (expand-file-name file-path))))
+   (format "'%s': the referenced file not in allowed list" locator)))
 
-(defun org-mcp--resource-file-access-error (file-path)
+(defun org-mcp--resource-file-access-error (locator)
   "Signal file access error for resource operations.
-FILE-PATH is the file that cannot be accessed."
+LOCATOR is the resource identifier (file path or ID) that was
+denied access."
   (mcp-server-lib-resource-signal-error
    mcp-server-lib-jsonrpc-error-invalid-params
-   (format "File not in allowed list: %s"
-           (expand-file-name file-path))))
+   (format "'%s': the referenced file not in allowed list" locator)))
 
 (defmacro org-mcp--with-uri-prefix-dispatch
     (uri headline-body id-body)
@@ -226,7 +226,7 @@ Throws a tool error if ID exists but file is not allowed."
     ;; ID found in database, check if file is allowed
     (let ((allowed-file (org-mcp--find-allowed-file id-file)))
       (unless allowed-file
-        (org-mcp--tool-file-access-error id-file))
+        (org-mcp--tool-file-access-error id))
       (expand-file-name allowed-file))
     ;; ID not in database - might not exist or DB is stale
     ;; Fall back to searching allowed files manually
@@ -446,7 +446,7 @@ PARAMS is an alist containing the uuid parameter."
     ;; Validate that the file is in allowed list
     (let ((allowed-file (org-mcp--find-allowed-file file-path)))
       (unless allowed-file
-        (org-mcp--resource-file-access-error file-path))
+        (org-mcp--resource-file-access-error id))
       ;; Get the content
       (org-mcp--get-content-by-id
        (expand-file-name allowed-file) id))))

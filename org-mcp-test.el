@@ -1191,8 +1191,7 @@ Very deep content."))
           (let ((uri (format "org://%s" forbidden-file)))
             (org-mcp-test--read-resource-expecting-error
              uri
-             (format "File not in allowed list: %s"
-                     forbidden-file))))))))
+             (format "'%s': the referenced file not in allowed list" forbidden-file))))))))
 
 (ert-deftest org-mcp-test-headline-resource-returns-content ()
   "Test that headline resource returns specific headline content."
@@ -1412,7 +1411,7 @@ properly checks parent-child relationships and levels."
             ;; Should get an error for file not allowed
             (org-mcp-test--read-resource-expecting-error
              uri
-             (format "File not in allowed list: %s" other-file))))))))
+             (format "'%s': the referenced file not in allowed list" "test-id-789"))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-success ()
   "Test successful TODO state update."
