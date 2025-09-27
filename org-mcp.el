@@ -963,17 +963,7 @@ MCP Parameters:
                     ;; Ensure proper spacing before inserting
                     (unless (or (bobp) (looking-back "\n" 1))
                       (insert "\n"))
-                    (condition-case err
-                        (org-insert-heading nil nil t)
-                      (error
-                       ;; Log the error for debugging
-                       (message
-                        "Warning: org-insert-heading failed: %s"
-                        err)
-                       ;; Fallback to direct insertion
-                       (unless (or (bobp) (looking-back "\n" 1))
-                         (insert "\n"))
-                       (insert "* ")))))
+                    (org-insert-heading nil nil t)))
                 (insert title))))
           ;; Set the TODO state using Org functions
           (org-todo todo_state)
