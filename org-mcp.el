@@ -77,7 +77,7 @@ BODY can access FILE-PATH and RESPONSE-ALIST as variables."
   "Throw error for HEADLINE-PATH not found."
   (mcp-server-lib-tool-throw
    (format "Cannot find headline: %s"
-           (mapconcat 'identity headline-path "/"))))
+           (mapconcat #'identity headline-path "/"))))
 
 (defun org-mcp--id-not-found-error (id)
   "Throw error for ID not found."
@@ -366,7 +366,7 @@ The filename parameter includes both file and headline path."
          (headline-path
           (when headline-path-str
             (mapcar
-             'url-unhex-string
+             #'url-unhex-string
              (split-string headline-path-str "/")))))
     (if headline-path
         (let ((content
@@ -563,11 +563,11 @@ MCP Parameters:
 
     ;; Validate new state is in org-todo-keywords
     (let ((valid-states
-           (apply 'append (mapcar 'cdr org-todo-keywords))))
+           (apply #'append (mapcar #'cdr org-todo-keywords))))
       (unless (member new_state valid-states)
         (org-mcp--tool-validation-error
          "Invalid TODO state: '%s'.  Valid states: %s"
-         new_state (mapconcat 'identity valid-states ", "))))
+         new_state (mapconcat #'identity valid-states ", "))))
 
     ;; Check for unsaved changes
     (org-mcp--check-buffer-modifications file-path "update")
