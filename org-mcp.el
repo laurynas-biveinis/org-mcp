@@ -69,8 +69,6 @@ BODY can access FILE-PATH and RESPONSE-ALIST as variables."
      (org-mode)
      (goto-char (point-min))
      ,@body
-     (message "[TRACE] Before complete-and-save in macro: point=%s"
-              (point))
      (org-mcp--complete-and-save ,file-path ,response-alist)))
 
 ;; Error handling helpers
@@ -532,19 +530,11 @@ Returns the content string or nil if not found."
 Creates or gets an Org ID for the current headline and returns it.
 FILE-PATH is the path to save the buffer contents to.
 RESPONSE-ALIST is an alist of response fields."
-  (message
-   "[TRACE] complete-and-save: point=%s, on-heading=%s, current-level=%s, buffer='%s...'"
-   (point)
-   (org-at-heading-p)
-   (org-current-level)
-   (buffer-substring (point-min) (min 100 (point-max))))
   (let ((id
          (condition-case err
              (org-id-get-create)
            (error
-            (message "[TRACE] org-id-get-create failed: %s" err)
             nil))))
-    (message "[TRACE] org-id-get-create returned: %s" id)
     (when id
       (write-region (point-min) (point-max) file-path)
       (org-mcp--refresh-file-buffers file-path)
@@ -683,38 +673,22 @@ Throws an MCP tool error if invalid headlines are found."
 Uses a state machine: tracks if we're in a block, and which one.
 Text inside blocks is literal and doesn't start/end other blocks.
 Throws an MCP tool error if unbalanced blocks are found."
-  (message
-   "[TRACE] validate-body-no-unbalanced-blocks called, body='%s'"
-   body)
   (condition-case err
       (with-temp-buffer
         (insert body)
         (goto-char (point-min))
-        (message "[TRACE] Buffer contents: '%s'" (buffer-string))
-        (message "[TRACE] Point at: %d, point-max: %d"
-                 (point)
-                 (point-max))
         ;; Test a simple search first
         (let ((simple-match (re-search-forward "BEGIN" nil t)))
-          (message "[TRACE] Simple BEGIN search result: %s at pos %s"
-                   simple-match
-                   (if simple-match
-                       (point)
-                     "N/A"))
           (goto-char (point-min)))
         (let
             ((current-block nil)) ; Current block type or nil
           ;; Scan forward for all block markers
           ;; Block names can be any non-whitespace chars
-          (message "[TRACE] Starting regex search loop")
           (while (re-search-forward
                   "^#\\+\\(BEGIN\\|END\\|begin\\|end\\)_\\(\\S-+\\)"
                   nil t)
             (let ((marker-type (upcase (match-string 1)))
                   (block-type (upcase (match-string 2))))
-              (message
-               "[TRACE] Found block marker: %s_%s, current-block=%s"
-               marker-type block-type current-block)
               (cond
                ;; Found BEGIN
                ((string= marker-type "BEGIN")
@@ -728,9 +702,6 @@ Throws an MCP tool error if unbalanced blocks are found."
                 (cond
                  ;; Not in any block - this END is orphaned
                  ((null current-block)
-                  (message
-                   "[TRACE] About to throw orphaned END error for: %s"
-                   block-type)
                   (org-mcp--tool-validation-error
                    "Orphaned END_%s without BEGIN_%s"
                    block-type block-type))
@@ -740,17 +711,12 @@ Throws an MCP tool error if unbalanced blocks are found."
                  ;; In different block - this END is just literal text
                  (t
                   nil))))))
-          (message "[TRACE] After regex search loop, current-block=%s"
-                   current-block)
           ;; After scanning everything, check if we're still in a block
           (when current-block
             (org-mcp--tool-validation-error
              "Body contains unclosed %s block"
-             current-block))
-          (message
-           "[TRACE] Block validation completed successfully")))
+             current-block))))
     (error
-     (message "[TRACE] Error in validation: %s" err)
      (signal (car err) (cdr err)))))
 
 (defun org-mcp--normalize-tags-to-list (tags)
@@ -791,12 +757,6 @@ MCP Parameters:
   body - Optional body text content
   parent_uri - Parent item URI (required)
   after_uri - Sibling to insert after (optional)"
-  (message
-   "[TRACE] org-mcp--tool-add-todo called: title='%s', body-length=%s"
-   title
-   (if body
-       (length body)
-     "nil"))
   (org-mcp--validate-headline-title title)
 
   ;; Normalize tags and get valid TODO states
@@ -888,18 +848,10 @@ MCP Parameters:
           ;; Navigate to parent if specified
           (if (or parent-path parent-id)
               (progn
-                (message
-                 "[TRACE] Navigating to parent, parent-path=%s, parent-id=%s"
-                 parent-path parent-id)
                 (org-mcp--goto-headline-from-uri
                  (or (and parent-id (list parent-id))
                      parent-path)
-                 parent-id)
-                (message
-                 "[TRACE] After navigation, point=%s, headline='%s', level=%s"
-                 (point)
-                 (org-get-heading t t t t)
-                 (org-current-level)))
+                 parent-id))
             ;; No parent specified - top level
             ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
             (while (and (not (eobp)) (looking-at "^#\\+"))
@@ -956,19 +908,11 @@ MCP Parameters:
                          "Sibling with ID %s not found under parent"
                          after-id)))))
               ;; No after_uri - insert at end of parent's subtree
-              (message "[TRACE] Moving to end of parent's subtree")
               (org-end-of-subtree t t)
-              (message
-               "[TRACE] After org-end-of-subtree, point=%s, looking-at='%.30s'"
-               (point)
-               (buffer-substring-no-properties
-                (point) (min (point-max) (+ (point) 30))))
               ;; If we're at the start of a sibling, go back one char
               ;; to be at the end of parent's content
               (when (looking-at "^\\*+ ")
-                (backward-char 1)
-                (message "[TRACE] Moved back before sibling, point=%s"
-                         (point)))))
+                (backward-char 1))))
 
           ;; Validate body before inserting heading
           ;; Calculate the target level for validation
@@ -985,13 +929,9 @@ MCP Parameters:
               (org-mcp--validate-body-no-unbalanced-blocks body)))
 
           ;; Insert the new heading using Org functions
-          (message
-           "[TRACE] About to insert heading, parent-path=%s, parent-id=%s"
-           parent-path parent-id)
           (if (or parent-path parent-id)
               ;; We're inside a parent
               (progn
-                (message "[TRACE] Inserting child heading")
                 ;; Ensure we have a newline before inserting
                 (unless (or (bobp) (looking-back "\n" 1))
                   (insert "\n"))
@@ -999,19 +939,14 @@ MCP Parameters:
                     ;; With after_uri, positioned after sibling
                     ;; Use org-insert-heading to insert right here
                     (progn
-                      (message "[TRACE] Inserting after sibling")
                       (condition-case err
                           (org-insert-heading)
                         (error
-                         (message
-                          "[TRACE] org-insert-heading (sibling) failed: %s"
-                          err)
                          (signal (car err) (cdr err))))
                       (insert title))
                   ;; No after_uri - at parent's end
                   ;; Need to create a child heading
                   (progn
-                    (message "[TRACE] Inserting at parent's end")
                     ;; Ensure blank line before child
                     (unless (or (bobp) (looking-back "\n\n" 2))
                       (insert "\n"))
@@ -1020,7 +955,6 @@ MCP Parameters:
                     (insert title))))
             ;; Top-level heading
             (progn
-              (message "[TRACE] Inserting top-level heading")
               ;; Check if we're at a position where there are no headlines yet
               ;; (empty buffer or only headers before us)
               (let ((has-headline
@@ -1029,8 +963,6 @@ MCP Parameters:
                        (re-search-forward "^\\*+ " nil t))))
                 (if (not has-headline)
                     (progn
-                      (message
-                       "[TRACE] No headlines in buffer - inserting heading directly")
                       (unless (or (bobp) (looking-back "\n" 1))
                         (insert "\n"))
                       (insert "* "))
@@ -1039,59 +971,34 @@ MCP Parameters:
                     ;; Ensure proper spacing before inserting
                     (unless (or (bobp) (looking-back "\n" 1))
                       (insert "\n"))
-                    (message
-                     "[TRACE] About to call org-insert-heading, point=%s, buffer='%s'"
-                     (point)
-                     (buffer-substring
-                      (point-min) (min 50 (point-max))))
                     (condition-case err
                         (org-insert-heading nil nil t)
                       (error
-                       (message
-                        "[TRACE] org-insert-heading failed: %s"
-                        err)
                        ;; Fallback to direct insertion
                        (unless (or (bobp) (looking-back "\n" 1))
                          (insert "\n"))
                        (insert "* ")))
-                    (message "[TRACE] org-insert-heading completed")))
+))
                 (insert title))))
-          (message "[TRACE] Heading inserted, point=%s, on-heading=%s"
-                   (point)
-                   (org-at-heading-p))
-
           ;; Set the TODO state using Org functions
-          (message "[TRACE] About to set TODO state: %s" todo_state)
           (org-todo todo_state)
-          (message "[TRACE] TODO state set successfully")
 
           ;; Set tags using Org functions
           (when tag-list
-            (message "[TRACE] Setting tags: %s" tag-list)
             (org-set-tags tag-list))
 
           ;; Add body if provided
           (when body
-            (message
-             "[TRACE] Before body insert: point=%s, on-heading=%s, current-level=%s"
-             (point) (org-at-heading-p) (org-current-level))
             (end-of-line)
             (insert "\n" body)
             (unless (string-suffix-p "\n" body)
-              (insert "\n"))
-            (message
-             "[TRACE] After body insert: point=%s, on-heading=%s, current-level=%s, buffer-size=%s"
-             (point)
-             (org-at-heading-p)
-             (org-current-level)
-             (buffer-size)))
+              (insert "\n")))
 
           ;; Move back to the heading for org-id-get-create
           ;; org-id-get-create requires point to be on a heading
           (when body
             (org-back-to-heading t)
-            (message
-             "[TRACE] Moved back to heading for ID creation")))))))
+))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
