@@ -1593,11 +1593,10 @@ Another task description."))
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         (org-mcp-test--with-id-setup
             `((,org-mcp-test--content-with-id-id . ,test-file))
-          (let* ((resource-uri org-mcp-test--content-with-id-uri)
-                 (result
-                  (org-mcp-test--update-and-verify-todo
-                   resource-uri "TODO" "IN-PROGRESS"
-                   test-file "* IN-PROGRESS Task with ID")))
+          (let ((result
+                 (org-mcp-test--update-and-verify-todo
+                  org-mcp-test--content-with-id-uri "TODO" "IN-PROGRESS"
+                  test-file "* IN-PROGRESS Task with ID")))
             (should
              (equal
               (alist-get 'uri result)
@@ -2386,9 +2385,8 @@ This Child is under Parent Three, not Parent Two."))
         (org-id-update-id-locations (list test-file))
         (org-mcp-test--with-enabled
           ;; Rename using ID-based URI
-          (let* ((resource-uri org-mcp-test--content-with-id-uri)
-                 (params
-                  `((uri . ,resource-uri)
+          (let* ((params
+                  `((uri . ,org-mcp-test--content-with-id-uri)
                     (current_title . "Task with ID")
                     (new_title . "Renamed Task with ID")))
                  (result-text
