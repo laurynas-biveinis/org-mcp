@@ -548,7 +548,8 @@ CURRENT_STATE is the current TODO state (empty string for no state).
 NEW_STATE is the new TODO state to set.
 
 MCP Parameters:
-  uri - URI of the headline (org-headline:// or org-id://)
+  uri - URI of the headline (org-headline://{absolute-path}#{headline-path}
+        or org-id://{id})
   current_state - Current TODO state (empty string for no state)
   new_state - New TODO state (must be in `org-todo-keywords')"
   ;; Parse the resource URI
@@ -744,8 +745,12 @@ MCP Parameters:
   todo_state - TODO state from `org-todo-keywords'
   tags - Tags to add (single string or array of strings)
   body - Optional body text content
-  parent_uri - Parent item URI (required)
-  after_uri - Sibling to insert after (optional)"
+  parent_uri - Parent item URI
+               (org-headline://{absolute-path}#{headline-path}
+               or org-id://{id}) (required)
+  after_uri - Sibling to insert after
+              (org-headline://{absolute-path}#{headline-path}
+              or org-id://{id}) (optional)"
   (org-mcp--validate-headline-title title)
 
   ;; Normalize tags and get valid TODO states
@@ -987,7 +992,8 @@ CURRENT_TITLE is the current title (without TODO/tags) for validation.
 NEW_TITLE is the new title to set (without TODO/tags).
 
 MCP Parameters:
-  uri - URI of the headline (org-headline:// or org-id://)
+  uri - URI of the headline (org-headline://{absolute-path}#{headline-path}
+        or org-id://{id})
   current_title - Current title without TODO state or tags
   new_title - New title without TODO state or tags"
   (org-mcp--validate-headline-title new_title)
@@ -1026,7 +1032,8 @@ NEW_BODY is the replacement text.
 REPLACE_ALL if non-nil, replace all occurrences.
 
 MCP Parameters:
-  resource_uri - URI of the node (org-headline:// or org-id://)
+  resource_uri - URI of the node (org-headline://{absolute-path}#{headline-path}
+                 or org-id://{id})
   old_body - Substring to replace within the body (must be unique
             unless replace_all).  Use \"\" to add to empty nodes
   new_body - Replacement text
