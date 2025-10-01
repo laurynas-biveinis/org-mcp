@@ -45,6 +45,8 @@ Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib
 
 ** Available MCP Resources
 
+*Note:* File paths in URIs use minimal encoding (only =#= characters are encoded). Avoid using =%= characters in Org file names.
+
 *** org://{filename}
 - *Description:* Access the raw content of an allowed Org file
 - *URI Pattern:* =org://{filename}= where filename is the absolute path to the file
@@ -123,6 +125,11 @@ Returns: Content of "Headline" from file#1.org
 URI: org-headline:///home/user/org/file%231.org#Task%20%235
 Returns: Content of "Task #5" from file#1.org
 #+end_example
+
+*Encoding limitations:* File paths use minimal encoding (only =#= → =%23=) for readability.
+Files with =%= characters in their names should be avoided, as they may cause decoding issues.
+For such files, rename them or use =org-id://= URIs instead. Headline paths use full URL
+encoding.
 
 *** org-id URI Format
 - *Description:* Access Org node content by its unique ID property

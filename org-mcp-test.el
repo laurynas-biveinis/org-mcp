@@ -1302,6 +1302,27 @@ Content of subsection 2.1."))
            (text . "* Task #1\nFirst task")
            (mimeType . "text/plain")))))))
 
+(ert-deftest org-mcp-test-headline-resource-percent-hex-in-filename ()
+  "Test documenting limitation: files with %XX patterns will fail.
+This test documents the known limitation where file paths containing
+percent-encoded patterns (%XX) cause incorrect decoding.  The file
+named '100%23done' will be incorrectly decoded as '100#done' because
+the decoder treats all %23 sequences as encoded # characters.
+This is expected behavior with the current minimal encoding."
+  :expected-result :failed
+  (org-mcp-test--with-temp-org-file file
+      org-mcp-test--content-headline-no-todo
+    "100%23done"
+    (org-mcp-test--with-enabled
+      ;; This test is EXPECTED TO FAIL due to %XX decoding limitation
+      ;; The filename contains %23 which will be decoded as # incorrectly
+      (let ((uri (format "org-headline://%s#Regular%%20Headline" file)))
+        (mcp-server-lib-ert-verify-resource-read
+         uri
+         `((uri . ,uri)
+           (text . "* Regular Headline\nSome content.")
+           (mimeType . "text/plain")))))))
+
 (ert-deftest org-mcp-test-headline-resource-txt-extension ()
   "Test that headline resource works with .txt files, not just .org files."
   (org-mcp-test--test-headline-resource-with-extension ".txt"))
@@ -2891,6 +2912,21 @@ content here."
            result
            test-file
            org-mcp-test--pattern-edit-body-replace-all))))))
+
+(ert-deftest org-mcp-test-edit-body-replace-all-explicit-false ()
+  "Test that explicit replace_all=false triggers error on multiple matches."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-with-id-repeated-text
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup `(("test-id" . ,test-file))
+        ;; Should error because multiple occurrences exist
+        (org-mcp-test--assert-error-and-unchanged
+         (org-mcp-test--call-edit-body "org-id://test-id"
+                                       "occurrence of pattern"
+                                       "REPLACED"
+                                       :false) ; :false = JSON false
+         test-file
+         org-mcp-test--content-with-id-repeated-text)))))
 
 (ert-deftest org-mcp-test-edit-body-not-found ()
   "Test org-edit-body tool error when text is not found."

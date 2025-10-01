@@ -1043,181 +1043,576 @@ Special behavior:
   When old_body is an empty string (\"\"), the tool will only work if
   the node has no body content, allowing you to add initial content
   to empty nodes."
-  ;; Check for unbalanced blocks in new_body
-  (org-mcp--validate-body-no-unbalanced-blocks new_body)
+  ;; Normalize JSON false to nil for proper boolean handling
+  ;; JSON false can arrive as :false (keyword) or "false" (string)
+  (let ((replace_all (cond
+                      ((eq replace_all :false) nil)
+                      ((equal replace_all "false") nil)
+                      (t replace_all))))
+    ;; Check for unbalanced blocks in new_body
+    (org-mcp--validate-body-no-unbalanced-blocks new_body)
 
-  ;; Parse the resource URI
-  (let* ((parsed (org-mcp--parse-resource-uri resource_uri))
-         (file-path (car parsed))
-         (headline-path (cdr parsed)))
+    ;; Parse the resource URI
+    (let* ((parsed (org-mcp--parse-resource-uri resource_uri))
+           (file-path (car parsed))
+           (headline-path (cdr parsed)))
 
-    ;; Check for unsaved changes
-    (org-mcp--check-buffer-modifications file-path "edit body")
+      ;; Check for unsaved changes
+      (org-mcp--check-buffer-modifications file-path "edit body")
 
-    ;; Process the file
-    (org-mcp--with-org-file-buffer file-path nil
-      ;; Navigate to the headline
-      (org-mcp--goto-headline-from-uri
-       headline-path
-       (string-prefix-p org-mcp--org-id-prefix resource_uri))
+      ;; Process the file
+      (org-mcp--with-org-file-buffer file-path nil
+        ;; Navigate to the headline
+        (org-mcp--goto-headline-from-uri
+         headline-path
+         (string-prefix-p org-mcp--org-id-prefix resource_uri))
 
-      ;; Validate headlines in newBody based on current level
-      (org-mcp--validate-body-no-headlines
-       new_body (org-current-level))
+        ;; Validate headlines in newBody based on current level
+        (org-mcp--validate-body-no-headlines
+         new_body (org-current-level))
 
-      ;; Skip past headline and properties
-      (org-end-of-meta-data t)
+        ;; Skip past headline and properties
+        (org-end-of-meta-data t)
 
-      ;; Get body boundaries
-      (let ((body-begin (point))
-            (body-end nil)
-            (body-content nil)
-            (occurrence-count 0))
+        ;; Get body boundaries
+        (let ((body-begin (point))
+              (body-end nil)
+              (body-content nil)
+              (occurrence-count 0))
 
-        ;; Find end of body (before next headline or end of subtree)
-        (save-excursion
-          (if (org-goto-first-child)
-              ;; Has children - body ends before first child
-              (setq body-end (point))
-            ;; No children - body extends to end of subtree
-            (org-end-of-subtree t)
-            (setq body-end (point))))
+          ;; Find end of body (before next headline or end of subtree)
+          (save-excursion
+            (if (org-goto-first-child)
+                ;; Has children - body ends before first child
+                (setq body-end (point))
+              ;; No children - body extends to end of subtree
+              (org-end-of-subtree t)
+              (setq body-end (point))))
 
-        ;; Extract body content
-        (setq body-content
-              (buffer-substring-no-properties body-begin body-end))
+          ;; Extract body content
+          (setq body-content
+                (buffer-substring-no-properties body-begin body-end))
 
-        ;; Trim leading newline if present
-        ;; (org-end-of-meta-data includes it)
-        (when (and (> (length body-content) 0)
-                   (= (aref body-content 0) ?\n))
-          (setq body-content (substring body-content 1))
-          (setq body-begin (1+ body-begin)))
+          ;; Trim leading newline if present
+          ;; (org-end-of-meta-data includes it)
+          (when (and (> (length body-content) 0)
+                     (= (aref body-content 0) ?\n))
+            (setq body-content (substring body-content 1))
+            (setq body-begin (1+ body-begin)))
 
-        ;; Check if body is empty
-        (when (string-match-p "\\`[[:space:]]*\\'" body-content)
-          ;; Empty oldBody + empty body -> add content
-          (if (string= old_body "")
-              (setq occurrence-count 1) ; Treat as single replacement
-            (org-mcp--tool-validation-error
-             "Node has no body content")))
-
-        ;; Count occurrences (unless already handled above)
-        (unless (= occurrence-count 1) ; Skip if already set above
-          ;; Empty oldBody with non-empty body is an error
-          (if (and (string= old_body "")
-                   (not
-                    (string-match-p
-                     "\\`[[:space:]]*\\'" body-content)))
+          ;; Check if body is empty
+          (when (string-match-p "\\`[[:space:]]*\\'" body-content)
+            ;; Empty oldBody + empty body -> add content
+            (if (string= old_body "")
+                (setq occurrence-count 1) ; Treat as single replacement
               (org-mcp--tool-validation-error
-               "Cannot use empty old_body with non-empty body")
-            ;; Normal occurrence counting
-            (let ((case-fold-search nil)
-                  (search-pos 0))
-              (while (string-match
-                      (regexp-quote old_body) body-content
-                      search-pos)
-                (setq occurrence-count (1+ occurrence-count))
-                (setq search-pos (match-end 0))))))
+               "Node has no body content")))
 
-        ;; Validate occurrences
-        (cond
-         ((= occurrence-count 0)
-          (org-mcp--tool-validation-error "Body text not found: %s"
-                                          old_body))
-         ((and (> occurrence-count 1) (not replace_all))
-          (org-mcp--tool-validation-error
-           (concat "Text appears %d times (use replace_all)")
-           occurrence-count)))
-
-        ;; Perform replacement
-        (let ((new-body-content
-               (cond
-                ;; Special case: empty oldBody with empty body
-                ((and (string= old_body "")
+          ;; Count occurrences (unless already handled above)
+          (unless (= occurrence-count 1) ; Skip if already set above
+            ;; Empty oldBody with non-empty body is an error
+            (if (and (string= old_body "")
+                     (not
                       (string-match-p
-                       "\\`[[:space:]]*\\'" body-content))
-                 new_body)
-                ;; Normal replacement with replaceAll
-                (replace_all
-                 (replace-regexp-in-string
-                  (regexp-quote old_body) new_body body-content
-                  t t))
-                ;; Normal single replacement
-                (t
-                 (let ((pos
-                        (string-match
-                         (regexp-quote old_body) body-content)))
-                   (if pos
-                       (concat
-                        (substring body-content 0 pos) new_body
-                        (substring body-content
-                                   (+ pos (length old_body))))
-                     body-content))))))
+                       "\\`[[:space:]]*\\'" body-content)))
+                (org-mcp--tool-validation-error
+                 "Cannot use empty old_body with non-empty body")
+              ;; Normal occurrence counting
+              (let ((case-fold-search nil)
+                    (search-pos 0))
+                (while (string-match
+                        (regexp-quote old_body) body-content
+                        search-pos)
+                  (setq occurrence-count (1+ occurrence-count))
+                  (setq search-pos (match-end 0))))))
 
-          ;; Replace the body content
-          (if (< body-begin body-end)
-              (delete-region body-begin body-end)
-            ;; Empty body - ensure we're at the right position
-            (goto-char body-begin))
-          (insert new-body-content))))))
+          ;; Validate occurrences
+          (cond
+           ((= occurrence-count 0)
+            (org-mcp--tool-validation-error "Body text not found: %s"
+                                            old_body))
+           ((and (> occurrence-count 1) (not replace_all))
+            (org-mcp--tool-validation-error
+             (concat "Text appears %d times (use replace_all)")
+             occurrence-count)))
+
+          ;; Perform replacement
+          (let ((new-body-content
+                 (cond
+                  ;; Special case: empty oldBody with empty body
+                  ((and (string= old_body "")
+                        (string-match-p
+                         "\\`[[:space:]]*\\'" body-content))
+                   new_body)
+                  ;; Normal replacement with replaceAll
+                  (replace_all
+                   (replace-regexp-in-string
+                    (regexp-quote old_body) new_body body-content
+                    t t))
+                  ;; Normal single replacement
+                  (t
+                   (let ((pos
+                          (string-match
+                           (regexp-quote old_body) body-content)))
+                     (if pos
+                         (concat
+                          (substring body-content 0 pos) new_body
+                          (substring body-content
+                                     (+ pos (length old_body))))
+                       body-content))))))
+
+            ;; Replace the body content
+            (if (< body-begin body-end)
+                (delete-region body-begin body-end)
+              ;; Empty body - ensure we're at the right position
+              (goto-char body-begin))
+            (insert new-body-content)))))))
 
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
   (mcp-server-lib-register-tool
    #'org-mcp--tool-get-todo-config
    :id "org-get-todo-config"
-   :description "Get TODO keyword configuration for task states"
+   :description
+   "Get the TODO keyword configuration from the current Emacs Org-mode \
+settings.  Returns information about task state sequences and their \
+semantics.
+
+Parameters: None
+
+Returns JSON object with two arrays:
+  sequences - Array of TODO keyword sequences, each containing:
+    - type: Sequence type (e.g., \"sequence\", \"type\")
+    - keywords: Array of keywords including \"|\" separator between \
+active and done states
+  semantics - Array of keyword semantics, each containing:
+    - state: The TODO keyword (e.g., \"TODO\", \"DONE\")
+    - isFinal: Whether this is a final (done) state (boolean)
+    - sequenceType: The sequence type this keyword belongs to
+
+The \"|\" separator in sequences marks the boundary between active \
+states (before) and done states (after).  If no \"|\" is present, the \
+last keyword is treated as the done state.
+
+Use this tool to understand the available task states in the Org \
+configuration before creating or updating TODO items."
    :read-only t)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-get-tag-config
    :id "org-get-tag-config"
-   :description "Get tag configuration for tags and properties"
+   :description
+   "Get tag-related configuration from the current Emacs Org-mode \
+settings.  Returns literal Elisp variable values as strings for tag \
+configuration introspection.
+
+Parameters: None
+
+Returns JSON object with literal Elisp expressions (as strings) for:
+  org-use-tag-inheritance - Controls tag inheritance behavior
+  org-tags-exclude-from-inheritance - Tags that don't inherit
+  org-tags-sort-function - Function for sorting tags (or nil)
+  org-tag-alist - List of allowed tags with optional key bindings and \
+groups
+  org-tag-persistent-alist - Additional persistent tags (or nil)
+
+The org-tag-alist format includes:
+  - Simple tags: (\"tagname\" . key-char)
+  - Group markers: :startgroup, :endgroup for mutually exclusive tags
+  - Grouptags: :startgrouptag, :grouptags, :endgrouptag for tag \
+hierarchies
+
+Use this tool to understand:
+  - Which tags are allowed
+  - Tag inheritance rules
+  - Mutually exclusive tag groups
+  - Tag hierarchy relationships
+
+This helps validate tag usage and understand tag semantics before \
+adding or modifying tags on TODO items."
    :read-only t)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-update-todo-state
    :id "org-update-todo-state"
-   :description "Update the TODO state of a headline"
+   :description
+   "Update the TODO state of an Org headline.  Changes the task state \
+while preserving the headline title, tags, and other properties.  \
+Creates an Org ID property for the headline if one doesn't exist.
+
+Parameters:
+  uri - URI of the headline to update (string, required)
+        Formats: org-headline://{absolute-path}#{url-encoded-path}
+                 org-id://{uuid}
+  current_state - Expected current TODO state (string, required)
+                  Use empty string \"\" if headline has no TODO state
+                  Must match actual state or tool will error
+  new_state - New TODO state to set (string, required)
+              Must be valid keyword from org-todo-keywords
+
+Returns JSON object:
+  success - Always true on success (boolean)
+  previous_state - The previous TODO state (string, empty for none)
+  new_state - The new TODO state that was set (string)
+  uri - ID-based URI (org-id://{uuid}) for the updated headline
+
+Error cases:
+  - State mismatch: current_state doesn't match actual headline state
+  - Invalid TODO state: new_state not in org-todo-keywords
+  - File access denied: Referenced file not in org-mcp-allowed-files
+  - Headline not found: URI path doesn't resolve to a headline
+  - Unsaved changes: File has unsaved modifications in a buffer
+
+Security: Only files in org-mcp-allowed-files can be modified.  The \
+tool validates the current state to prevent race conditions."
    :read-only nil)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-add-todo
    :id "org-add-todo"
-   :description "Add a new TODO item to an Org file"
+   :description
+   "Add a new TODO item to an Org file at a specified location.  \
+Creates the headline with TODO state, tags, and optional body content.  \
+Automatically creates an Org ID property for the new headline.
+
+Parameters:
+  title - Headline text without TODO state or tags (string, required)
+          Cannot be empty or whitespace-only
+          Cannot contain newlines
+  todo_state - TODO keyword from org-todo-keywords (string, required)
+  tags - Tags for the headline (string or array, required)
+         Single tag: \"urgent\"
+         Multiple tags: [\"work\", \"urgent\"]
+         Validated against org-tag-alist if configured
+         Must follow Org tag rules (alphanumeric, _, @)
+         Respects mutually exclusive tag groups
+  body - Body content under the headline (string, optional)
+         Cannot contain headlines at same or higher level as new item
+         Must have balanced #+BEGIN/#+END blocks
+  parent_uri - Parent location (string, required)
+               For top-level: org-headline://{absolute-path}
+               For child: org-headline://{path}#{parent-path}
+                         or org-id://{parent-uuid}
+  after_uri - Sibling to insert after (string, optional)
+              Must be org-id://{uuid} format
+              If omitted, appends as last child of parent
+
+Returns JSON object:
+  success - Always true on success (boolean)
+  uri - ID-based URI (org-id://{uuid}) for the new headline
+  file - Filename (not full path) where item was added
+  title - The headline title that was created
+
+Error cases:
+  - Invalid title: Empty, whitespace-only, or contains newlines
+  - Invalid TODO state: Not in org-todo-keywords
+  - Invalid tags: Not in org-tag-alist, invalid characters, or \
+violates mutex groups
+  - Invalid body: Contains conflicting headlines or unbalanced blocks
+  - File access denied: Referenced file not in org-mcp-allowed-files
+  - Parent not found: parent_uri doesn't resolve to a headline
+  - Sibling not found: after_uri doesn't match a child of parent
+  - Unsaved changes: File has unsaved modifications in a buffer
+
+Positioning behavior:
+  - With parent_uri only: Appends as last child of parent
+  - With parent_uri + after_uri: Inserts immediately after specified \
+sibling
+  - Top-level (parent_uri with no fragment): Adds at end of file
+
+Security: Only files in org-mcp-allowed-files can be modified."
    :read-only nil)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-rename-headline
    :id "org-rename-headline"
-   :description "Rename the title of a headline"
+   :description
+   "Rename an Org headline's title while preserving its TODO state, \
+tags, properties, and body content.  Creates an Org ID property for the \
+headline if one doesn't exist.
+
+Parameters:
+  uri - URI of the headline to rename (string, required)
+        Formats: org-headline://{absolute-path}#{url-encoded-path}
+                 org-id://{uuid}
+  current_title - Expected current title without TODO/tags (string, \
+required)
+                  Must match actual title or tool will error
+                  Used to prevent race conditions
+  new_title - New title without TODO state or tags (string, required)
+              Cannot be empty or whitespace-only
+              Cannot contain newlines
+
+Returns JSON object:
+  success - Always true on success (boolean)
+  previous_title - The previous headline title (string)
+  new_title - The new title that was set (string)
+  uri - ID-based URI (org-id://{uuid}) for the renamed headline
+
+Error cases:
+  - Title mismatch: current_title doesn't match actual headline title
+  - Invalid new title: Empty, whitespace-only, or contains newlines
+  - File access denied: Referenced file not in org-mcp-allowed-files
+  - Headline not found: URI path doesn't resolve to a headline
+  - Unsaved changes: File has unsaved modifications in a buffer
+
+Preservation guarantees:
+  - TODO state remains unchanged
+  - All tags remain unchanged
+  - All properties (including custom IDs) remain unchanged
+  - Body content and child headlines remain unchanged
+
+Security: Only files in org-mcp-allowed-files can be modified.  The \
+tool validates the current title to prevent race conditions."
    :read-only nil)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-edit-body
    :id "org-edit-body"
-   :description "Edit body content using partial string replacement"
+   :description
+   "Edit the body content of an Org headline using partial string \
+replacement.  Finds and replaces a substring within the headline's body \
+text.  Creates an Org ID property for the headline if one doesn't exist.
+
+Parameters:
+  resource_uri - URI of the headline to edit (string, required)
+                 Formats: org-headline://{absolute-path}#{url-encoded-path}
+                          org-id://{uuid}
+  old_body - Substring to find and replace (string, required)
+             Must appear exactly once unless replace_all is true
+             Use empty string \"\" only for adding to empty nodes
+  new_body - Replacement text (string, required)
+             Cannot introduce headlines at same or higher level
+             Must maintain balanced #+BEGIN/#+END blocks
+  replace_all - Replace all occurrences (boolean, optional, default \
+false)
+                When false, old_body must be unique in the body
+
+Returns JSON object:
+  success - Always true on success (boolean)
+  uri - ID-based URI (org-id://{uuid}) for the edited headline
+
+Special behavior - Empty old_body:
+  When old_body is \"\", the tool adds content to empty nodes:
+  - Only works if node body is empty or whitespace-only
+  - Error if node already has content
+  - Useful for adding initial content to newly created headlines
+
+Error cases:
+  - Text not found: old_body doesn't appear in the body
+  - Multiple occurrences: old_body appears multiple times without \
+replace_all
+  - Empty body conflict: old_body is \"\" but node has content
+  - Invalid new content: new_body contains headlines at conflicting levels
+  - Unbalanced blocks: new_body has unclosed #+BEGIN or orphaned #+END
+  - File access denied: Referenced file not in org-mcp-allowed-files
+  - Headline not found: resource_uri doesn't resolve to a headline
+  - Unsaved changes: File has unsaved modifications in a buffer
+
+Content validation:
+  - Prevents introducing headlines that would break document structure
+  - Ensures all #+BEGIN_* blocks have matching #+END_* markers
+  - Block validation handles nested literal content correctly
+
+Security: Only files in org-mcp-allowed-files can be modified."
    :read-only nil)
   ;; Register template resources for org files
   (mcp-server-lib-register-resource
    "org://{filename}"
    #'org-mcp--handle-file-resource
    :name "Org file"
-   :description "Raw Org file content"
+   :description
+   "Access the complete raw content of an Org file.  Returns the entire \
+file as plain text, preserving all formatting, properties, and structure.
+
+URI format: org://{filename}
+  filename - Absolute path to the Org file (required)
+
+Security and access:
+  - File must be in org-mcp-allowed-files list
+  - Only absolute paths are accepted
+  - Path validation includes symlink resolution
+
+Returns: Plain text content of the entire Org file
+
+Example URIs:
+  org:///home/user/notes/tasks.org
+  org:///Users/name/Documents/projects.org
+
+Use this resource to:
+  - Read complete Org file contents
+  - Access files for processing or analysis
+  - Get raw Org markup including all metadata
+
+Error cases:
+  - File access denied: File not in org-mcp-allowed-files
+  - Invalid path: Relative paths not accepted
+  - File not found: Path doesn't exist"
    :mime-type "text/plain")
   (mcp-server-lib-register-resource
    "org-outline://{filename}"
    #'org-mcp--handle-outline-resource
    :name "Org file outline"
-   :description "Hierarchical structure of an Org file"
+   :description
+   "Get the hierarchical structure of an Org file as a JSON outline.  \
+Extracts headline titles and their nesting relationships up to 2 levels \
+deep.
+
+URI format: org-outline://{filename}
+  filename - Absolute path to the Org file (required)
+
+Security and access:
+  - File must be in org-mcp-allowed-files list
+  - Only absolute paths are accepted
+
+Returns: JSON object with structure:
+  {
+    \"headings\": [
+      {
+        \"title\": \"Top-level heading\",
+        \"level\": 1,
+        \"children\": [
+          {
+            \"title\": \"Subheading\",
+            \"level\": 2,
+            \"children\": []
+          }
+        ]
+      }
+    ]
+  }
+
+Depth limitation:
+  - Level 1 headings (top-level) are extracted
+  - Level 2 headings (direct children) are included
+  - Deeper levels are not included (children arrays are empty)
+
+Example URIs:
+  org-outline:///home/user/notes/tasks.org
+  org-outline:///Users/name/Documents/projects.org
+
+Use this resource to:
+  - Get document structure overview
+  - Build navigation interfaces
+  - Understand file organization without reading full content
+
+Error cases:
+  - File access denied: File not in org-mcp-allowed-files
+  - Invalid path: Relative paths not accepted
+  - File not found: Path doesn't exist"
    :mime-type "application/json")
   (mcp-server-lib-register-resource
    (concat org-mcp--org-headline-prefix "{filename}")
    #'org-mcp--handle-headline-resource
    :name "Org headline content"
-   :description "Content of a specific Org headline by path"
+   :description
+   "Access content of a specific Org headline by its path in the file \
+hierarchy.  Returns the headline and all its subheadings as plain text.
+
+URI format: org-headline://{filename}#{headline-path}
+  filename - Absolute path (# characters must be encoded as %23)
+  # - Fragment separator (literal #, not encoded)
+  headline-path - URL-encoded headline titles separated by /
+
+URI encoding rules:
+  - File path # → %23 (e.g., file#1.org → file%231.org)
+  - Fragment separator → # (literal, marks start of headline path)
+  - Headline title spaces → %20
+  - Headline title # → %23 (e.g., Task #5 → Task%20%2345)
+  - Path separator → / (literal, between nested headlines)
+
+Encoding limitations:
+  - ONLY # is encoded in file paths (minimal encoding for readability)
+  - File paths with % characters should be avoided
+  - Files named with %XX patterns (e.g., \"100%23done.org\") will fail
+  - For such files, rename them or use org-id:// URIs instead
+  - Headline paths use full URL encoding (all special chars encoded)
+
+Security and access:
+  - File must be in org-mcp-allowed-files list
+  - Only absolute file paths are accepted
+
+Returns: Plain text content including:
+  - The headline itself with TODO state and tags
+  - All properties drawer content
+  - Body text
+  - All nested subheadings (complete subtree)
+
+Example URIs:
+  org-headline:///home/user/tasks.org#Project%20Alpha
+    → Top-level \"Project Alpha\" heading
+
+  org-headline:///home/user/tasks.org#Project%20Alpha/Planning
+    → \"Planning\" subheading under \"Project Alpha\"
+
+  org-headline:///home/user/tasks.org#Issue%20%2342
+    → Heading titled \"Issue #42\"
+
+  org-headline:///home/user/file%231.org#Task%20%235
+    → \"Task #5\" from file named \"file#1.org\"
+
+  org-headline:///home/user/tasks.org
+    → Entire file (no fragment means whole file)
+
+Use this resource to:
+  - Read specific sections of an Org file
+  - Access headline content by hierarchical path
+  - Get complete subtree including all children
+
+Error cases:
+  - File access denied: File not in org-mcp-allowed-files
+  - Invalid path: Relative file paths not accepted
+  - Headline not found: Path doesn't match any headline hierarchy
+  - File not found: Path doesn't exist"
    :mime-type "text/plain")
   (mcp-server-lib-register-resource
    (concat org-mcp--org-id-prefix "{uuid}")
    #'org-mcp--handle-id-resource
    :name "Org node by ID"
-   :description "Content of an Org node by its ID"
+   :description
+   "Access content of an Org headline by its unique ID property.  More \
+stable than path-based access since IDs don't change when headlines are \
+renamed or moved.
+
+URI format: org-id://{uuid}
+  uuid - Value of the headline's ID property (required)
+
+How IDs work in Org:
+  Headlines can have an ID property:
+    * My Headline
+    :PROPERTIES:
+    :ID: 550e8400-e29b-41d4-a716-446655440000
+    :END:
+
+  The ID provides permanent, unique identification regardless of:
+    - Headline title changes
+    - Headline moving to different locations in file
+    - File renaming or moving
+
+Security and access:
+  - The file containing the ID must be in org-mcp-allowed-files
+  - Uses org-id database for ID-to-file lookup
+  - Falls back to searching allowed files if database is stale
+
+Returns: Plain text content including:
+  - The headline itself with TODO state and tags
+  - All properties drawer content
+  - Body text
+  - All nested subheadings (complete subtree)
+
+Example URIs:
+  org-id://550e8400-e29b-41d4-a716-446655440000
+    → Headline with that ID property
+
+Use this resource to:
+  - Access headlines by stable identifier
+  - Reference content that may be renamed or moved
+  - Build cross-references between Org nodes
+
+Advantages over path-based access:
+  - Survives headline renames
+  - Survives headline moves within file
+  - Survives file moves (if org-id database is updated)
+
+Error cases:
+  - ID not found: No headline with that ID exists in allowed files
+  - File access denied: File with ID is not in org-mcp-allowed-files
+  - File not found: org-id database points to non-existent file"
    :mime-type "text/plain"))
 
 (defun org-mcp-disable ()
