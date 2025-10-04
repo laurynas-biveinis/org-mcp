@@ -38,7 +38,7 @@ absolute paths:
 After =mcp-server-lib= has been properly installed (including =M-x mcp-server-lib-install=), register =org-mcp= with your MCP client:
 
 #+begin_src bash
-claude mcp add -s user -t stdio org-mcp -- ~/.emacs.d/emacs-mcp-stdio.sh --init-function=org-mcp-enable --stop-function=org-mcp-disable
+claude mcp add -s user -t stdio org-mcp -- ~/.emacs.d/emacs-mcp-stdio.sh --server-id=org-mcp --init-function=org-mcp-enable --stop-function=org-mcp-disable
 #+end_src
 
 Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib-start=. Stop it with =M-x mcp-server-lib-stop= when done.

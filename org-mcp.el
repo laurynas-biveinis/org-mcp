@@ -49,6 +49,9 @@
 (defconst org-mcp--org-id-prefix "org-id://"
   "URI prefix for ID-based resources.")
 
+(defconst org-mcp--server-id "org-mcp"
+  "Server ID for org-mcp MCP server registration.")
+
 ;; Helper macros
 
 (defmacro org-mcp--with-org-file-buffer
@@ -1045,10 +1048,14 @@ Special behavior:
   to empty nodes."
   ;; Normalize JSON false to nil for proper boolean handling
   ;; JSON false can arrive as :false (keyword) or "false" (string)
-  (let ((replace_all (cond
-                      ((eq replace_all :false) nil)
-                      ((equal replace_all "false") nil)
-                      (t replace_all))))
+  (let ((replace_all
+         (cond
+          ((eq replace_all :false)
+           nil)
+          ((equal replace_all "false")
+           nil)
+          (t
+           replace_all))))
     ;; Check for unbalanced blocks in new_body
     (org-mcp--validate-body-no-unbalanced-blocks new_body)
 
@@ -1196,7 +1203,8 @@ last keyword is treated as the done state.
 
 Use this tool to understand the available task states in the Org \
 configuration before creating or updating TODO items."
-   :read-only t)
+   :read-only t
+   :server-id org-mcp--server-id)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-get-tag-config
    :id "org-get-tag-config"
@@ -1229,7 +1237,8 @@ Use this tool to understand:
 
 This helps validate tag usage and understand tag semantics before \
 adding or modifying tags on TODO items."
-   :read-only t)
+   :read-only t
+   :server-id org-mcp--server-id)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-update-todo-state
    :id "org-update-todo-state"
@@ -1263,7 +1272,8 @@ Error cases:
 
 Security: Only files in org-mcp-allowed-files can be modified.  The \
 tool validates the current state to prevent race conditions."
-   :read-only nil)
+   :read-only nil
+   :server-id org-mcp--server-id)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-add-todo
    :id "org-add-todo"
@@ -1318,7 +1328,8 @@ sibling
   - Top-level (parent_uri with no fragment): Adds at end of file
 
 Security: Only files in org-mcp-allowed-files can be modified."
-   :read-only nil)
+   :read-only nil
+   :server-id org-mcp--server-id)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-rename-headline
    :id "org-rename-headline"
@@ -1360,7 +1371,8 @@ Preservation guarantees:
 
 Security: Only files in org-mcp-allowed-files can be modified.  The \
 tool validates the current title to prevent race conditions."
-   :read-only nil)
+   :read-only nil
+   :server-id org-mcp--server-id)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-edit-body
    :id "org-edit-body"
@@ -1410,11 +1422,11 @@ Content validation:
   - Block validation handles nested literal content correctly
 
 Security: Only files in org-mcp-allowed-files can be modified."
-   :read-only nil)
+   :read-only nil
+   :server-id org-mcp--server-id)
   ;; Register template resources for org files
   (mcp-server-lib-register-resource
-   "org://{filename}"
-   #'org-mcp--handle-file-resource
+   "org://{filename}" #'org-mcp--handle-file-resource
    :name "Org file"
    :description
    "Access the complete raw content of an Org file.  Returns the entire \
@@ -1443,10 +1455,10 @@ Error cases:
   - File access denied: File not in org-mcp-allowed-files
   - Invalid path: Relative paths not accepted
   - File not found: Path doesn't exist"
-   :mime-type "text/plain")
+   :mime-type "text/plain"
+   :server-id org-mcp--server-id)
   (mcp-server-lib-register-resource
-   "org-outline://{filename}"
-   #'org-mcp--handle-outline-resource
+   "org-outline://{filename}" #'org-mcp--handle-outline-resource
    :name "Org file outline"
    :description
    "Get the hierarchical structure of an Org file as a JSON outline.  \
@@ -1495,7 +1507,8 @@ Error cases:
   - File access denied: File not in org-mcp-allowed-files
   - Invalid path: Relative paths not accepted
   - File not found: Path doesn't exist"
-   :mime-type "application/json")
+   :mime-type "application/json"
+   :server-id org-mcp--server-id)
   (mcp-server-lib-register-resource
    (concat org-mcp--org-headline-prefix "{filename}")
    #'org-mcp--handle-headline-resource
@@ -1559,7 +1572,8 @@ Error cases:
   - Invalid path: Relative file paths not accepted
   - Headline not found: Path doesn't match any headline hierarchy
   - File not found: Path doesn't exist"
-   :mime-type "text/plain")
+   :mime-type "text/plain"
+   :server-id org-mcp--server-id)
   (mcp-server-lib-register-resource
    (concat org-mcp--org-id-prefix "{uuid}")
    #'org-mcp--handle-id-resource
@@ -1613,23 +1627,32 @@ Error cases:
   - ID not found: No headline with that ID exists in allowed files
   - File access denied: File with ID is not in org-mcp-allowed-files
   - File not found: org-id database points to non-existent file"
-   :mime-type "text/plain"))
+   :mime-type "text/plain"
+   :server-id org-mcp--server-id))
 
 (defun org-mcp-disable ()
   "Disable the org-mcp server."
-  (mcp-server-lib-unregister-tool "org-get-todo-config")
-  (mcp-server-lib-unregister-tool "org-get-tag-config")
-  (mcp-server-lib-unregister-tool "org-update-todo-state")
-  (mcp-server-lib-unregister-tool "org-add-todo")
-  (mcp-server-lib-unregister-tool "org-rename-headline")
-  (mcp-server-lib-unregister-tool "org-edit-body")
+  (mcp-server-lib-unregister-tool
+   "org-get-todo-config" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool
+   "org-get-tag-config" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool
+   "org-update-todo-state" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool "org-add-todo" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool
+   "org-rename-headline" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool "org-edit-body" org-mcp--server-id)
   ;; Unregister template resources
-  (mcp-server-lib-unregister-resource "org://{filename}")
-  (mcp-server-lib-unregister-resource "org-outline://{filename}")
   (mcp-server-lib-unregister-resource
-   (concat org-mcp--org-headline-prefix "{filename}"))
+   "org://{filename}" org-mcp--server-id)
   (mcp-server-lib-unregister-resource
-   (concat org-mcp--org-id-prefix "{uuid}")))
+   "org-outline://{filename}" org-mcp--server-id)
+  (mcp-server-lib-unregister-resource
+   (concat
+    org-mcp--org-headline-prefix "{filename}")
+   org-mcp--server-id)
+  (mcp-server-lib-unregister-resource
+   (concat org-mcp--org-id-prefix "{uuid}") org-mcp--server-id))
 
 (provide 'org-mcp)
 ;;; org-mcp.el ends here

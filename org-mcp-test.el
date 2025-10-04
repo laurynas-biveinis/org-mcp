@@ -12,6 +12,8 @@
 (require 'mcp-server-lib-ert)
 (require 'json)
 
+(setq mcp-server-lib-ert-server-id "org-mcp")
+
 ;;; Test Data Constants
 
 ;; Initial content strings for various test scenarios
@@ -575,7 +577,7 @@ AFTERURI is optional URI of sibling to insert after."
          (request
           (mcp-server-lib-create-tools-call-request
            "org-add-todo" 1 params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request)))
+         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
     (mcp-server-lib-ert-process-tool-response response)))
 
 (defun org-mcp-test--call-update-todo-state-expecting-error
@@ -590,7 +592,7 @@ NEW-STATE is the new TODO state to set."
            `((uri . ,resource-uri)
              (current_state . ,current-state)
              (new_state . ,new-state))))
-         (response (mcp-server-lib-process-jsonrpc-parsed request))
+         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
          (result (mcp-server-lib-ert-process-tool-response response)))
     ;; If we get here, the tool succeeded when we expected failure
     (error "Expected error but got success: %s" result)))
@@ -608,7 +610,7 @@ NEW-TITLE is the new title to set."
          (request
           (mcp-server-lib-create-tools-call-request
            "org-rename-headline" 1 params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request))
+         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
          (result (mcp-server-lib-ert-process-tool-response response)))
     ;; If we get here, the tool succeeded when we expected failure
     (error "Expected error but got success: %s" result)))
@@ -632,7 +634,7 @@ AFTERURI is optional URI of sibling to insert after."
          (request
           (mcp-server-lib-create-tools-call-request
            "org-add-todo" 1 params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request))
+         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
          (result (mcp-server-lib-ert-process-tool-response response)))
     ;; If we get here, the tool succeeded when we expected failure
     (error "Expected error but got success: %s" result)))
@@ -728,7 +730,7 @@ unchanged after."
     (uri expected-error-message)
   "Read resource at URI expecting an error with EXPECTED-ERROR-MESSAGE."
   (let* ((request (mcp-server-lib-create-resources-read-request uri))
-         (response-json (mcp-server-lib-process-jsonrpc request))
+         (response-json (mcp-server-lib-process-jsonrpc request mcp-server-lib-ert-server-id))
          (response
           (json-parse-string response-json :object-type 'alist)))
     (unless (assoc 'error response)
@@ -1075,7 +1077,7 @@ NEW-TITLE is the invalid new title that should be rejected."
                    (current_title . ,headline-title)
                    (new_title . ,new-title))))
                (response
-                (mcp-server-lib-process-jsonrpc-parsed request)))
+                (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
           (should-error
            (mcp-server-lib-ert-process-tool-response response)
            :type 'mcp-server-lib-tool-error))
@@ -1137,7 +1139,7 @@ Very deep content."))
                  (request
                   (mcp-server-lib-create-resources-read-request uri))
                  (response-json
-                  (mcp-server-lib-process-jsonrpc request))
+                  (mcp-server-lib-process-jsonrpc request mcp-server-lib-ert-server-id))
                  (response
                   (json-parse-string response-json
                                      :object-type 'alist))
@@ -2388,7 +2390,7 @@ This Child is under Parent Three, not Parent Two."))
                        (current_title . "Child")
                        (new_title . "Renamed Child"))))
                    (response
-                    (mcp-server-lib-process-jsonrpc-parsed request)))
+                    (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
               (should-error
                (mcp-server-lib-ert-process-tool-response response)
                :type 'mcp-server-lib-tool-error))))))))
@@ -2457,7 +2459,7 @@ This Child is under Parent Three, not Parent Two."))
                      (current_title . "Whatever")
                      (new_title . "Should Fail"))))
                  (response
-                  (mcp-server-lib-process-jsonrpc-parsed request)))
+                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
             (should-error
              (mcp-server-lib-ert-process-tool-response response)
              :type 'mcp-server-lib-tool-error)))))))
@@ -2681,7 +2683,7 @@ Content here."))
                   (mcp-server-lib-create-tools-call-request
                    "org-rename-headline" 1 params))
                  (response
-                  (mcp-server-lib-process-jsonrpc-parsed request))
+                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
                  (result
                   (mcp-server-lib-ert-process-tool-response
                    response)))
@@ -2812,7 +2814,7 @@ REPLACE-ALL if true, replace all occurrences (default: nil)."
          (request
           (mcp-server-lib-create-tools-call-request
            "org-edit-body" 1 params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request)))
+         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
     (mcp-server-lib-ert-process-tool-response response)))
 
 (defun org-mcp-test--verify-file-eq (test-file expected-content)
