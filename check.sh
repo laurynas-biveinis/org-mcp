@@ -202,6 +202,24 @@ else
 	echo "No markdown files to check"
 fi
 
+# Biome
+
+echo -n "Running Biome format check... "
+if npx @biomejs/biome format .; then
+	echo "OK!"
+else
+	echo "Biome format check failed!"
+	ERRORS=$((ERRORS + 1))
+fi
+
+echo -n "Running Biome lint... "
+if npx @biomejs/biome lint .; then
+	echo "OK!"
+else
+	echo "Biome lint failed!"
+	ERRORS=$((ERRORS + 1))
+fi
+
 # Final result
 if [ $ERRORS -eq 0 ]; then
 	echo "All checks passed successfully!"
