@@ -195,6 +195,11 @@ Throws an error if neither prefix matches."
      (org-tag-persistent-alist
       . ,(prin1-to-string org-tag-persistent-alist)))))
 
+(defun org-mcp--tool-get-allowed-files ()
+  "Return the list of allowed Org files."
+  (json-encode
+   `((files . ,(vconcat org-mcp-allowed-files)))))
+
 (defun org-mcp--read-file-resource (file-path)
   "Read and return the contents of FILE-PATH."
   (with-temp-buffer
@@ -1280,6 +1285,47 @@ adding or modifying tags on TODO items."
    :read-only t
    :server-id org-mcp--server-id)
   (mcp-server-lib-register-tool
+   #'org-mcp--tool-get-allowed-files
+   :id "org-get-allowed-files"
+   :description
+   "Get the list of Org files accessible through the org-mcp server.  \
+Returns the configured allowed files exactly as specified in \
+org-mcp-allowed-files.
+
+Parameters: None
+
+Returns JSON object containing:
+  files (array of strings): Absolute paths of allowed Org files
+
+Example response:
+  {
+    \"files\": [
+      \"/home/user/org/tasks.org\",
+      \"/home/user/org/projects.org\",
+      \"/home/user/notes/daily.org\"
+    ]
+  }
+
+Empty configuration returns:
+  {
+    \"files\": []
+  }
+
+Use cases:
+  - Discovery: What Org files can I access through MCP?
+  - URI Construction: I need to build an org-headline:// URI - what's \
+the exact path?
+  - Access Troubleshooting: Why is my file access failing?
+  - Configuration Verification: Did my org-mcp-allowed-files setting \
+work correctly?
+
+Behavior:
+  - Returns configured paths exactly as-is (no validation or normalization)
+  - Always succeeds (returns empty array if no files configured)
+  - No metadata included (only file paths)"
+   :read-only t
+   :server-id org-mcp--server-id)
+  (mcp-server-lib-register-tool
    #'org-mcp--tool-update-todo-state
    :id "org-update-todo-state"
    :description
@@ -1735,6 +1781,8 @@ Error cases:
    "org-get-todo-config" org-mcp--server-id)
   (mcp-server-lib-unregister-tool
    "org-get-tag-config" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool
+   "org-get-allowed-files" org-mcp--server-id)
   (mcp-server-lib-unregister-tool
    "org-update-todo-state" org-mcp--server-id)
   (mcp-server-lib-unregister-tool "org-add-todo" org-mcp--server-id)

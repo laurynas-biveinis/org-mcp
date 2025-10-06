@@ -191,6 +191,35 @@ Example return value:
 }
 #+end_src
 
+*** org-get-allowed-files
+- *Description:* Get the list of Org files accessible through the org-mcp server
+- *Parameters:* None
+- *Returns:* JSON object with =files= array containing absolute paths of allowed Org files
+
+Use cases:
+- Discovery: "What Org files can I access through MCP?"
+- URI Construction: "I need to build an org-headline:// URI - what's the exact path?"
+- Access Troubleshooting: "Why is my file access failing?"
+- Configuration Verification: "Did my org-mcp-allowed-files setting work correctly?"
+
+Example response:
+#+begin_src json
+{
+  "files": [
+    "/home/user/org/tasks.org",
+    "/home/user/org/projects.org",
+    "/home/user/notes/daily.org"
+  ]
+}
+#+end_src
+
+Empty configuration returns:
+#+begin_src json
+{
+  "files": []
+}
+#+end_src
+
 *** org-update-todo-state
 - *Description:* Update the TODO state of a specific headline
 - *Parameters:*

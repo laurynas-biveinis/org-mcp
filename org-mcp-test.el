@@ -475,6 +475,13 @@ Third occurrence of pattern."
     ;; Parse the JSON string result
     (json-read-from-string result)))
 
+(defun org-mcp-test--call-get-allowed-files ()
+  "Call org-get-allowed-files tool via JSON-RPC and return the result."
+  (let ((result
+         (mcp-server-lib-ert-call-tool "org-get-allowed-files" nil)))
+    ;; Parse the JSON string result
+    (json-read-from-string result)))
+
 ;; Test helper macros
 
 (defmacro org-mcp-test--with-enabled (&rest body)
@@ -1025,6 +1032,43 @@ unchanged after."
          (equal
           (alist-get 'org-use-tag-inheritance result)
           "(\"work\")"))))))
+
+(ert-deftest org-mcp-test-tool-get-allowed-files-empty ()
+  "Test org-get-allowed-files with empty configuration."
+  (let ((org-mcp-allowed-files nil))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-allowed-files)))
+        (should (= (length result) 1))
+        (let ((files (cdr (assoc 'files result))))
+          (should (vectorp files))
+          (should (= (length files) 0)))))))
+
+(ert-deftest org-mcp-test-tool-get-allowed-files-single ()
+  "Test org-get-allowed-files with single file."
+  (let ((org-mcp-allowed-files '("/home/user/tasks.org")))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-allowed-files)))
+        (should (= (length result) 1))
+        (let ((files (cdr (assoc 'files result))))
+          (should (vectorp files))
+          (should (= (length files) 1))
+          (should (string= (aref files 0) "/home/user/tasks.org")))))))
+
+(ert-deftest org-mcp-test-tool-get-allowed-files-multiple ()
+  "Test org-get-allowed-files with multiple files."
+  (let ((org-mcp-allowed-files
+         '("/home/user/tasks.org"
+           "/home/user/projects.org"
+           "/home/user/notes.org")))
+    (org-mcp-test--with-enabled
+      (let ((result (org-mcp-test--call-get-allowed-files)))
+        (should (= (length result) 1))
+        (let ((files (cdr (assoc 'files result))))
+          (should (vectorp files))
+          (should (= (length files) 3))
+          (should (string= (aref files 0) "/home/user/tasks.org"))
+          (should (string= (aref files 1) "/home/user/projects.org"))
+          (should (string= (aref files 2) "/home/user/notes.org")))))))
 
 (defmacro org-mcp-test--with-add-todo-setup
     (file-var initial-content &rest body)
