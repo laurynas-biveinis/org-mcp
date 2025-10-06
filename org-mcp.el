@@ -189,8 +189,6 @@ Throws an error if neither prefix matches."
       ,(prin1-to-string org-use-tag-inheritance))
      (org-tags-exclude-from-inheritance
       . ,(prin1-to-string org-tags-exclude-from-inheritance))
-     (org-tags-sort-function
-      . ,(prin1-to-string org-tags-sort-function))
      (org-tag-alist . ,(prin1-to-string org-tag-alist))
      (org-tag-persistent-alist
       . ,(prin1-to-string org-tag-persistent-alist)))))
@@ -1263,7 +1261,6 @@ Parameters: None
 Returns JSON object with literal Elisp expressions (as strings) for:
   org-use-tag-inheritance - Controls tag inheritance behavior
   org-tags-exclude-from-inheritance - Tags that don't inherit
-  org-tags-sort-function - Function for sorting tags (or nil)
   org-tag-alist - List of allowed tags with optional key bindings and \
 groups
   org-tag-persistent-alist - Additional persistent tags (or nil)

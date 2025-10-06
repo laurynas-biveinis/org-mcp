@@ -899,7 +899,7 @@ unchanged after."
         (org-use-tag-inheritance t))
     (org-mcp-test--with-enabled
       (let ((result (org-mcp-test--call-get-tag-config)))
-        (should (= (length result) 5))
+        (should (= (length result) 4))
         (should
          (equal (alist-get 'org-use-tag-inheritance result) "t"))
         (should
@@ -907,8 +907,6 @@ unchanged after."
           (alist-get
            'org-tags-exclude-from-inheritance result)
           "nil"))
-        (should
-         (equal (alist-get 'org-tags-sort-function result) "nil"))
         (should (equal (alist-get 'org-tag-alist result) "nil"))
         (should
          (equal
@@ -999,7 +997,6 @@ unchanged after."
   (let ((org-tag-alist '("work" "personal"))
         (org-tags-exclude-from-inheritance nil)
         (org-tag-persistent-alist nil)
-        (org-tags-sort-function nil)
         (org-use-tag-inheritance t))
     (org-mcp-test--with-enabled
       (let ((result (org-mcp-test--call-get-tag-config)))
@@ -1011,7 +1008,6 @@ unchanged after."
   (let ((org-tag-alist '("work" "personal"))
         (org-tags-exclude-from-inheritance nil)
         (org-tag-persistent-alist nil)
-        (org-tags-sort-function nil)
         (org-use-tag-inheritance nil))
     (org-mcp-test--with-enabled
       (let ((result (org-mcp-test--call-get-tag-config)))
@@ -1024,7 +1020,6 @@ unchanged after."
   (let ((org-tag-alist '("work" "personal"))
         (org-tags-exclude-from-inheritance nil)
         (org-tag-persistent-alist nil)
-        (org-tags-sort-function nil)
         (org-use-tag-inheritance '("work")))
     (org-mcp-test--with-enabled
       (let ((result (org-mcp-test--call-get-tag-config)))

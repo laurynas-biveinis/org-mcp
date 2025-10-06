@@ -185,7 +185,6 @@ Example return value:
 {
   "org-use-tag-inheritance": "t",
   "org-tags-exclude-from-inheritance": "(\"urgent\")",
-  "org-tags-sort-function": "nil",
   "org-tag-alist": "((\"work\" . 119) (\"urgent\" . 117) (:startgroup) (\"@office\" . 111) (\"@home\" . 104) (\"@errand\" . 101) (:endgroup) (:startgrouptag) (\"project\") (:grouptags) (\"proj_a\") (\"proj_b\") (:endgrouptag))",
   "org-tag-persistent-alist": "nil"
 }
