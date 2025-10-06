@@ -428,6 +428,37 @@ Third occurrence of pattern."
    "Third line of content\\.")
   "Pattern for edit-body accepting lower-level headlines.")
 
+;; Expected patterns for tool tests
+
+(defconst org-mcp-test--pattern-tool-read-headline-single
+  (concat
+   "\\`\\* Project A/B Testing\n"
+   "This is a headline with a slash in it\\.\n"
+   "?\\'")
+  "Pattern for org-read-headline tool single-level path result.")
+
+(defconst org-mcp-test--pattern-tool-read-headline-nested
+  (concat
+   "\\`\\*\\* First Child\n"
+   "First child content\\.\n"
+   "It spans multiple lines\\.\n"
+   "?\\'")
+  "Pattern for org-read-headline tool nested path result.")
+
+(defconst org-mcp-test--pattern-tool-read-by-id
+  (format
+   (concat
+    "\\`\\* Task with ID\n"
+    ":PROPERTIES:\n"
+    ":ID: +%s\n"
+    ":END:\n"
+    "First line of content\\.\n"
+    "Second line of content\\.\n"
+    "Third line of content\\.\n"
+    "?\\'")
+   org-mcp-test--content-with-id-id)
+  "Pattern for org-read-by-id tool result.")
+
 ;; Helper functions for calling MCP tools
 
 (defun org-mcp-test--call-get-todo-config ()
@@ -3126,6 +3157,88 @@ Some quote
 #+END_EXAMPLE"
           nil)
          test-file org-mcp-test--content-with-id)))))
+
+;;; Resource template workaround tool tests
+
+(ert-deftest org-mcp-test-tool-read-file ()
+  "Test org-read-file tool returns same content as file resource."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-headline-no-todo
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let* ((params `((file . ,test-file)))
+               (result-text
+                (mcp-server-lib-ert-call-tool "org-read-file" params)))
+          (should (string= result-text org-mcp-test--content-headline-no-todo)))))))
+
+(ert-deftest org-mcp-test-tool-read-outline ()
+  "Test org-read-outline tool returns valid JSON outline structure."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-nested-siblings
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let* ((params `((file . ,test-file)))
+               (result-json
+                (mcp-server-lib-ert-call-tool "org-read-outline" params))
+               (result (json-parse-string result-json :object-type 'alist))
+               (headings (alist-get 'headings result)))
+          (should (= (length headings) 1))
+          (should (string= (alist-get 'title (aref headings 0)) "Parent Task")))))))
+
+(ert-deftest org-mcp-test-tool-read-headline-empty-path ()
+  "Test org-read-headline with empty headline_path returns full file."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-headline-no-todo
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let* ((params `((file . ,test-file) (headline_path . [])))
+               (result-text
+                (mcp-server-lib-ert-call-tool "org-read-headline" params)))
+          (should (string= result-text org-mcp-test--content-headline-no-todo)))))))
+
+(ert-deftest org-mcp-test-tool-read-headline-single-level ()
+  "Test org-read-headline with single-level path."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-slash-in-headline
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let* ((params `((file . ,test-file)
+                         (headline_path . ["Project A/B Testing"])))
+               (result-text
+                (mcp-server-lib-ert-call-tool "org-read-headline" params)))
+          (should
+           (string-match-p
+            org-mcp-test--pattern-tool-read-headline-single
+            result-text)))))))
+
+(ert-deftest org-mcp-test-tool-read-headline-nested ()
+  "Test org-read-headline with nested path."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-nested-siblings
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let* ((params `((file . ,test-file)
+                         (headline_path . ["Parent Task" "First Child"])))
+               (result-text
+                (mcp-server-lib-ert-call-tool "org-read-headline" params)))
+          (should
+           (string-match-p
+            org-mcp-test--pattern-tool-read-headline-nested
+            result-text)))))))
+
+(ert-deftest org-mcp-test-tool-read-by-id ()
+  "Test org-read-by-id tool returns headline content by ID."
+  (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-with-id
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--content-with-id-id . ,test-file))
+        (let* ((params `((uuid . ,org-mcp-test--content-with-id-id)))
+               (result-text
+                (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
+          (should
+           (string-match-p
+            org-mcp-test--pattern-tool-read-by-id
+            result-text)))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

@@ -101,11 +101,7 @@ Returns: JSON structure like:
 
 Example:
 #+begin_example
-# Access a top-level headline:
-URI: org-headline:///home/user/org/projects.org#Project%20Alpha
-Returns: Content of "Project Alpha" heading and all its subheadings
-
-# Access a nested headline:
+# Access a headline:
 URI: org-headline:///home/user/org/projects.org#Project%20Alpha/Requirements
 Returns: Content of "Requirements" under "Project Alpha"
 
@@ -334,6 +330,94 @@ Example:
 {
   "error": "Cannot use empty oldBody with non-empty body content"
 }
+#+end_src
+
+** Workaround Tools (Temporary)
+
+*Note:* The following tools are temporary workarounds that duplicate the resource template functionality as tools. They exist because Claude Code currently doesn't discover resource templates.
+
+*** org-read-file
+- *Description:* Read complete raw content of an Org file
+- *Parameters:*
+  - =file= (string, required): Absolute path to an Org file
+- *Returns:* Plain text content of the entire Org file
+- *Configuration:* File must be in =org-mcp-allowed-files=
+
+Example:
+#+begin_src json
+# Request:
+{
+  "file": "/home/user/org/projects.org"
+}
+
+# Returns: Full raw content of the file
+#+end_src
+
+*** org-read-outline
+- *Description:* Get hierarchical structure of an Org file as JSON outline
+- *Parameters:*
+  - =file= (string, required): Absolute path to an Org file
+- *Returns:* JSON object with hierarchical outline structure
+- *Configuration:* File must be in =org-mcp-allowed-files=
+
+Example:
+#+begin_src json
+# Request:
+{
+  "file": "/home/user/org/projects.org"
+}
+
+# Returns: JSON structure with all headline titles and nesting
+{
+  "headings": [
+    {
+      "title": "Project Alpha",
+      "level": 1,
+      "children": [...]
+    }
+  ]
+}
+#+end_src
+
+*** org-read-headline
+- *Description:* Read specific Org headline by hierarchical path
+- *Parameters:*
+  - =file= (string, required): Absolute path to an Org file
+  - =headlinePath= (array, required): Array of headline titles forming the path (e.g., ["Project", "Planning"])
+- *Returns:* Plain text content of the headline and its subtree
+- *Configuration:* File must be in =org-mcp-allowed-files=
+
+Example:
+#+begin_src json
+# Request for nested headline:
+{
+  "file": "/home/user/org/projects.org",
+  "headlinePath": ["Project Alpha", "Requirements"]
+}
+
+# Request for entire file:
+{
+  "file": "/home/user/org/projects.org",
+  "headlinePath": []
+}
+#+end_src
+
+*** org-read-by-id
+- *Description:* Read Org headline by its unique ID property
+- *Parameters:*
+  - =uuid= (string, required): UUID from headline's ID property
+- *Returns:* Plain text content of the headline and its subtree
+- *Configuration:* File containing the ID must be in =org-mcp-allowed-files=
+- *Note:* More stable than path-based access since IDs don't change when headlines are renamed or moved
+
+Example:
+#+begin_src json
+# Request:
+{
+  "uuid": "550e8400-e29b-41d4-a716-446655440000"
+}
+
+# Returns: Content of the headline with that ID
 #+end_src
 
 * Contributing

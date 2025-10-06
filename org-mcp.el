@@ -1175,6 +1175,46 @@ Special behavior:
               (goto-char body-begin))
             (insert new-body-content)))))))
 
+;;; Resource template workaround tools
+
+(defun org-mcp--tool-read-file (file)
+  "Tool wrapper for org://{filename} resource template.
+
+MCP Parameters:
+  file - Absolute path to an Org file"
+  (org-mcp--handle-file-resource `(("filename" . ,file))))
+
+(defun org-mcp--tool-read-outline (file)
+  "Tool wrapper for org-outline://{filename} resource template.
+
+MCP Parameters:
+  file - Absolute path to an Org file"
+  (org-mcp--handle-outline-resource `(("filename" . ,file))))
+
+(defun org-mcp--tool-read-headline (file headline_path)
+  "Tool wrapper for org-headline://{filename}#{path} resource template.
+
+MCP Parameters:
+  file - Absolute path to an Org file
+  headline_path - Array of headline titles forming path
+                  (e.g. [\"Project\", \"Planning\"])"
+  (unless (or (vectorp headline_path) (listp headline_path))
+    (org-mcp--tool-validation-error
+     "headline_path must be an array, got: %s" (type-of headline_path)))
+  (let* ((path-list (append headline_path nil))
+         (path-string (mapconcat #'url-hexify-string path-list "/"))
+         (full-path (if path-list
+                        (concat file "#" path-string)
+                      file)))
+    (org-mcp--handle-headline-resource `(("filename" . ,full-path)))))
+
+(defun org-mcp--tool-read-by-id (uuid)
+  "Tool wrapper for org-id://{uuid} resource template.
+
+MCP Parameters:
+  uuid - UUID from headline's ID property"
+  (org-mcp--handle-id-resource `(("uuid" . ,uuid))))
+
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
   (mcp-server-lib-register-tool
@@ -1424,6 +1464,65 @@ Content validation:
 Security: Only files in org-mcp-allowed-files can be modified."
    :read-only nil
    :server-id org-mcp--server-id)
+  ;; Workaround tools for resource templates (until Claude Code supports templates)
+  (mcp-server-lib-register-tool
+   #'org-mcp--tool-read-file
+   :id "org-read-file"
+   :description
+   "Read complete raw content of an Org file. Returns entire file as \
+plain text with all formatting, properties, and structure preserved. \
+File must be in org-mcp-allowed-files.
+
+Parameters:
+  file - Absolute path to Org file (string, required)
+
+Returns: Plain text content of the entire Org file"
+   :read-only t
+   :server-id org-mcp--server-id)
+  (mcp-server-lib-register-tool
+   #'org-mcp--tool-read-outline
+   :id "org-read-outline"
+   :description
+   "Get hierarchical structure of Org file as JSON outline. Returns all \
+headline titles and nesting relationships at full depth. File must be \
+in org-mcp-allowed-files.
+
+Parameters:
+  file - Absolute path to Org file (string, required)
+
+Returns: JSON object with hierarchical outline structure"
+   :read-only t
+   :server-id org-mcp--server-id)
+  (mcp-server-lib-register-tool
+   #'org-mcp--tool-read-headline
+   :id "org-read-headline"
+   :description
+   "Read specific Org headline by hierarchical path. Returns headline with \
+TODO state, tags, properties, body text, and all nested subheadings. File \
+must be in org-mcp-allowed-files.
+
+Parameters:
+  file - Absolute path to Org file (string, required)
+  headline_path - Array of headline titles forming path (array, required)
+                  Example: [\"Project\", \"Planning\"] for nested headline
+
+Returns: Plain text content of the headline and its subtree"
+   :read-only t
+   :server-id org-mcp--server-id)
+  (mcp-server-lib-register-tool
+   #'org-mcp--tool-read-by-id
+   :id "org-read-by-id"
+   :description
+   "Read Org headline by its unique ID property. More stable than path-based \
+access since IDs don't change when headlines are renamed or moved. File \
+containing the ID must be in org-mcp-allowed-files.
+
+Parameters:
+  uuid - UUID from headline's ID property (string, required)
+
+Returns: Plain text content of the headline and its subtree"
+   :read-only t
+   :server-id org-mcp--server-id)
   ;; Register template resources for org files
   (mcp-server-lib-register-resource
    "org://{filename}" #'org-mcp--handle-file-resource
@@ -1642,6 +1741,11 @@ Error cases:
   (mcp-server-lib-unregister-tool
    "org-rename-headline" org-mcp--server-id)
   (mcp-server-lib-unregister-tool "org-edit-body" org-mcp--server-id)
+  ;; Unregister workaround tools
+  (mcp-server-lib-unregister-tool "org-read-file" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool "org-read-outline" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool "org-read-headline" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool "org-read-by-id" org-mcp--server-id)
   ;; Unregister template resources
   (mcp-server-lib-unregister-resource
    "org://{filename}" org-mcp--server-id)
