@@ -635,6 +635,20 @@ NEW-STATE is the new TODO state to set."
     ;; If we get here, the tool succeeded when we expected failure
     (error "Expected error but got success: %s" result)))
 
+(defun org-mcp-test--call-read-headline-expecting-error (file headline-path)
+  "Call org-read-headline tool via JSON-RPC expecting an error.
+FILE is the path to the Org file.
+HEADLINE-PATH is the headline path string."
+  (let* ((request
+          (mcp-server-lib-create-tools-call-request
+           "org-read-headline" 1
+           `((file . ,file)
+             (headline_path . ,headline-path))))
+         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+         (result (mcp-server-lib-ert-process-tool-response response)))
+    ;; If we get here, the tool succeeded when we expected failure
+    (error "Expected error but got success: %s" result)))
+
 (defun org-mcp-test--call-rename-headline-expecting-error
     (resource-uri current-title new-title)
   "Call org-rename-headline tool via JSON-RPC expecting an error.
@@ -3204,15 +3218,14 @@ Some quote
           (should (string= (alist-get 'title (aref headings 0)) "Parent Task")))))))
 
 (ert-deftest org-mcp-test-tool-read-headline-empty-path ()
-  "Test org-read-headline with empty headline_path returns full file."
+  "Test org-read-headline with empty headline_path signals validation error."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-headline-no-todo
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
-        (let* ((params `((file . ,test-file) (headline_path . [])))
-               (result-text
-                (mcp-server-lib-ert-call-tool "org-read-headline" params)))
-          (should (string= result-text org-mcp-test--content-headline-no-todo)))))))
+        (should-error
+         (org-mcp-test--call-read-headline-expecting-error test-file "")
+         :type 'mcp-server-lib-tool-error)))))
 
 (ert-deftest org-mcp-test-tool-read-headline-single-level ()
   "Test org-read-headline with single-level path."
@@ -3221,7 +3234,7 @@ Some quote
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (let* ((params `((file . ,test-file)
-                         (headline_path . ["Project A/B Testing"])))
+                         (headline_path . "Project%20A%2FB%20Testing")))
                (result-text
                 (mcp-server-lib-ert-call-tool "org-read-headline" params)))
           (should
@@ -3236,7 +3249,7 @@ Some quote
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (let* ((params `((file . ,test-file)
-                         (headline_path . ["Parent Task" "First Child"])))
+                         (headline_path . "Parent%20Task/First%20Child")))
                (result-text
                 (mcp-server-lib-ert-call-tool "org-read-headline" params)))
           (should

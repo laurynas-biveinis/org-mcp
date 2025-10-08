@@ -411,7 +411,7 @@ Example:
 - *Description:* Read specific Org headline by hierarchical path
 - *Parameters:*
   - =file= (string, required): Absolute path to an Org file
-  - =headlinePath= (array, required): Array of headline titles forming the path (e.g., ["Project", "Planning"])
+  - =headlinePath= (string, required): Non-empty slash-separated path to headline. Only slashes within headline titles must be URL-encoded as =%2F= to distinguish them from path separators. Other characters (spaces, =#=, etc.) do not need encoding. To read entire files, use =org-read-file= instead
 - *Returns:* Plain text content of the headline and its subtree
 - *Configuration:* File must be in =org-mcp-allowed-files=
 
@@ -420,13 +420,7 @@ Example:
 # Request for nested headline:
 {
   "file": "/home/user/org/projects.org",
-  "headlinePath": ["Project Alpha", "Requirements"]
-}
-
-# Request for entire file:
-{
-  "file": "/home/user/org/projects.org",
-  "headlinePath": []
+  "headlinePath": "Project%20Alpha/Requirements"
 }
 #+end_src
 

@@ -1207,16 +1207,18 @@ MCP Parameters:
 
 MCP Parameters:
   file - Absolute path to an Org file
-  headline_path - Array of headline titles forming path
-                  (e.g. [\"Project\", \"Planning\"])"
-  (unless (or (vectorp headline_path) (listp headline_path))
+  headline_path - Non-empty slash-separated path to headline (string)
+                  Only slashes in headline titles must be encoded as %2F.
+                  Example: \"Project/Planning\" for nested headlines
+                  Example: \"A%2FB Testing\" for headline titled \"A/B Testing\"
+                  To read entire files, use org-read-file instead"
+  (unless (stringp headline_path)
     (org-mcp--tool-validation-error
-     "headline_path must be an array, got: %s" (type-of headline_path)))
-  (let* ((path-list (append headline_path nil))
-         (path-string (mapconcat #'url-hexify-string path-list "/"))
-         (full-path (if path-list
-                        (concat file "#" path-string)
-                      file)))
+     "headline_path must be a string, got: %S (type: %s)" headline_path (type-of headline_path)))
+  (when (string-empty-p headline_path)
+    (org-mcp--tool-validation-error
+     "headline_path must be a non-empty string. Use the org-read-file tool to read entire files."))
+  (let ((full-path (concat file "#" headline_path)))
     (org-mcp--handle-headline-resource `(("filename" . ,full-path)))))
 
 (defun org-mcp--tool-read-by-id (uuid)
@@ -1554,8 +1556,11 @@ must be in org-mcp-allowed-files.
 
 Parameters:
   file - Absolute path to Org file (string, required)
-  headline_path - Array of headline titles forming path (array, required)
-                  Example: [\"Project\", \"Planning\"] for nested headline
+  headline_path - Non-empty slash-separated path to headline (string, required)
+                  Only slashes (/) in headline titles must be encoded as %2F
+                  Example: \"Project/Planning\" for nested headlines
+                  Example: \"A%2FB Testing\" for headline titled \"A/B Testing\"
+                  To read entire files, use org-read-file instead
 
 Returns: Plain text content of the headline and its subtree"
    :read-only t
