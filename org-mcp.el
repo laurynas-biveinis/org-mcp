@@ -169,7 +169,7 @@ Throws an error if neither prefix matches."
                    (and before-bar (equal kw (car (last keywords))))))
               (when is-last-no-bar
                 (setq keyword-vec (vconcat keyword-vec ["|"])))
-              (push `((state . ,kw)
+              (push `((state . ,(car (org-remove-keyword-keys (list kw))))
                       (isFinal
                        . ,(or is-last-no-bar (not before-bar)))
                       (sequenceType . ,type-str))
@@ -545,6 +545,16 @@ RESPONSE-ALIST is an alist of response fields."
       response-alist
       `((uri . ,(concat org-mcp--org-id-prefix id)))))))
 
+(defun org-mcp--get-valid-todo-states ()
+  "Get list of valid TODO states without annotations or separators.
+Processes `org-todo-keywords' by extracting all keywords, stripping
+annotations like \"(t!)\" using `org-remove-keyword-keys', and removing
+the \"|\" separator."
+  (delete
+   "|"
+   (org-remove-keyword-keys
+    (apply #'append (mapcar #'cdr org-todo-keywords)))))
+
 (defun org-mcp--tool-update-todo-state (uri current_state new_state)
   "Update the TODO state of a headline.
 Creates an Org ID for the headline if one doesn't exist.
@@ -564,8 +574,7 @@ MCP Parameters:
          (headline-path (cdr parsed)))
 
     ;; Validate new state is in org-todo-keywords
-    (let ((valid-states
-           (apply #'append (mapcar #'cdr org-todo-keywords))))
+    (let ((valid-states (org-mcp--get-valid-todo-states)))
       (unless (member new_state valid-states)
         (org-mcp--tool-validation-error
          "Invalid TODO state: '%s'.  Valid states: %s"
@@ -761,8 +770,7 @@ MCP Parameters:
 
   ;; Normalize tags and get valid TODO states
   (let ((tag-list (org-mcp--normalize-tags-to-list tags))
-        (valid-states
-         (apply #'append (mapcar #'cdr org-todo-keywords))))
+        (valid-states (org-mcp--get-valid-todo-states)))
 
     ;; Validate TODO state
     (unless (member todo_state valid-states)

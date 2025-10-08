@@ -788,10 +788,10 @@ unchanged after."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-default ()
   "Test org-get-todo-config with default `org-todo-keywords'."
-  (org-mcp-test--with-config '((sequence "TODO" "DONE"))
+  (org-mcp-test--with-config '((sequence "TODO(t!)" "DONE(d!)"))
     (should (= (length sequences) 1))
     (org-mcp-test--check-sequence
-     (aref sequences 0) "sequence" ["TODO" "|" "DONE"])
+     (aref sequences 0) "sequence" ["TODO(t!)" "|" "DONE(d!)"])
     (should (= (length semantics) 2))
     (org-mcp-test--check-semantic
      (aref semantics 0) "TODO" nil "sequence")
@@ -1491,7 +1491,7 @@ properly checks parent-child relationships and levels."
     (org-mcp-test--with-temp-org-file test-file test-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords
-             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+             '((sequence "TODO(t!)" "IN-PROGRESS(i!)" "|" "DONE(d!)"))))
         (org-mcp-test--with-enabled
           ;; Update TODO to IN-PROGRESS
           (let ((resource-uri
@@ -2132,7 +2132,7 @@ This is valid Org-mode syntax and should be allowed."
   (let ((initial-content org-mcp-test--content-parent-task-simple))
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            (org-todo-keywords '((sequence "TODO(t!)" "|" "DONE(d!)")))
             (org-tag-alist '("work"))
             (org-id-locations-file nil))
         ;; Add ID to Parent Task
