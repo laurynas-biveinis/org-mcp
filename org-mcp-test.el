@@ -27,15 +27,32 @@ Some content here.
 More content."
   "Parent task with a child task.")
 
+(defconst org-mcp-test--nested-siblings-second-child-id
+  "nested-siblings-second-child-id-001"
+  "ID for Second Child in nested-siblings.")
+
+(defconst org-mcp-test--nested-siblings-parent-id
+  "nested-siblings-parent-id-002"
+  "ID for Parent Task in nested-siblings.")
+
 (defconst org-mcp-test--content-nested-siblings
-  "* Parent Task
+  (format
+   "* Parent Task
+:PROPERTIES:
+:ID:       %s
+:END:
 ** First Child
 First child content.
 It spans multiple lines.
 ** Second Child
+:PROPERTIES:
+:ID:       %s
+:END:
 Second child content.
 ** Third Child
 Third child content."
+   org-mcp-test--nested-siblings-parent-id
+   org-mcp-test--nested-siblings-second-child-id)
   "Parent with multiple child tasks.")
 
 (defconst org-mcp-test--content-simple-todo
@@ -287,20 +304,38 @@ Some content."
    "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
   "Pattern for child TODO (level 2) added under parent (level 1) with existing child (level 2).")
 
+(defconst org-mcp-test--parent-with-one-child-parent-project-id
+  "parent-project-test-id-001"
+  "ID for Parent Project in parent-with-one-child.")
+
+(defconst org-mcp-test--parent-with-one-child-first-child-id
+  "first-child-test-id-002"
+  "ID for First Child in parent-with-one-child.")
+
 (defconst org-mcp-test--content-parent-with-one-child
-  "* TODO Parent Project                                                     :work:
+  (format
+   "* TODO Parent Project                                                     :work:
+:PROPERTIES:
+:ID:       %s
+:END:
 ** TODO Parent Task                                                       :work:
-*** TODO First Child                                                      :work:"
+*** TODO First Child                                                      :work:
+:PROPERTIES:
+:ID:       %s
+:END:"
+   org-mcp-test--parent-with-one-child-parent-project-id
+   org-mcp-test--parent-with-one-child-first-child-id)
   "Parent at level 2 with one child at level 3.")
 
 (defconst org-mcp-test--regex-second-child-same-level
   (concat
    "\\`\\* TODO Parent Project +.*:work:.*\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"  ; Parent Project may have ID
    "\\*\\* TODO Parent Task +.*:work:.*\n"
    "\\*\\*\\* TODO First Child +.*:work:.*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"  ; First Child may have ID
    "\\*\\*\\* TODO Second Child +.*:work:.*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?\\'")
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?\\'")  ; Second Child may have ID
   "Pattern for second child (level 3) added at same level as first child (level 3) under parent (level 2).")
 
 (defconst org-mcp-test--regex-todo-with-body
@@ -475,6 +510,32 @@ Third occurrence of pattern."
    org-mcp-test--content-with-id-id)
   "Pattern for org-read-by-id tool result.")
 
+;; Refile test constants
+
+(defconst org-mcp-test--pattern-refile-after
+  (concat
+   "\\`\\* Parent Task\n"
+   "\\*\\* Child One\n"
+   "\\* Other Parent\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"  ; Optional properties for Other Parent
+   "\\*\\* Other Child\n"
+   "\\*\\* Child Two\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?\\'")  ; Optional properties for Child Two
+  "Pattern for Child Two refiled under Other Parent.")
+
+(defconst org-mcp-test--pattern-refile-cross-file-source-after
+  "\\`\\* Parent Task\n\\'"
+  "Pattern for source file after cross-file refile (child removed).")
+
+(defconst org-mcp-test--pattern-refile-cross-file-target-after
+  (concat
+   "\\`\\* Regular Headline\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "Some content\\.\n"
+   "\\*\\* Child One\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?\\'")
+  "Pattern for target file after cross-file refile.")
+
 ;; Helper functions for calling MCP tools
 
 (defun org-mcp-test--call-get-todo-config ()
@@ -522,6 +583,40 @@ then registers each ID location and enables MCP for BODY."
      (org-mcp-test--with-enabled
        ,@body)))
 
+(defmacro org-mcp-test--refile-and-verify
+    (test-file content source-uri target-parent-uri expected-pattern
+               &optional id-locations)
+  "Helper macro for single-buffer refile tests.
+TEST-FILE is the file variable name to bind.
+CONTENT is the initial org content constant.
+SOURCE-URI is the source headline URI expression.
+TARGET-PARENT-URI is the target parent URI expression.
+EXPECTED-PATTERN is the regex pattern to match after refiling.
+ID-LOCATIONS is an optional list of (ID . FILE) cons cells for ID setup."
+  (declare (indent 2))
+  (let ((body
+         '(let* ((source-uri source-uri-value)
+                 (target-parent-uri target-parent-uri-value)
+                 (params `((source_uri . ,source-uri)
+                           (target_parent_uri . ,target-parent-uri))))
+            (mcp-server-lib-ert-call-tool "org-refile-headline" params)
+            (let ((result-content
+                   (with-temp-buffer
+                     (insert-file-contents test-file-value)
+                     (buffer-string))))
+              (should (string-match-p expected-pattern-value result-content))))))
+    `(org-mcp-test--with-temp-org-file ,test-file
+         ,content
+       (let ((org-mcp-allowed-files (list ,test-file))
+             (test-file-value ,test-file)
+             (source-uri-value ,source-uri)
+             (target-parent-uri-value ,target-parent-uri)
+             (expected-pattern-value ,expected-pattern))
+         ,(if id-locations
+              `(org-mcp-test--with-id-setup ,id-locations
+                 ,body)
+            `(org-mcp-test--with-enabled
+               ,body))))))
 
 (defmacro org-mcp-test--with-temp-org-file (var content &rest args)
   "Create a temporary Org file, execute BODY, and ensure cleanup.
@@ -3318,6 +3413,214 @@ Some quote
            (string-match-p
             org-mcp-test--pattern-tool-read-by-id
             result-text)))))))
+
+(ert-deftest org-mcp-test-refile-headline-same-file ()
+  "Test refiling a headline within the same file.
+Verifies that Child Two can be refiled from Parent Task to Other Parent,
+adjusting its level appropriately."
+  (org-mcp-test--refile-and-verify test-file
+      org-mcp-test--content-parent-child-siblings
+    (format "org-headline://%s#Parent%%20Task/Child%%20Two" test-file)
+    (format "org-headline://%s#Other%%20Parent" test-file)
+    org-mcp-test--pattern-refile-after))
+
+(ert-deftest org-mcp-test-refile-headline-cycle-error ()
+  "Test that refiling under own descendant produces an error.
+Verifies cycle detection prevents moving Parent Project under First Child."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-with-one-child
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let* ((source-uri
+                (format "org-headline://%s#Parent%%20Project" test-file))
+               (target-parent-uri
+                (format "org-headline://%s#Parent%%20Project/Parent%%20Task/First%%20Child" test-file)))
+          (should-error
+           (org-mcp--tool-refile-headline source-uri target-parent-uri)
+           :type 'mcp-server-lib-tool-error))))))
+
+(ert-deftest org-mcp-test-refile-headline-cross-file ()
+  "Test refiling a headline from one file to another.
+Verifies that Child One moves from source file to target file,
+adjusting its level appropriately and removing it from source."
+  (org-mcp-test--with-temp-org-file source-file
+      org-mcp-test--content-parent-child-siblings
+    (org-mcp-test--with-temp-org-file target-file
+        org-mcp-test--content-headline-no-todo
+      (let ((org-mcp-allowed-files (list source-file target-file)))
+        (org-mcp-test--with-enabled
+          (let* ((source-uri
+                  (format "org-headline://%s#Parent%%20Task/Child%%20One"
+                          source-file))
+                 (target-parent-uri
+                  (format "org-headline://%s#Regular%%20Headline" target-file))
+                 (params `((source_uri . ,source-uri)
+                           (target_parent_uri . ,target-parent-uri))))
+            ;; Call the refile tool
+            (mcp-server-lib-ert-call-tool "org-refile-headline" params)
+            ;; Verify source file has child removed
+            (let ((source-content
+                   (with-temp-buffer
+                     (insert-file-contents source-file)
+                     (buffer-string))))
+              (should
+               (string-match-p
+                org-mcp-test--pattern-refile-cross-file-source-after
+                source-content)))
+            ;; Verify target file has child added
+            (let ((target-content
+                   (with-temp-buffer
+                     (insert-file-contents target-file)
+                     (buffer-string))))
+              (should
+               (string-match-p
+                org-mcp-test--pattern-refile-cross-file-target-after
+                target-content)))))))))
+
+(ert-deftest org-mcp-test-refile-headline-id-source ()
+  "Test refiling using org-id:// URI for source.
+Verifies that ID-based source URI resolution works correctly."
+  (org-mcp-test--refile-and-verify test-file
+      org-mcp-test--content-nested-siblings
+    (concat "org-id://" org-mcp-test--nested-siblings-second-child-id)
+    (format "org-headline://%s" test-file)
+    "\\`\\* Parent Task.*\\*\\* First Child.*\\*\\* Third Child.*\\* Second Child"
+    `((,org-mcp-test--nested-siblings-second-child-id . ,test-file))))
+
+(ert-deftest org-mcp-test-refile-headline-id-target ()
+  "Test refiling using org-id:// URI for target.
+Verifies that ID-based target URI resolution works correctly."
+  (org-mcp-test--refile-and-verify test-file
+      org-mcp-test--content-nested-siblings
+    (format "org-headline://%s#Parent%%20Task/Third%%20Child" test-file)
+    (concat "org-id://" org-mcp-test--nested-siblings-parent-id)
+    "\\* Parent Task.*\\*\\* First Child.*\\*\\* Second Child.*\\*\\* Third Child"
+    `((,org-mcp-test--nested-siblings-parent-id . ,test-file))))
+
+(ert-deftest org-mcp-test-refile-headline-both-ids ()
+  "Test refiling using org-id:// URIs for both source and target.
+Verifies that full ID-based workflow works correctly."
+  (org-mcp-test--refile-and-verify test-file
+      org-mcp-test--content-nested-siblings
+    (concat "org-id://" org-mcp-test--nested-siblings-second-child-id)
+    (format "org-headline://%s" test-file)
+    "\\`\\* Parent Task.*\\*\\* First Child.*\\*\\* Third Child.*\\* Second Child"
+    `((,org-mcp-test--nested-siblings-second-child-id . ,test-file)
+      (,org-mcp-test--nested-siblings-parent-id . ,test-file))))
+
+(ert-deftest org-mcp-test-refile-headline-cycle-id-uris ()
+  "Test cycle detection works with ID-based URIs.
+Verifies position-based cycle detection prevents refiling under descendant."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-with-one-child
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--parent-with-one-child-parent-project-id . ,test-file)
+            (,org-mcp-test--parent-with-one-child-first-child-id . ,test-file))
+        ;; Try to refile Parent Project under First Child using IDs (should error due to cycle)
+        (let ((source-uri (concat "org-id://" org-mcp-test--parent-with-one-child-parent-project-id))
+              (target-parent-uri (concat "org-id://" org-mcp-test--parent-with-one-child-first-child-id)))
+          (should-error
+           (org-mcp--tool-refile-headline source-uri target-parent-uri)
+           :type (quote mcp-server-lib-tool-error)))))))
+
+(ert-deftest org-mcp-test-refile-headline-source-not-found ()
+  "Test error when source headline doesn't exist."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-child-siblings
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let ((source-uri
+               (format "org-headline://%s#Nonexistent" test-file))
+              (target-parent-uri
+               (format "org-headline://%s#Parent%%20B" test-file)))
+          (should-error
+           (org-mcp--tool-refile-headline source-uri target-parent-uri)
+           :type 'mcp-server-lib-tool-error))))))
+
+(ert-deftest org-mcp-test-refile-headline-target-not-found ()
+  "Test error when target parent doesn't exist."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-child-siblings
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        (let ((source-uri
+               (format "org-headline://%s#Parent%%20A/Child%%20A2" test-file))
+              (target-parent-uri
+               (format "org-headline://%s#Nonexistent" test-file)))
+          (should-error
+           (org-mcp--tool-refile-headline source-uri target-parent-uri)
+           :type 'mcp-server-lib-tool-error))))))
+
+(ert-deftest org-mcp-test-refile-headline-source-file-forbidden ()
+  "Test error when source file not in org-mcp-allowed-files."
+  (org-mcp-test--with-temp-org-file source-file
+      org-mcp-test--content-parent-child-siblings
+    (org-mcp-test--with-temp-org-file target-file
+        org-mcp-test--content-parent-child-siblings
+      ;; Only allow target file, not source
+      (let ((org-mcp-allowed-files (list target-file)))
+        (org-mcp-test--with-enabled
+          (let ((source-uri
+                 (format "org-headline://%s#Parent%%20A/Child%%20A2"
+                         source-file))
+                (target-parent-uri
+                 (format "org-headline://%s#Parent%%20B" target-file)))
+            (should-error
+             (org-mcp--tool-refile-headline source-uri target-parent-uri)
+             :type 'mcp-server-lib-resource-error)))))))
+
+(ert-deftest org-mcp-test-refile-headline-target-file-forbidden ()
+  "Test error when target file not in org-mcp-allowed-files."
+  (org-mcp-test--with-temp-org-file source-file
+      org-mcp-test--content-parent-child-siblings
+    (org-mcp-test--with-temp-org-file target-file
+        org-mcp-test--content-parent-child-siblings
+      ;; Only allow source file, not target
+      (let ((org-mcp-allowed-files (list source-file)))
+        (org-mcp-test--with-enabled
+          (let ((source-uri
+                 (format "org-headline://%s#Parent%%20A/Child%%20A2"
+                         source-file))
+                (target-parent-uri
+                 (format "org-headline://%s#Parent%%20B" target-file)))
+            (should-error
+             (org-mcp--tool-refile-headline source-uri target-parent-uri)
+             :type 'mcp-server-lib-resource-error)))))))
+
+(ert-deftest org-mcp-test-refile-headline-unsaved-changes ()
+  "Test error when source file has unsaved changes."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-child-siblings
+    (let ((org-mcp-allowed-files (list test-file))
+          (buffer nil))
+      (unwind-protect
+          (progn
+            ;; Open file and modify it
+            (setq buffer (find-file-noselect test-file))
+            (with-current-buffer buffer
+              (goto-char (point-min))
+              (search-forward "* Parent A")
+              (end-of-line)
+              (insert " Modified")
+              (should (buffer-modified-p)))
+            (org-mcp-test--with-enabled
+              ;; Try to refile while buffer has unsaved changes
+              (let ((source-uri
+                     (format "org-headline://%s#Parent%%20A/Child%%20A2"
+                             test-file))
+                    (target-parent-uri
+                     (format "org-headline://%s#Parent%%20B" test-file)))
+                (should-error
+                 (org-mcp--tool-refile-headline source-uri target-parent-uri)
+                 :type 'mcp-server-lib-tool-error))
+              ;; Verify buffer still has unsaved changes
+              (with-current-buffer buffer
+                (should (buffer-modified-p)))))
+        (when buffer
+          (with-current-buffer buffer
+            (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

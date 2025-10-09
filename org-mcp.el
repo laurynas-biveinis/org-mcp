@@ -1190,6 +1190,124 @@ Special behavior:
               (goto-char body-begin))
             (insert new-body-content)))))))
 
+(defun org-mcp--check-refile-cycle (source-pos target-pos)
+  "Check if refiling would create a cycle.
+SOURCE-POS is the position of the headline to refile.
+TARGET-POS is the position of the target parent.
+Signals an error if TARGET-POS is within SOURCE-POS's subtree."
+  (save-excursion
+    (goto-char source-pos)
+    (org-back-to-heading t)
+    (let ((source-begin (point)))
+      (org-end-of-subtree t t)
+      (when (and (> target-pos source-begin)
+                 (< target-pos (point)))
+        (org-mcp--tool-validation-error
+         "Cannot refile headline under its own descendant")))))
+
+(defun org-mcp--tool-refile-headline (source_uri target_parent_uri)
+  "Refile a headline to become a child of a different parent.
+Creates an Org ID for the source headline if one doesn't exist.
+Returns the ID-based URI for the refiled headline.
+SOURCE_URI is the URI of the headline to move.
+TARGET_PARENT_URI is the URI of the new parent headline.
+
+MCP Parameters:
+  source_uri - URI of the headline to move (org-headline://{path}
+               or org-id://{id})
+  target_parent_uri - URI of the new parent headline"
+  ;; Parse both URIs
+  (let* ((source-parsed (org-mcp--parse-resource-uri source_uri))
+         (source-file (car source-parsed))
+         (source-path (cdr source-parsed))
+         (target-parsed (org-mcp--parse-resource-uri target_parent_uri))
+         (target-file (car target-parsed))
+         (target-path (cdr target-parsed)))
+
+    ;; Check for unsaved changes in both files
+    (org-mcp--check-buffer-modifications source-file "refile")
+    (unless (string= source-file target-file)
+      (org-mcp--check-buffer-modifications target-file "refile"))
+
+    ;; Setup: Open source buffer and get/create ID
+    (with-temp-buffer
+      (set-visited-file-name source-file t)
+      (insert-file-contents source-file)
+      (org-mode)
+      (goto-char (point-min))
+      (org-mcp--goto-headline-from-uri
+       source-path
+       (string-prefix-p org-mcp--org-id-prefix source_uri))
+      (let ((source-id (org-id-get-create)))
+        ;; Save source file with ID (may be new)
+        (write-region (point-min) (point-max) source-file)
+        (org-mcp--refresh-file-buffers source-file)
+
+        ;; Handle same-file and cross-file refiling differently
+        (if (string= source-file target-file)
+            ;; Same-file refile: reuse current buffer
+            (let ((source-pos (point)))
+              ;; Navigate to target and build RFLOC
+              (goto-char (point-min))
+              (org-mcp--goto-headline-from-uri
+               target-path
+               (string-prefix-p org-mcp--org-id-prefix target_parent_uri))
+              (let ((target-rfloc (list (org-get-heading t t t t)
+                                        source-file
+                                        nil
+                                        (point)))
+                    (target-pos (point)))
+
+                (org-mcp--check-refile-cycle source-pos target-pos)
+
+                ;; Perform the refile
+                (goto-char source-pos)
+                (org-refile nil nil target-rfloc)
+
+                ;; Save and return
+                (write-region (point-min) (point-max) source-file)
+                (org-mcp--refresh-file-buffers source-file)
+                (json-encode
+                 `((success . t)
+                   (uri . ,(concat org-mcp--org-id-prefix source-id))))))
+
+          ;; Cross-file refile: use separate buffer for target
+          (let (target-rfloc)
+            ;; Get target RFLOC in target file
+            (with-temp-buffer
+              (set-visited-file-name target-file t)
+              (insert-file-contents target-file)
+              (org-mode)
+              (goto-char (point-min))
+              (org-mcp--goto-headline-from-uri
+               target-path
+               (string-prefix-p org-mcp--org-id-prefix target_parent_uri))
+              (setq target-rfloc (list (org-get-heading t t t t)
+                                       target-file
+                                       nil
+                                       (point))))
+
+            ;; Perform refile in current (source) buffer
+            (goto-char (point-min))
+            (org-mcp--goto-headline-from-uri
+             source-path
+             (string-prefix-p org-mcp--org-id-prefix source_uri))
+            (org-refile nil nil target-rfloc)
+            ;; Save source file after refile
+            (write-region (point-min) (point-max) source-file)
+            (org-mcp--refresh-file-buffers source-file)
+
+            ;; Save target file if it's already open
+            (let ((target-buffer (find-buffer-visiting target-file)))
+              (when target-buffer
+                (with-current-buffer target-buffer
+                  (save-buffer))))
+
+            ;; Return success
+            (json-encode
+             `((success . t)
+               (uri . ,(concat org-mcp--org-id-prefix source-id))))))))))
+
 ;;; Resource template workaround tools
 
 (defun org-mcp--tool-read-file (file)
@@ -1521,6 +1639,37 @@ Content validation:
 Security: Only files in org-mcp-allowed-files can be modified."
    :read-only nil
    :server-id org-mcp--server-id)
+  (mcp-server-lib-register-tool
+   #'org-mcp--tool-refile-headline
+   :id "org-refile-headline"
+   :description
+   "Move a headline and its entire subtree to become a child of a \
+different parent headline.  Uses Org's built-in org-refile function.  \
+Creates an Org ID property for the source headline if one doesn't exist.
+
+Parameters:
+  source_uri - URI of the headline to move (string, required)
+               Formats: org-headline://{absolute-path}#{url-encoded-path}
+                        org-id://{uuid}
+  target_parent_uri - URI of the new parent headline (string, required)
+                      Formats: org-headline://{absolute-path}#{url-encoded-path}
+                               org-id://{uuid}
+
+Returns JSON object:
+  success - Always true on success (boolean)
+  uri - ID-based URI (org-id://{uuid}) for the refiled headline
+
+Behavior:
+  - Moves source headline to become the last child of target parent
+  - Automatically adjusts heading level to parent level + 1
+  - Preserves all TODO state, tags, properties, and body content
+  - Works across different files
+  - Source headline is removed from its original location
+  - Both source and target files are saved after the operation
+
+Security: Only files in org-mcp-allowed-files can be modified."
+   :read-only nil
+   :server-id org-mcp--server-id)
   ;; Workaround tools for resource templates (until Claude Code supports templates)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-read-file
@@ -1803,6 +1952,8 @@ Error cases:
   (mcp-server-lib-unregister-tool
    "org-rename-headline" org-mcp--server-id)
   (mcp-server-lib-unregister-tool "org-edit-body" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool
+   "org-refile-headline" org-mcp--server-id)
   ;; Unregister workaround tools
   (mcp-server-lib-unregister-tool "org-read-file" org-mcp--server-id)
   (mcp-server-lib-unregister-tool "org-read-outline" org-mcp--server-id)

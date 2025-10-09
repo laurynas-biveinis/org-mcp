@@ -360,6 +360,45 @@ Example:
 }
 #+end_src
 
+*** org-refile-headline
+- *Description:* Move a headline and its entire subtree to become a child of a different parent headline
+- *Parameters:*
+  - =sourceUri= (string, required): URI of the headline to move (supports =org-headline://= or =org-id://=)
+  - =targetParentUri= (string, required): URI of the new parent headline where the source will be moved as a child (supports =org-headline://= or =org-id://=)
+- *Returns:* Success status with ID-based URI of the moved headline
+- *Behavior:*
+  - Moves source headline to become the last child of target parent
+  - Automatically adjusts heading level to parent level + 1
+  - Preserves all TODO state, tags, properties, and body content
+  - Works across different files
+  - Creates Org ID for source headline if one doesn't exist
+
+Example:
+#+begin_src json
+# Request:
+{
+  "sourceUri": "org-headline:///home/user/org/projects.org#Old%20Parent/Task%20to%20Move",
+  "targetParentUri": "org-headline:///home/user/org/projects.org#New%20Parent"
+}
+
+# Success response:
+{
+  "success": true,
+  "uri": "org-id://550e8400-e29b-41d4-a716-446655440003"
+}
+
+# Error when trying to create cycle:
+{
+  "error": "Cannot refile headline under its own descendant"
+}
+
+# Cross-file refile example:
+{
+  "sourceUri": "org-id://abc-123",
+  "targetParentUri": "org-headline:///home/user/org/archive.org#Completed%20Projects"
+}
+#+end_src
+
 ** Workaround Tools (Temporary)
 
 *Note:* The following tools are temporary workarounds that duplicate the resource template functionality as tools. They exist because Claude Code currently doesn't discover resource templates.
