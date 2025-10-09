@@ -837,7 +837,8 @@ MCP Parameters:
             (title . ,title))
         ;; Navigate to insertion point based on parentUri
         (let ((parent-path nil)
-              (parent-id nil))
+              (parent-id nil)
+              (parent-level nil))
           ;; Parse parent URI (org-headline:// or org-id://)
           (org-mcp--with-uri-prefix-dispatch
               parent_uri
@@ -859,7 +860,11 @@ MCP Parameters:
                 (org-mcp--goto-headline-from-uri
                  (or (and parent-id (list parent-id))
                      parent-path)
-                 parent-id))
+                 parent-id)
+                ;; Save parent level before moving point
+                ;; Ensure we're at the beginning of headline
+                (org-back-to-heading t)
+                (setq parent-level (org-current-level)))
             ;; No parent specified - top level
             ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
             (while (and (not (eobp)) (looking-at "^#\\+"))
@@ -927,7 +932,7 @@ MCP Parameters:
           (let ((target-level
                  (if (or parent-path parent-id)
                      ;; Child heading - parent level + 1
-                     (1+ (or (org-current-level) 0))
+                     (1+ (or parent-level 0))
                    ;; Top-level heading
                    1)))
 
@@ -952,12 +957,11 @@ MCP Parameters:
                   ;; No after_uri - at parent's end
                   ;; Need to create a child heading
                   (progn
-                    ;; Ensure blank line before child
-                    (unless (or (bobp) (looking-back "\n\n" 2))
+                    ;; Ensure we have a newline before inserting
+                    (unless (or (bobp) (looking-back "\n" 1))
                       (insert "\n"))
-                    ;; Create child with subheading
-                    (org-insert-subheading nil)
-                    (insert title))))
+                    ;; Insert child heading at parent-level + 1
+                    (insert (make-string (1+ parent-level) ?*) " " title))))
             ;; Top-level heading
             (progn
               ;; Check if there are no headlines yet

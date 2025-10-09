@@ -283,9 +283,25 @@ Some content."
    "Some content here\\.\n"
    "\\*\\* Another Task\n"
    "More content\\.\n"
-   "\\*\\*\\* TODO Child Task +.*:work:.*\n"
+   "\\*\\* TODO Child Task +.*:work:.*\n"
    "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
-  "Pattern for child TODO added under parent with existing child.")
+  "Pattern for child TODO (level 2) added under parent (level 1) with existing child (level 2).")
+
+(defconst org-mcp-test--content-parent-with-one-child
+  "* TODO Parent Project                                                     :work:
+** TODO Parent Task                                                       :work:
+*** TODO First Child                                                      :work:"
+  "Parent at level 2 with one child at level 3.")
+
+(defconst org-mcp-test--regex-second-child-same-level
+  (concat
+   "\\`\\* TODO Parent Project +.*:work:.*\n"
+   "\\*\\* TODO Parent Task +.*:work:.*\n"
+   "\\*\\*\\* TODO First Child +.*:work:.*\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
+   "\\*\\*\\* TODO Second Child +.*:work:.*\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?\\'")
+  "Pattern for second child (level 3) added at same level as first child (level 3) under parent (level 2).")
 
 (defconst org-mcp-test--regex-todo-with-body
   (concat
@@ -1931,6 +1947,28 @@ Empty string should be treated as nil - append as last child."
        (file-name-nondirectory test-file)
        test-file
        org-mcp-test--regex-child-under-parent))))
+
+(ert-deftest org-mcp-test-add-todo-second-child-same-level ()
+  "Test that adding a second child creates it at the same level as first child.
+This tests the bug where the second child was created at level 4 instead of level 3."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-parent-with-one-child
+    (let* ((parent-uri
+            (format "org-headline://%s#Parent%%20Project/Parent%%20Task"
+                    test-file))
+           (result
+            (org-mcp-test--call-add-todo
+             "Second Child" "TODO" '("work")
+             nil  ; no body
+             parent-uri
+             nil))) ; no after_uri
+      ;; Check result structure
+      (org-mcp-test--check-add-todo-result
+       result
+       "Second Child"
+       (file-name-nondirectory test-file)
+       test-file
+       org-mcp-test--regex-second-child-same-level))))
 
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."
