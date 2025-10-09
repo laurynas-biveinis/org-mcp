@@ -745,7 +745,7 @@ Throws error for invalid types."
     (org-mcp--tool-validation-error "Invalid tags format: %s" tags))))
 
 (defun org-mcp--tool-add-todo
-    (title todo_state tags body parent_uri after_uri)
+    (title todo_state tags body parent_uri &optional after_uri)
   "Add a new TODO item to an Org file.
 Creates an Org ID for the new headline and returns its ID-based URI.
 TITLE is the headline text.
@@ -874,7 +874,7 @@ MCP Parameters:
           ;; Handle positioning after navigation to parent
           (when (or parent-path parent-id)
             ;; Handle after_uri positioning
-            (if after_uri
+            (if (and after_uri (not (string-empty-p after_uri)))
                 (progn
                   ;; Parse afterUri to get the ID
                   (let ((after-id
@@ -943,7 +943,7 @@ MCP Parameters:
                 ;; Ensure we have a newline before inserting
                 (unless (or (bobp) (looking-back "\n" 1))
                   (insert "\n"))
-                (if after_uri
+                (if (and after_uri (not (string-empty-p after_uri)))
                     ;; With after_uri, positioned after sibling
                     ;; Use org-insert-heading to insert right here
                     (progn

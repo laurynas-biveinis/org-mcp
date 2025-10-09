@@ -1106,8 +1106,7 @@ BODY-WITH-HEADLINE is the body containing invalid headline."
       (org-mcp-test--assert-error-and-file
        test-file
        `(org-mcp-test--call-add-todo-expecting-error
-         "Test Task" "TODO" '("work") ,body-with-headline ,parent-uri
-         nil)))))
+         "Test Task" "TODO" '("work") ,body-with-headline ,parent-uri)))))
 
 (ert-deftest org-mcp-test-file-resource-template-in-list ()
   "Test that file template appears in resources/templates/list."
@@ -1137,8 +1136,7 @@ Tests that the given title is rejected when creating a TODO."
       (org-mcp-test--assert-error-and-file
        test-file
        `(org-mcp-test--call-add-todo-expecting-error
-         ,invalid-title "TODO" nil nil ,parent-uri
-         nil)))))
+         ,invalid-title "TODO" nil nil ,parent-uri)))))
 
 (defun org-mcp-test--assert-rename-headline-rejected
     (initial-content headline-title new-title)
@@ -1791,8 +1789,7 @@ Another task."))
          "INVALID-STATE" ; Not in org-todo-keywords
          '("work")
          nil
-         ,parent-uri
-         nil)))))
+         ,parent-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-empty-title ()
   "Test that adding TODO with empty title throws error."
@@ -1825,8 +1822,7 @@ Another task."))
       (org-mcp-test--assert-error-and-file
        test-file
        `(org-mcp-test--call-add-todo-expecting-error
-         "Task" "TODO" '("invalid") nil ,parent-uri
-         nil)))))
+         "Task" "TODO" '("invalid") nil ,parent-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-tag-accept-valid-with-alist ()
   "Test that tags in `org-tag-alist' are accepted."
@@ -1887,18 +1883,15 @@ Another task."))
         (org-mcp-test--assert-error-and-file
          test-file
          `(org-mcp-test--call-add-todo-expecting-error
-           "Task" "TODO" '("invalid-tag!") nil ,parent-uri
-           nil))
+           "Task" "TODO" '("invalid-tag!") nil ,parent-uri))
         (org-mcp-test--assert-error-and-file
          test-file
          `(org-mcp-test--call-add-todo-expecting-error
-           "Task" "TODO" '("tag-with-dash") nil ,parent-uri
-           nil))
+           "Task" "TODO" '("tag-with-dash") nil ,parent-uri))
         (org-mcp-test--assert-error-and-file
          test-file
          `(org-mcp-test--call-add-todo-expecting-error
-           "Task" "TODO" '("tag#hash") nil ,parent-uri
-           nil))))))
+           "Task" "TODO" '("tag#hash") nil ,parent-uri))))))
 
 (ert-deftest org-mcp-test-add-todo-child-under-parent ()
   "Test adding a child TODO under an existing parent."
@@ -1919,6 +1912,26 @@ Another task."))
        test-file
        org-mcp-test--regex-child-under-parent))))
 
+(ert-deftest org-mcp-test-add-todo-child-empty-after-uri ()
+  "Test adding a child TODO with empty string for after_uri.
+Empty string should be treated as nil - append as last child."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-parent-child
+    (let* ((parent-uri
+            (format "org-headline://%s#Parent%%20Task" test-file))
+           (result
+            (org-mcp-test--call-add-todo "Child Task" "TODO" '("work")
+                                         nil ; no body
+                                         parent-uri
+                                         ""))) ; empty string after_uri
+      ;; Check result structure - should have exactly 4 fields
+      (org-mcp-test--check-add-todo-result
+       result
+       "Child Task"
+       (file-name-nondirectory test-file)
+       test-file
+       org-mcp-test--regex-child-under-parent))))
+
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."
   (org-mcp-test--with-add-todo-setup test-file
@@ -1927,8 +1940,7 @@ Another task."))
            (body-text org-mcp-test--body-text-multiline)
            (result
             (org-mcp-test--call-add-todo
-             "Task with Body" "TODO" '("work") body-text parent-uri
-             nil)))
+             "Task with Body" "TODO" '("work") body-text parent-uri)))
       ;; Check result structure - should have exactly 4 fields
       (org-mcp-test--check-add-todo-result
        result
@@ -1991,8 +2003,7 @@ rejected in TODO body content."
          "TODO"
          '("work")
          ,body-with-unbalanced-block
-         ,parent-uri
-         nil)))))
+         ,parent-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-body-with-unbalanced-end-block ()
   "Test that adding TODO with body containing unbalanced END block is rejected.
@@ -2010,8 +2021,7 @@ An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
          "TODO"
          '("work")
          ,body-with-unbalanced-end
-         ,parent-uri
-         nil)))))
+         ,parent-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-body-with-literal-block-end ()
   "Test that TODO body with END_SRC inside EXAMPLE block is accepted.
