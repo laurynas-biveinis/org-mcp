@@ -277,14 +277,11 @@ Some content."
 
 
 ;; Regex patterns for validation
-
-(defconst org-mcp-test--regex-todo-with-tags
-  "^\\* TODO New Task +.*:work:urgent:
-\\(?::PROPERTIES:
-:ID: +[^\n]+
-:END:
-\\)?$"
-  "Pattern for TODO with work and urgent tags.")
+;;
+;; Note on property drawer patterns: The patterns use ` *` (zero or more
+;; spaces) before :PROPERTIES:, :ID:, and :END: lines to maintain compatibility
+;; across Emacs versions. Emacs 27.2 indents property drawers with 3 spaces,
+;; while Emacs 28+ does not add indentation.
 
 (defconst org-mcp-test--regex-todo-after-headers
   (concat
@@ -525,10 +522,10 @@ Third occurrence of pattern."
    "\\`\\* Parent Task\n"
    "\\*\\* Child One\n"
    "\\* Other Parent\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"  ; Optional properties for Other Parent
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"  ; Optional properties for Other Parent
    "\\*\\* Other Child\n"
    "\\*\\* Child Two\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?\\'")  ; Optional properties for Child Two
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?\\'")  ; Optional properties for Child Two
   "Pattern for Child Two refiled under Other Parent.")
 
 (defconst org-mcp-test--pattern-refile-cross-file-source-after
@@ -542,47 +539,47 @@ Third occurrence of pattern."
 (defconst org-mcp-test--pattern-refile-cross-file-target-after
   (concat
    "\\`\\* Regular Headline\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "Some content\\.\n"
    "\\*\\* Child One\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?\\'")
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?\\'")
   "Pattern for target file after cross-file refile.")
 
 (defconst org-mcp-test--pattern-refile-cross-file-to-root-target-after
   (concat
    "\\`\\* Regular Headline\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "Some content\\.\n"
    "\\* Child One\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?\\'")
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?\\'")
   "Pattern for target file after cross-file refile to root (Child One at level 1).")
 
 (defconst org-mcp-test--pattern-refile-id-second-child-to-root
   (concat
    "\\`\\* Parent Task\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "\\*\\* First Child\n"
    "First child content\\.\n"
    "It spans multiple lines\\.\n"
    "\\*\\* Third Child\n"
    "Third child content\\.\n"
    "\\* Second Child\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "Second child content\\.\n\\'")
   "Pattern after refiling Second Child to root using ID-based URI.")
 
 (defconst org-mcp-test--pattern-refile-id-third-child-stays
   (concat
    "\\* Parent Task\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "\\*\\* First Child\n"
    "First child content\\.\n"
    "It spans multiple lines\\.\n"
    "\\*\\* Second Child\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "Second child content\\.\n"
    "\\*\\* Third Child\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "Third child content\\.\n\\'")
   "Pattern after refiling Third Child under Parent using ID-based target URI.")
 
@@ -601,12 +598,12 @@ Third occurrence of pattern."
 (defconst org-mcp-test--pattern-refile-with-existing-buffer-after
   (concat
    "\\`\\* Parent\n"
-   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "\\*\\* Child 1\n"
    "\\*\\* Child 2 (to refile)\n"
-   ":PROPERTIES:\n"
-   ":ID: +test-child-2-id\n"
-   ":END:\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +test-child-2-id\n"
+   " *:END:\n"
    "\\*\\*\\* Child 3 (MUST preserve!)\n"
    "\\*\\*\\*\\* Grandchild\n\\'")
   "Pattern after refiling Child 2 under Parent with existing buffer (preserving all children).")
