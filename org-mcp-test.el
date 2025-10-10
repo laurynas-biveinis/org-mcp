@@ -254,6 +254,14 @@ Second child content.
 Third child content."
   "Parent with children for testing after-sibling insertion.")
 
+(defconst org-mcp-test--content-cross-file-refile
+  "** Parent in target file
+*** Child 1
+**** Grandchild to be moved
+***** Great-grandchild (should be preserved)
+"
+  "Content for cross-file refile test with pre-existing buffer.")
+
 (defconst org-mcp-test--content-headlines-with-hash
   "* Task #1
 First task
@@ -577,6 +585,31 @@ Third occurrence of pattern."
    "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
    "Third child content\\.\n\\'")
   "Pattern after refiling Third Child under Parent using ID-based target URI.")
+
+(defconst org-mcp-test--content-refile-with-existing-buffer-before
+  "* Parent
+** Child 1
+*** Child 2 (to refile)
+:PROPERTIES:
+:ID: test-child-2-id
+:END:
+**** Child 3 (MUST preserve!)
+***** Grandchild
+"
+  "Initial content for testing refile with existing buffer (Child 2 has children).")
+
+(defconst org-mcp-test--pattern-refile-with-existing-buffer-after
+  (concat
+   "\\`\\* Parent\n"
+   "\\(?::PROPERTIES:\n:ID: +[^\n]+\n:END:\n\\)?"
+   "\\*\\* Child 1\n"
+   "\\*\\* Child 2 (to refile)\n"
+   ":PROPERTIES:\n"
+   ":ID: +test-child-2-id\n"
+   ":END:\n"
+   "\\*\\*\\* Child 3 (MUST preserve!)\n"
+   "\\*\\*\\*\\* Grandchild\n\\'")
+  "Pattern after refiling Child 2 under Parent with existing buffer (preserving all children).")
 
 ;; Helper functions for calling MCP tools
 
@@ -3688,6 +3721,37 @@ Verifies position-based cycle detection prevents refiling under descendant."
           (with-current-buffer buffer
             (set-buffer-modified-p nil))
           (kill-buffer buffer))))))
+
+(ert-deftest org-mcp-test-refile-with-existing-buffer ()
+  "Test same-file refile with org-id source and org-headline target.
+This reproduces the user's bug scenario where:
+1. File is already open in Emacs with a buffer
+2. Source uses org-id:// URI, target uses org-headline:// URI
+3. Both refer to same file
+4. Attempting to refile causes data loss - children disappear"
+  (org-mcp-test--with-temp-org-file
+   test-file
+   org-mcp-test--content-refile-with-existing-buffer-before
+   (let ((buf (find-file-noselect test-file)))
+     (unwind-protect
+         (progn
+           ;; Simulate buffer already open - set up Org mode and save
+           (with-current-buffer buf
+             (org-mode)
+             (set-buffer-modified-p nil))
+           (let ((org-mcp-allowed-files (list test-file)))
+             (org-mcp-test--with-enabled
+              (let ((params `((source_uri . "org-id://test-child-2-id")
+                              (target_parent_uri . ,(format "org-headline://%s#Parent" test-file)))))
+                (mcp-server-lib-ert-call-tool "org-refile-headline" params)
+                (let ((content (with-temp-buffer
+                                 (insert-file-contents test-file)
+                                 (buffer-string))))
+                  (should (string-match-p org-mcp-test--pattern-refile-with-existing-buffer-after content)))))))
+       ;; Cleanup
+       (when (buffer-live-p buf)
+         (with-current-buffer buf (set-buffer-modified-p nil))
+         (kill-buffer buf))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

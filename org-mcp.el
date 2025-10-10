@@ -1259,57 +1259,129 @@ MCP Parameters:
 
         ;; Handle same-file and cross-file refiling differently
         (if (string= source-file target-file)
-            ;; Same-file refile: reuse current buffer
-            (if target-path
-                ;; Normal case: refiling to a headline
-                (let ((source-pos (point)))
-                  ;; Navigate to target and build RFLOC
-                  (goto-char (point-min))
-                  (org-mcp--goto-headline-from-uri
-                   target-path
-                   (string-prefix-p org-mcp--org-id-prefix target_parent_uri))
-                  (let ((target-rfloc (list (org-get-heading t t t t)
-                                            source-file
-                                            nil
-                                            (point)))
-                        (target-pos (point)))
+            ;; Same-file refile: switch to real buffer if it exists
+            (let ((real-buffer (find-buffer-visiting source-file)))
+              (if real-buffer
+                  ;; Real buffer exists - sync temp buffer content and switch to it
+                  (let ((temp-content (buffer-string)))
+                    (with-current-buffer real-buffer
+                      ;; If buffer is modified after refresh, something is wrong
+                      (when (buffer-modified-p)
+                        (org-mcp--tool-validation-error
+                         "Cannot refile: buffer was modified after refresh (possible hook or concurrent access)"))
+                      ;; DEFENSIVE: Force buffer sync even if refresh failed
+                      ;; This is redundant in normal case but handles edge cases
+                      (erase-buffer)
+                      (insert temp-content)
+                      (org-mode)
+                      (goto-char (point-min))
+                      ;; Now perform refile in the real buffer
+                      (if target-path
+                          ;; Normal case: refiling to a headline
+                          (progn
+                            (org-mcp--goto-headline-from-uri
+                             (list source-id)
+                             t)
+                            (let ((source-pos (point)))
+                              ;; Navigate to target and build RFLOC
+                              (goto-char (point-min))
+                              (org-mcp--goto-headline-from-uri
+                               target-path
+                               (string-prefix-p org-mcp--org-id-prefix target_parent_uri))
+                              (let ((target-rfloc (list (org-get-heading t t t t)
+                                                        source-file
+                                                        nil
+                                                        (point)))
+                                    (target-pos (point)))
 
-                    (org-mcp--check-refile-cycle source-pos target-pos)
+                                (org-mcp--check-refile-cycle source-pos target-pos)
 
-                    ;; Perform the refile
-                    (goto-char source-pos)
-                    (org-refile nil nil target-rfloc)
+                                ;; Perform the refile
+                                (goto-char source-pos)
+                                (org-refile nil nil target-rfloc)
 
+                                ;; Save and return
+                                (save-buffer)
+                                (json-encode
+                                 `((success . t)
+                                   (uri . ,(concat org-mcp--org-id-prefix source-id)))))))
+                        ;; Special case: refiling to file root (no target headline)
+                        (org-mcp--goto-headline-from-uri
+                         (list source-id)
+                         t)
+                        (let ((headline-text nil))
+                          ;; Extract the headline and its subtree, then delete it
+                          (org-back-to-heading t)
+                          (let ((start (point))
+                                (end (progn (org-end-of-subtree t t) (point))))
+                            (setq headline-text (buffer-substring-no-properties start end))
+                            (delete-region start end))
+                          ;; Go to end of file
+                          (goto-char (point-max))
+                          ;; Ensure we have a newline before inserting
+                          (unless (or (bobp) (= (char-before) ?\n))
+                            (insert "\n"))
+                          ;; Insert the headline at level 1
+                          ;; Adjust the level of the extracted headline
+                          (setq headline-text (org-mcp--adjust-headline-to-level-1 headline-text))
+                          ;; Insert at end of file
+                          (insert headline-text)
+                          ;; Save and return
+                          (save-buffer)
+                          (json-encode
+                           `((success . t)
+                             (uri . ,(concat org-mcp--org-id-prefix source-id))))))))
+                ;; No real buffer - work in temp buffer
+                (if target-path
+                    ;; Normal case: refiling to a headline
+                    (let ((source-pos (point)))
+                      ;; Navigate to target and build RFLOC
+                      (goto-char (point-min))
+                      (org-mcp--goto-headline-from-uri
+                       target-path
+                       (string-prefix-p org-mcp--org-id-prefix target_parent_uri))
+                      (let ((target-rfloc (list (org-get-heading t t t t)
+                                                source-file
+                                                nil
+                                                (point)))
+                            (target-pos (point)))
+
+                        (org-mcp--check-refile-cycle source-pos target-pos)
+
+                        ;; Perform the refile
+                        (goto-char source-pos)
+                        (org-refile nil nil target-rfloc)
+
+                        ;; Save and return
+                        (write-region (point-min) (point-max) source-file)
+                        (org-mcp--refresh-file-buffers source-file)
+                        (json-encode
+                         `((success . t)
+                           (uri . ,(concat org-mcp--org-id-prefix source-id))))))
+                  ;; Special case: refiling to file root (no target headline)
+                  (let ((headline-text nil))
+                    ;; Extract the headline and its subtree, then delete it
+                    (org-back-to-heading t)
+                    (let ((start (point))
+                          (end (progn (org-end-of-subtree t t) (point))))
+                      (setq headline-text (buffer-substring-no-properties start end))
+                      (delete-region start end))
+                    ;; Go to end of file
+                    (goto-char (point-max))
+                    ;; Ensure we have a newline before inserting
+                    (unless (or (bobp) (= (char-before) ?\n))
+                      (insert "\n"))
+                    ;; Insert the headline at level 1
+                    ;; Adjust the level of the extracted headline
+                    (setq headline-text (org-mcp--adjust-headline-to-level-1 headline-text))
+                    ;; Insert at end of file
+                    (insert headline-text)
                     ;; Save and return
                     (write-region (point-min) (point-max) source-file)
                     (org-mcp--refresh-file-buffers source-file)
                     (json-encode
                      `((success . t)
-                       (uri . ,(concat org-mcp--org-id-prefix source-id))))))
-              ;; Special case: refiling to file root (no target headline)
-              (let ((headline-text nil))
-                ;; Extract the headline and its subtree, then delete it
-                (org-back-to-heading t)
-                (let ((start (point))
-                      (end (progn (org-end-of-subtree t t) (point))))
-                  (setq headline-text (buffer-substring-no-properties start end))
-                  (delete-region start end))
-                ;; Go to end of file
-                (goto-char (point-max))
-                ;; Ensure we have a newline before inserting
-                (unless (or (bobp) (= (char-before) ?\n))
-                  (insert "\n"))
-                ;; Insert the headline at level 1
-                ;; Adjust the level of the extracted headline
-                (setq headline-text (org-mcp--adjust-headline-to-level-1 headline-text))
-                ;; Insert at end of file
-                (insert headline-text)
-                ;; Save and return
-                (write-region (point-min) (point-max) source-file)
-                (org-mcp--refresh-file-buffers source-file)
-                (json-encode
-                 `((success . t)
-                   (uri . ,(concat org-mcp--org-id-prefix source-id))))))
+                       (uri . ,(concat org-mcp--org-id-prefix source-id))))))))
 
           ;; Cross-file refile: use separate buffer for target
           (if target-path
