@@ -948,20 +948,15 @@ MCP Parameters:
                 ;; Ensure we have a newline before inserting
                 (unless (or (bobp) (looking-back "\n" 1))
                   (insert "\n"))
-                (if (and after_uri (not (string-empty-p after_uri)))
-                    ;; With after_uri, positioned after sibling
-                    ;; Use org-insert-heading to insert right here
-                    (progn
-                      (org-insert-heading)
-                      (insert title))
-                  ;; No after_uri - at parent's end
-                  ;; Need to create a child heading
-                  (progn
-                    ;; Ensure we have a newline before inserting
-                    (unless (or (bobp) (looking-back "\n" 1))
-                      (insert "\n"))
-                    ;; Insert child heading at parent-level + 1
-                    (insert (make-string (1+ parent-level) ?*) " " title))))
+                ;; Insert heading manually at parent level + 1
+                ;; We don't use org-insert-heading because when parent
+                ;; has no children, org-insert-heading creates a
+                ;; sibling of the parent instead of a child
+                (let ((heading-start (point)))
+                  (insert (concat (make-string (1+ parent-level) ?*) " " title "\n"))
+                  ;; Set point directly to the heading for org-todo and org-set-tags
+                  (goto-char heading-start)
+                  (end-of-line)))
             ;; Top-level heading
             (progn
               ;; Check if there are no headlines yet
@@ -990,16 +985,19 @@ MCP Parameters:
             (org-set-tags tag-list))
 
           ;; Add body if provided
-          (when body
+          (if body
+              (progn
+                (end-of-line)
+                (insert "\n" body)
+                (unless (string-suffix-p "\n" body)
+                  (insert "\n"))
+                ;; Move back to the heading for org-id-get-create
+                ;; org-id-get-create requires point to be on a heading
+                (org-back-to-heading t))
+            ;; No body - ensure newline after heading
             (end-of-line)
-            (insert "\n" body)
-            (unless (string-suffix-p "\n" body)
-              (insert "\n")))
-
-          ;; Move back to the heading for org-id-get-create
-          ;; org-id-get-create requires point to be on a heading
-          (when body
-            (org-back-to-heading t)))))))
+            (unless (looking-at "\n")
+              (insert "\n"))))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.

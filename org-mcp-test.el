@@ -55,6 +55,36 @@ Third child content."
    org-mcp-test--nested-siblings-second-child-id)
   "Parent with multiple child tasks.")
 
+(defconst org-mcp-test--level2-parent-level3-sibling-id
+  "level2-parent-level3-sibling-id-001"
+  "ID for Review org-mcp.el in level2-parent-level3-children.")
+
+(defconst org-mcp-test--content-level2-parent-level3-children
+  (format
+   "* Top Level
+** Review the package
+*** Review org-mcp.el
+:PROPERTIES:
+:ID:       %s
+:END:
+Main package file"
+   org-mcp-test--level2-parent-level3-sibling-id)
+  "Level 2 parent with level 3 children - matches emacs.org structure.")
+
+(defconst org-mcp-test--regex-after-sibling-level3
+  (concat "\\`\\* Top Level\n"
+          "\\*\\* Review the package\n"
+          "\\*\\*\\* Review org-mcp\\.el\n"
+          ":PROPERTIES:\n"
+          ":ID: +" org-mcp-test--level2-parent-level3-sibling-id "\n"
+          ":END:\n"
+          "Main package file\n"
+          "\\*\\*\\* TODO Review org-mcp-test\\.el +.*:internet:.*\n"
+          ":PROPERTIES:\n"
+          ":ID: +[a-fA-F0-9-]+\n"
+          ":END:\n\\'")
+  "Expected pattern after adding TODO after level 3 sibling.")
+
 (defconst org-mcp-test--content-simple-todo
   "* TODO Original Task
 First line of body.
@@ -2174,6 +2204,36 @@ This tests the bug where the second child was created at level 4 instead of leve
        (file-name-nondirectory test-file)
        test-file
        org-mcp-test--regex-second-child-same-level))))
+
+(ert-deftest org-mcp-test-add-todo-with-after-uri ()
+  "Test adding TODO after a sibling using after_uri.
+Tests that adding after a level 3 sibling correctly creates level 3 (not level 1).
+Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (via ID)."
+  (let ((initial-content org-mcp-test--content-level2-parent-level3-children))
+    (org-mcp-test--with-temp-org-file test-file initial-content
+      (let ((org-mcp-allowed-files (list test-file))
+            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            (org-tag-alist '("internet")))
+        (org-mcp-test--with-id-setup
+            `((,org-mcp-test--level2-parent-level3-sibling-id . ,test-file))
+          (let* ((parent-uri
+                  (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
+                          test-file))
+                 (after-uri (format "org-id://%s"
+                                    org-mcp-test--level2-parent-level3-sibling-id))
+                 (result
+                  (org-mcp-test--call-add-todo
+                   "Review org-mcp-test.el" "TODO" '("internet")
+                   nil
+                   parent-uri
+                   after-uri)))
+            ;; BUG: org-insert-heading creates level 1 (*) instead of level 3 (***)
+            (org-mcp-test--check-add-todo-result
+             result
+             "Review org-mcp-test.el"
+             (file-name-nondirectory test-file)
+             test-file
+             org-mcp-test--regex-after-sibling-level3)))))))
 
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."
