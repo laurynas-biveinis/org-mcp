@@ -1324,6 +1324,7 @@ MCP Parameters:
 
                                 ;; Perform the refile
                                 (goto-char source-pos)
+                                (deactivate-mark)  ; Ensure no active region interferes
                                 (org-refile nil nil target-rfloc)
 
                                 ;; Save and return
@@ -1432,6 +1433,7 @@ MCP Parameters:
                 (org-mcp--goto-headline-from-uri
                  source-path
                  (string-prefix-p org-mcp--org-id-prefix source_uri))
+                (deactivate-mark)  ; Ensure no active region interferes
                 (org-refile nil nil target-rfloc)
 
                 ;; Verify target buffer was created by org-refile

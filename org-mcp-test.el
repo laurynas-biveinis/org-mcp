@@ -638,6 +638,44 @@ Third occurrence of pattern."
    "\\*\\*\\*\\* Grandchild\n\\'")
   "Pattern after refiling Child 2 under Parent with existing buffer (preserving all children).")
 
+(defconst org-mcp-test--content-refile-without-id-before
+  "* Parent
+** Child 1
+*** Child 2 (to refile)
+**** Child 3 (MUST preserve!)
+***** Grandchild
+"
+  "Initial content for testing refile when source has NO ID (triggers org-id-get-create).")
+
+(defconst org-mcp-test--content-refile-without-id-after
+  "* Parent
+** Child 1
+** Child 2 (to refile)
+*** Child 3 (MUST preserve!)
+**** Grandchild
+"
+  "Expected content after refiling Child 2 under Parent (no ID in source initially).")
+
+(defconst org-mcp-test--pattern-refile-without-id-after
+  (concat
+   "\\`\\* Parent\n"
+   ;; Optional properties for Parent (might get ID too)
+   "\\(?: *:PROPERTIES:\n\\(?: *:[^:]+:.*\n\\)* *:END:\n\\)?"
+   ;; Child 1 with NO children under it (critical - no *** after this)
+   "\\*\\* Child 1\n"
+   ;; Immediately followed by Child 2 at level 2 (NOT level 3 - this catches duplicates!)
+   "\\*\\* Child 2 (to refile)\n"
+   ;; Child 2's properties with generated ID
+   " *:PROPERTIES:\n"
+   " *:ID: +[a-zA-Z0-9-]+\n"
+   " *:END:\n"
+   ;; Child 3 and Grandchild as children of Child 2
+   "\\*\\*\\* Child 3 (MUST preserve!)\n"
+   "\\*\\*\\*\\* Grandchild\n\\'")
+  "Strict pattern for refile result that FAILS if duplicate exists.
+Key: After '** Child 1', immediately requires '** Child 2' (level 2).
+If duplicate exists, would find '*** Child 2' (level 3) first, causing mismatch.")
+
 ;; Helper functions for calling MCP tools
 
 (defun org-mcp-test--call-get-todo-config ()
@@ -3809,6 +3847,82 @@ This reproduces the user's bug scenario where:
        (when (buffer-live-p buf)
          (with-current-buffer buf (set-buffer-modified-p nil))
          (kill-buffer buf))))))
+
+(ert-deftest org-mcp-test-refile-without-existing-id ()
+  "Test same-file refile when source headline has NO ID initially.
+This demonstrates the bug where an active mark causes org-refile to copy instead of move.
+The source uses org-headline:// URI (not org-id://), forcing ID creation.
+Bug reproduction requires:
+- transient-mark-mode enabled
+- Active mark in buffer before refile
+- org-loop-over-headlines-in-active-region enabled
+Expected behavior:
+- Headline moves from level 3 to level 2
+- NO duplicate headline created
+- Source location (under Child 1) becomes empty
+- Exactly ONE instance of headline in file"
+  (org-mcp-test--with-temp-org-file
+   test-file
+   org-mcp-test--content-refile-without-id-before
+   (let ((buf (find-file-noselect test-file))
+         (transient-mark-mode t)  ; Enable globally for test
+         (org-loop-over-headlines-in-active-region t))  ; Enable region loop
+     (unwind-protect
+         (progn
+           ;; Simulate buffer already open WITH AN ACTIVE MARK (reproduces bug)
+           (with-current-buffer buf
+             (org-mode)
+             ;; Set mark at beginning and point at end - this creates an active region
+             ;; that persists through erase-buffer and causes org-refile to copy
+             (goto-char (point-min))
+             (push-mark (point) t t)  ; Push mark and activate
+             (goto-char (point-max))
+             (set-buffer-modified-p nil))
+           (let ((org-mcp-allowed-files (list test-file)))
+             (org-mcp-test--with-enabled
+              (let ((params `((source_uri . ,(format "org-headline://%s#Child 1/Child 2 (to refile)" test-file))
+                              (target_parent_uri . ,(format "org-headline://%s#Parent" test-file)))))
+                (mcp-server-lib-ert-call-tool "org-refile-headline" params)
+                (let ((content (with-temp-buffer
+                                 (insert-file-contents test-file)
+                                 (buffer-string))))
+                  ;; Regex check catches duplicates:
+                  ;; - If duplicate at level 3 under Child 1: pattern expects "** Child 2" not "*** Child 2"
+                  ;; - If duplicate at level 1 at end: pattern expects end-of-string after Grandchild
+                  (should (string-match-p org-mcp-test--pattern-refile-without-id-after content)))))))
+       ;; Cleanup
+       (when (buffer-live-p buf)
+         (with-current-buffer buf (set-buffer-modified-p nil))
+         (kill-buffer buf))))))
+
+(ert-deftest org-mcp-test-refile-cross-file-with-mark ()
+  "Test cross-file refile with mark set by hook in source temp buffer.
+This tests the unfixed code path at line 1436 where deactivate-mark is missing.
+Scenario: Cross-file refile works in temp buffer for source file.
+If org-mode-hook sets a mark and org-loop-over-headlines-in-active-region is
+enabled, org-refile will copy instead of move, creating duplicates in source file.
+Expected behavior:
+- Headline moves from source file to target file
+- NO duplicate left in source file"
+  (let ((mark-setting-hook (lambda ()
+                              ;; This hook runs when temp buffer calls (org-mode)
+                              (when (and (eq major-mode 'org-mode)
+                                        transient-mark-mode)
+                                (goto-char (point-min))
+                                (push-mark (point-max) t t)  ; Set region over whole buffer
+                                (goto-char (point-min)))))
+        (transient-mark-mode t)  ; Enable globally
+        (org-loop-over-headlines-in-active-region t))  ; Enable region loop
+    (add-hook 'org-mode-hook mark-setting-hook)
+    (unwind-protect
+        (org-mcp-test--refile-cross-file-and-verify
+         source-file org-mcp-test--content-parent-child-siblings
+         target-file org-mcp-test--content-headline-no-todo
+         (format "org-headline://%s#Parent%%20Task/Child%%20One" source-file)
+         (format "org-headline://%s#Regular%%20Headline" target-file)
+         org-mcp-test--pattern-refile-cross-file-source-after
+         org-mcp-test--pattern-refile-cross-file-target-after)
+      (remove-hook 'org-mode-hook mark-setting-hook))))
 
 ;;; Narrowing Preservation Test
 
