@@ -524,15 +524,27 @@ Preserves narrowing state across the refresh operation."
           (when was-narrowed
             (setq narrow-start (point-min-marker))
             (setq narrow-end (point-max-marker)))
-          ;; Revert buffer
-          (revert-buffer t t t)
-          ;; Restore narrowing if it was active and markers are valid
-          (when (and was-narrowed
-                     narrow-start
-                     narrow-end
-                     (marker-position narrow-start)
-                     (marker-position narrow-end))
-            (narrow-to-region narrow-start narrow-end)))))))
+          (condition-case err
+              (unwind-protect
+                  (progn
+                    (revert-buffer t t t)
+                    ;; Check if buffer was modified by hooks
+                    (when (buffer-modified-p)
+                      (org-mcp--tool-validation-error
+                       "Buffer for file %s was modified during refresh. Check your after-revert-hook for functions that modify the buffer."
+                       file-path)))
+                ;; Restore narrowing even if revert fails
+                (when (and was-narrowed
+                           narrow-start
+                           narrow-end
+                           (marker-position narrow-start)
+                           (marker-position narrow-end))
+                  (narrow-to-region narrow-start narrow-end)))
+            (error
+             (org-mcp--tool-validation-error
+              "Failed to refresh buffer for file %s: %s. Check your Emacs hooks (before-revert-hook, after-revert-hook, revert-buffer-function)"
+              file-path
+              (error-message-string err)))))))))
 
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.

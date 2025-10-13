@@ -3865,5 +3865,77 @@ reverting buffers after file modifications."
         (when (buffer-live-p buf)
           (kill-buffer buf))))))
 
+(defun org-mcp-test--failing-hook ()
+  "Test hook function that throws an error."
+  (error "Test hook error"))
+
+(defun org-mcp-test--buffer-modifying-hook ()
+  "Test hook function that modifies the buffer."
+  (goto-char (point-max))
+  (insert "\n* TODO Added by hook\n"))
+
+(ert-deftest org-mcp-test-update-todo-with-failing-revert-hook ()
+  "Test graceful handling of before-revert-hook errors."
+  (org-mcp-test--with-temp-org-file test-file
+      "* TODO Test Heading\n"
+    (let ((buf (find-file-noselect test-file)))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf
+              ;; Set up a buffer-local hook that will error
+              (add-hook 'before-revert-hook
+                        #'org-mcp-test--failing-hook
+                        nil t))
+
+            ;; Attempt to update TODO state - this triggers buffer refresh
+            (condition-case err
+                (progn
+                  (org-mcp--tool-update-todo-state
+                   (format "org-headline://%s#Test%%20Heading" test-file)
+                   "TODO"
+                   "DONE")
+                  ;; Should not succeed - hook should cause error
+                  (ert-fail "Expected error from failing hook was not raised"))
+              (error
+               ;; Should get a proper MCP error that mentions hooks
+               (let ((err-msg (error-message-string err)))
+                 (should (string-match-p "MCP tool error:" err-msg))
+                 (should (string-match-p "Failed to refresh buffer" err-msg))
+                 (should (string-match-p "before-revert-hook\\|after-revert-hook\\|revert-buffer-function"
+                                        err-msg))))))
+        (when (buffer-live-p buf)
+          (kill-buffer buf))))))
+
+(ert-deftest org-mcp-test-update-todo-with-buffer-modifying-hook ()
+  "Test detection of buffer modifications by after-revert-hook."
+  (org-mcp-test--with-temp-org-file test-file
+      "* TODO Test Heading\n"
+    (let ((buf (find-file-noselect test-file)))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf
+              ;; Set up a buffer-local hook that modifies the buffer
+              (add-hook 'after-revert-hook
+                        #'org-mcp-test--buffer-modifying-hook
+                        nil t))
+
+            ;; Attempt to update TODO state - this triggers buffer refresh
+            (condition-case err
+                (progn
+                  (org-mcp--tool-update-todo-state
+                   (format "org-headline://%s#Test%%20Heading" test-file)
+                   "TODO"
+                   "DONE")
+                  ;; Should not succeed - hook modification should be detected
+                  (ert-fail "Expected error from buffer-modifying hook was not raised"))
+              (error
+               ;; Should get a proper MCP error about buffer modification
+               (let ((err-msg (error-message-string err)))
+                 (should (string-match-p "MCP tool error:" err-msg))
+                 (should (string-match-p "was modified during refresh" err-msg))
+                 (should (string-match-p "after-revert-hook" err-msg))))))
+        (when (buffer-live-p buf)
+          (kill-buffer buf))))))
+
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
