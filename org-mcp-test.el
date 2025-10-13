@@ -3810,5 +3810,60 @@ This reproduces the user's bug scenario where:
          (with-current-buffer buf (set-buffer-modified-p nil))
          (kill-buffer buf))))))
 
+;;; Narrowing Preservation Test
+
+(defconst org-mcp-test--content-multiple-sections
+  "* First Section
+Content here.
+* Second Section
+More content."
+  "Multi-section org file for testing narrowing.")
+
+(defconst org-mcp-test--content-first-section-with-todo
+  "* TODO First Section
+Content here."
+  "Expected narrowed view of first section after adding TODO state.")
+
+(ert-deftest org-mcp-test-narrowing-preserved-after-refresh ()
+  "Test that narrowing is preserved by `org-mcp--refresh-file-buffers'.
+Verifies that the refresh function preserves narrowing state when
+reverting buffers after file modifications."
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-multiple-sections
+    (let ((buf (find-file-noselect test-file)))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf
+              (goto-char (point-min))
+              (re-search-forward "^\\* First Section")
+              (org-narrow-to-subtree)
+              (should (buffer-narrowed-p))
+              ;; Verify narrowed content before refresh
+              (let ((narrowed-content-before (buffer-string)))
+                (should (string-match-p "^\\* First Section" narrowed-content-before))
+                (should-not (string-match-p "Second Section" narrowed-content-before))))
+
+            ;; Simulate file modification from external source
+            (with-temp-buffer
+              (insert org-mcp-test--content-multiple-sections)
+              (goto-char (point-min))
+              (when (re-search-forward "^\\* First Section" nil t)
+                (beginning-of-line)
+                (forward-char 2) ;; Skip "* "
+                (insert "TODO ")
+                (write-region (point-min) (point-max) test-file)))
+
+            ;; Call the refresh function directly
+            (org-mcp--refresh-file-buffers test-file)
+
+            ;; Verify narrowing is still active after refresh
+            (with-current-buffer buf
+              (should (buffer-narrowed-p))
+              ;; Verify buffer contents show narrowed view after refresh
+              (should (string= org-mcp-test--content-first-section-with-todo
+                              (buffer-string)))))
+        (when (buffer-live-p buf)
+          (kill-buffer buf))))))
+
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

@@ -511,12 +511,28 @@ OPERATION is a string describing the operation for error messages."
          operation)))))
 
 (defun org-mcp--refresh-file-buffers (file-path)
-  "Refresh all buffers visiting FILE-PATH."
+  "Refresh all buffers visiting FILE-PATH.
+Preserves narrowing state across the refresh operation."
   (dolist (buf (buffer-list))
     (with-current-buffer buf
       (when (and (buffer-file-name)
                  (string= (buffer-file-name) file-path))
-        (revert-buffer t t t)))))
+        (let ((was-narrowed (buffer-narrowed-p))
+              (narrow-start nil)
+              (narrow-end nil))
+          ;; Save narrowing markers if narrowed
+          (when was-narrowed
+            (setq narrow-start (point-min-marker))
+            (setq narrow-end (point-max-marker)))
+          ;; Revert buffer
+          (revert-buffer t t t)
+          ;; Restore narrowing if it was active and markers are valid
+          (when (and was-narrowed
+                     narrow-start
+                     narrow-end
+                     (marker-position narrow-start)
+                     (marker-position narrow-end))
+            (narrow-to-region narrow-start narrow-end)))))))
 
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
