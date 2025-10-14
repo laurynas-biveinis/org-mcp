@@ -75,14 +75,14 @@ Main package file"
   (concat "\\`\\* Top Level\n"
           "\\*\\* Review the package\n"
           "\\*\\*\\* Review org-mcp\\.el\n"
-          ":PROPERTIES:\n"
-          ":ID: +" org-mcp-test--level2-parent-level3-sibling-id "\n"
-          ":END:\n"
+          " *:PROPERTIES:\n"
+          " *:ID: +" org-mcp-test--level2-parent-level3-sibling-id "\n"
+          " *:END:\n"
           "Main package file\n"
           "\\*\\*\\* TODO Review org-mcp-test\\.el +.*:internet:.*\n"
-          ":PROPERTIES:\n"
-          ":ID: +[a-fA-F0-9-]+\n"
-          ":END:\n\\'")
+          " *:PROPERTIES:\n"
+          " *:ID: +[a-fA-F0-9-]+\n"
+          " *:END:\n\\'")
   "Expected pattern after adding TODO after level 3 sibling.")
 
 (defconst org-mcp-test--content-simple-todo
