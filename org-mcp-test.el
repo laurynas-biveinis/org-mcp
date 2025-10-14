@@ -2266,13 +2266,6 @@ Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (v
                    parent-uri
                    after-uri)))
             ;; BUG: org-insert-heading creates level 1 (*) instead of level 3 (***)
-            (message "\n=== DEBUG: Test org-mcp-test-add-todo-with-after-uri ===")
-            (message "Expected pattern: %s" org-mcp-test--regex-after-sibling-level3)
-            (message "Actual buffer contents:")
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              (message "%s" (buffer-string)))
-            (message "=== END DEBUG ===\n")
             (org-mcp-test--check-add-todo-result
              result
              "Review org-mcp-test.el"
