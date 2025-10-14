@@ -513,10 +513,13 @@ OPERATION is a string describing the operation for error messages."
 (defun org-mcp--refresh-file-buffers (file-path)
   "Refresh all buffers visiting FILE-PATH.
 Preserves narrowing state across the refresh operation."
+  (message "=== DEBUG: org-mcp--refresh-file-buffers called for %s ===" file-path)
   (dolist (buf (buffer-list))
     (with-current-buffer buf
       (when (and (buffer-file-name)
                  (string= (buffer-file-name) file-path))
+        (message "DEBUG: Found buffer %s visiting file, buffer-name=%s" buf (buffer-name buf))
+        (message "DEBUG: Before revert: buffer-modified-p=%s" (buffer-modified-p))
         (let ((was-narrowed (buffer-narrowed-p))
               (narrow-start nil)
               (narrow-end nil))
@@ -528,8 +531,10 @@ Preserves narrowing state across the refresh operation."
               (unwind-protect
                   (progn
                     (revert-buffer t t t)
+                    (message "DEBUG: After revert: buffer-modified-p=%s" (buffer-modified-p))
                     ;; Check if buffer was modified by hooks
                     (when (buffer-modified-p)
+                      (message "DEBUG: Buffer is modified after revert! Throwing error.")
                       (org-mcp--tool-validation-error
                        "Buffer for file %s was modified during refresh. Check your after-revert-hook for functions that modify the buffer."
                        file-path)))
@@ -541,10 +546,12 @@ Preserves narrowing state across the refresh operation."
                            (marker-position narrow-end))
                   (narrow-to-region narrow-start narrow-end)))
             (error
+             (message "DEBUG: Error during refresh: %s" (error-message-string err))
              (org-mcp--tool-validation-error
               "Failed to refresh buffer for file %s: %s. Check your Emacs hooks (before-revert-hook, after-revert-hook, revert-buffer-function)"
               file-path
-              (error-message-string err)))))))))
+              (error-message-string err))))))))
+  (message "=== DEBUG: org-mcp--refresh-file-buffers done ==="))
 
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
@@ -906,6 +913,7 @@ MCP Parameters:
 
           ;; Handle positioning after navigation to parent
           (when (or parent-path parent-id)
+            (message "DEBUG add-todo: At parent, parent-level=%s, point=%s" parent-level (point))
             ;; Handle after_uri positioning
             (if (and after_uri (not (string-empty-p after_uri)))
                 (progn
@@ -935,8 +943,10 @@ MCP Parameters:
                                      (org-entry-get nil "ID")))
                                 (when (string= current-id after-id)
                                   (setq found t)
+                                  (message "DEBUG add-todo: Found sibling with ID %s at point %s" after-id (point))
                                   ;; Move to sibling end
-                                  (org-end-of-subtree t t)))
+                                  (org-end-of-subtree t t)
+                                  (message "DEBUG add-todo: Moved to end of sibling, now at point %s" (point))))
                               (unless found
                                 ;; Move to next sibling
                                 (unless (org-get-next-sibling)
@@ -973,6 +983,9 @@ MCP Parameters:
           (if (or parent-path parent-id)
               ;; We're inside a parent
               (progn
+                (message "DEBUG add-todo: About to insert heading, point=%s, parent-level=%s" (point) parent-level)
+                (message "DEBUG add-todo: Buffer contents before insert:")
+                (message "%s" (buffer-substring-no-properties (point-min) (point-max)))
                 ;; Ensure we have a newline before inserting
                 (unless (or (bobp) (looking-back "\n" 1))
                   (insert "\n"))
@@ -982,6 +995,7 @@ MCP Parameters:
                 ;; sibling of the parent instead of a child
                 (let ((heading-start (point)))
                   (insert (concat (make-string (1+ parent-level) ?*) " " title "\n"))
+                  (message "DEBUG add-todo: Inserted heading at level %s, heading-start=%s" (1+ parent-level) heading-start)
                   ;; Set point directly to the heading for org-todo and org-set-tags
                   (goto-char heading-start)
                   (end-of-line)))
