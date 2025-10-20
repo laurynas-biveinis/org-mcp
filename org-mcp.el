@@ -380,7 +380,7 @@ The filename parameter includes both file and headline path."
                 (expand-file-name allowed-file) headline-path)))
           (unless content
             (org-mcp--resource-not-found-error
-             "Headline" (mapconcat #'identity headline-path "/")))
+             "headline" (mapconcat #'identity headline-path "/")))
           content)
       ;; No headline path means get entire file
       (org-mcp--read-file-resource (expand-file-name allowed-file)))))
