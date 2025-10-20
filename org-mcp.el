@@ -532,7 +532,8 @@ Preserves narrowing state across the refresh operation."
                     ;; Check if buffer was modified by hooks
                     (when (buffer-modified-p)
                       (org-mcp--tool-validation-error
-                       "Buffer for file %s was modified during refresh. Check your after-revert-hook for functions that modify the buffer."
+                       "Buffer for file %s was modified during refresh. \
+Check your `after-revert-hook' for functions that modify the buffer"
                        file-path)))
                 ;; Restore narrowing even if revert fails
                 (when (and was-narrowed
@@ -543,7 +544,9 @@ Preserves narrowing state across the refresh operation."
                   (narrow-to-region narrow-start narrow-end)))
             (error
              (org-mcp--tool-validation-error
-              "Failed to refresh buffer for file %s: %s. Check your Emacs hooks (before-revert-hook, after-revert-hook, revert-buffer-function)"
+              "Failed to refresh buffer for file %s: %s. Check \
+your Emacs hooks (before-revert-hook, after-revert-hook, \
+revert-buffer-function)"
               file-path (error-message-string err)))))))))
 
 (defun org-mcp--get-content-by-id (file-path id)
@@ -592,8 +595,10 @@ CURRENT_STATE is the current TODO state (empty string for no state).
 NEW_STATE is the new TODO state to set.
 
 MCP Parameters:
-  uri - URI of the headline (org-headline://{absolute-path}#{headline-path}
-        or org-id://{id})
+  uri - URI of the headline
+        Formats:
+          - org-headline://{absolute-path}#{headline-path}
+          - org-id://{id}
   current_state - Current TODO state (empty string for no state)
   new_state - New TODO state (must be in `org-todo-keywords')"
   ;; Parse the resource URI
@@ -605,7 +610,7 @@ MCP Parameters:
     (let ((valid-states (org-mcp--get-valid-todo-states)))
       (unless (member new_state valid-states)
         (org-mcp--tool-validation-error
-         "Invalid TODO state: '%s'.  Valid states: %s"
+         "Invalid TODO state: '%s' - valid states: %s"
          new_state (mapconcat #'identity valid-states ", "))))
 
     ;; Check for unsaved changes
@@ -789,11 +794,13 @@ MCP Parameters:
   tags - Tags to add (single string or array of strings)
   body - Optional body text content
   parent_uri - Parent item URI
-               (org-headline://{absolute-path}#{headline-path}
-               or org-id://{id}) (required)
-  after_uri - Sibling to insert after
-              (org-headline://{absolute-path}#{headline-path}
-              or org-id://{id}) (optional)"
+               Formats:
+                 - org-headline://{absolute-path}#{headline-path}
+                 - org-id://{id}
+  after_uri - Sibling to insert after (optional)
+              Formats:
+                - org-headline://{absolute-path}#{headline-path}
+                - org-id://{id}"
   (org-mcp--validate-headline-title title)
 
   ;; Normalize tags and get valid TODO states
@@ -803,7 +810,7 @@ MCP Parameters:
     ;; Validate TODO state
     (unless (member todo_state valid-states)
       (org-mcp--tool-validation-error
-       "Invalid TODO state: '%s'.  Valid states: %s"
+       "Invalid TODO state: '%s' - valid states: %s"
        todo_state (mapconcat #'identity valid-states ", ")))
 
     ;; Validate tags
@@ -1041,8 +1048,10 @@ CURRENT_TITLE is the current title (without TODO/tags) for validation.
 NEW_TITLE is the new title to set (without TODO/tags).
 
 MCP Parameters:
-  uri - URI of the headline (org-headline://{absolute-path}#{headline-path}
-        or org-id://{id})
+  uri - URI of the headline
+        Formats:
+          - org-headline://{absolute-path}#{headline-path}
+          - org-id://{id}
   current_title - Current title without TODO state or tags
   new_title - New title without TODO state or tags"
   (org-mcp--validate-headline-title new_title)
@@ -1081,10 +1090,12 @@ NEW_BODY is the replacement text.
 REPLACE_ALL if non-nil, replace all occurrences.
 
 MCP Parameters:
-  resource_uri - URI of the node (org-headline://{absolute-path}#{headline-path}
-                 or org-id://{id})
+  resource_uri - URI of the node
+                 Formats:
+                   - org-headline://{absolute-path}#{headline-path}
+                   - org-id://{id}
   old_body - Substring to replace within the body (must be unique
-            unless replace_all).  Use \"\" to add to empty nodes
+             unless replace_all).  Use \"\" to add to empty nodes
   new_body - Replacement text
   replace_all - Replace all occurrences (optional, default false)
 
@@ -1224,7 +1235,8 @@ Special behavior:
 (defun org-mcp--adjust-headline-to-level-1 (headline-text)
   "Adjust HEADLINE-TEXT to level 1 and return the adjusted text.
 Uses `org-promote-subtree' to reduce headline levels.
-HEADLINE-TEXT should be a string containing an Org headline and its subtree."
+HEADLINE-TEXT should be a string containing an Org headline
+and its subtree."
   (with-temp-buffer
     (insert headline-text)
     (goto-char (point-min))
@@ -1257,9 +1269,14 @@ SOURCE_URI is the URI of the headline to move.
 TARGET_PARENT_URI is the URI of the new parent headline.
 
 MCP Parameters:
-  source_uri - URI of the headline to move (org-headline://{path}
-               or org-id://{id})
-  target_parent_uri - URI of the new parent headline"
+  source_uri - URI of the headline to move
+               Formats:
+                 - org-headline://{path}
+                 - org-id://{id}
+  target_parent_uri - URI of the new parent headline
+                      Formats:
+                        - org-headline://{path}
+                        - org-id://{id}"
   ;; Parse both URIs
   (let* ((source-parsed (org-mcp--parse-resource-uri source_uri))
          (source-file (car source-parsed))
@@ -1559,6 +1576,7 @@ MCP Parameters:
 
 (defun org-mcp--tool-read-file (file)
   "Tool wrapper for org://{filename} resource template.
+FILE is the absolute path to an Org file.
 
 MCP Parameters:
   file - Absolute path to an Org file"
@@ -1566,33 +1584,39 @@ MCP Parameters:
 
 (defun org-mcp--tool-read-outline (file)
   "Tool wrapper for org-outline://{filename} resource template.
+FILE is the absolute path to an Org file.
 
 MCP Parameters:
   file - Absolute path to an Org file"
   (org-mcp--handle-outline-resource `(("filename" . ,file))))
 
 (defun org-mcp--tool-read-headline (file headline_path)
-  "Tool wrapper for org-headline://{filename}#{path} resource template.
+  "Tool wrapper for org-headline://{filename}#{path} resource.
+FILE is the absolute path to an Org file.
+HEADLINE_PATH is the non-empty slash-separated path to headline.
 
 MCP Parameters:
   file - Absolute path to an Org file
   headline_path - Non-empty slash-separated path to headline (string)
-                  Only slashes in headline titles must be encoded as %2F.
+                  Only slashes in headline titles must be encoded as %2F
                   Example: \"Project/Planning\" for nested headlines
-                  Example: \"A%2FB Testing\" for headline titled \"A/B Testing\"
+                  Example: \"A%2FB Testing\" for headline titled
+                  \"A/B Testing\"
                   To read entire files, use org-read-file instead"
   (unless (stringp headline_path)
     (org-mcp--tool-validation-error
-     "headline_path must be a string, got: %S (type: %s)"
+     "Parameter headline_path must be a string, got: %S (type: %s)"
      headline_path (type-of headline_path)))
   (when (string-empty-p headline_path)
     (org-mcp--tool-validation-error
-     "headline_path must be a non-empty string. Use the org-read-file tool to read entire files."))
+     "Parameter headline_path must be non-empty; use org-read-file tool \
+to read entire files"))
   (let ((full-path (concat file "#" headline_path)))
     (org-mcp--handle-headline-resource `(("filename" . ,full-path)))))
 
 (defun org-mcp--tool-read-by-id (uuid)
   "Tool wrapper for org-id://{uuid} resource template.
+UUID is the UUID from headline's ID property.
 
 MCP Parameters:
   uuid - UUID from headline's ID property"
@@ -1604,27 +1628,27 @@ MCP Parameters:
    #'org-mcp--tool-get-todo-config
    :id "org-get-todo-config"
    :description
-   "Get the TODO keyword configuration from the current Emacs Org-mode \
-settings.  Returns information about task state sequences and their \
-semantics.
+   "Get the TODO keyword configuration from the current Emacs
+Org-mode settings.  Returns information about task state sequences
+and their semantics.
 
 Parameters: None
 
 Returns JSON object with two arrays:
   sequences - Array of TODO keyword sequences, each containing:
     - type: Sequence type (e.g., \"sequence\", \"type\")
-    - keywords: Array of keywords including \"|\" separator between \
+    - keywords: Array of keywords including \"|\" separator between
 active and done states
   semantics - Array of keyword semantics, each containing:
     - state: The TODO keyword (e.g., \"TODO\", \"DONE\")
     - isFinal: Whether this is a final (done) state (boolean)
     - sequenceType: The sequence type this keyword belongs to
 
-The \"|\" separator in sequences marks the boundary between active \
-states (before) and done states (after).  If no \"|\" is present, the \
-last keyword is treated as the done state.
+The \"|\" separator in sequences marks the boundary between active
+states (before) and done states (after).  If no \"|\" is present,
+the last keyword is treated as the done state.
 
-Use this tool to understand the available task states in the Org \
+Use this tool to understand the available task states in the Org
 configuration before creating or updating TODO items."
    :read-only t
    :server-id org-mcp--server-id)
@@ -1632,8 +1656,8 @@ configuration before creating or updating TODO items."
    #'org-mcp--tool-get-tag-config
    :id "org-get-tag-config"
    :description
-   "Get tag-related configuration from the current Emacs Org-mode \
-settings.  Returns literal Elisp variable values as strings for tag \
+   "Get tag-related configuration from the current Emacs Org-mode
+settings.  Returns literal Elisp variable values as strings for tag
 configuration introspection.
 
 Parameters: None
@@ -1641,14 +1665,14 @@ Parameters: None
 Returns JSON object with literal Elisp expressions (as strings) for:
   org-use-tag-inheritance - Controls tag inheritance behavior
   org-tags-exclude-from-inheritance - Tags that don't inherit
-  org-tag-alist - List of allowed tags with optional key bindings and \
-groups
+  org-tag-alist - List of allowed tags with optional key bindings and
+                  groups
   org-tag-persistent-alist - Additional persistent tags (or nil)
 
 The org-tag-alist format includes:
   - Simple tags: (\"tagname\" . key-char)
   - Group markers: :startgroup, :endgroup for mutually exclusive tags
-  - Grouptags: :startgrouptag, :grouptags, :endgrouptag for tag \
+  - Grouptags: :startgrouptag, :grouptags, :endgrouptag for tag
 hierarchies
 
 Use this tool to understand:
@@ -1657,7 +1681,7 @@ Use this tool to understand:
   - Mutually exclusive tag groups
   - Tag hierarchy relationships
 
-This helps validate tag usage and understand tag semantics before \
+This helps validate tag usage and understand tag semantics before
 adding or modifying tags on TODO items."
    :read-only t
    :server-id org-mcp--server-id)
@@ -1665,8 +1689,8 @@ adding or modifying tags on TODO items."
    #'org-mcp--tool-get-allowed-files
    :id "org-get-allowed-files"
    :description
-   "Get the list of Org files accessible through the org-mcp server.  \
-Returns the configured allowed files exactly as specified in \
+   "Get the list of Org files accessible through the org-mcp
+server.  Returns the configured allowed files exactly as specified in
 org-mcp-allowed-files.
 
 Parameters: None
@@ -1690,14 +1714,15 @@ Empty configuration returns:
 
 Use cases:
   - Discovery: What Org files can I access through MCP?
-  - URI Construction: I need to build an org-headline:// URI - what's \
-the exact path?
+  - URI Construction: I need to build an org-headline:// URI - what's
+    the exact path?
   - Access Troubleshooting: Why is my file access failing?
-  - Configuration Verification: Did my org-mcp-allowed-files setting \
-work correctly?
+  - Configuration Verification: Did my org-mcp-allowed-files setting
+    work correctly?
 
 Behavior:
-  - Returns configured paths exactly as-is (no validation or normalization)
+  - Returns configured paths exactly as-is (no validation or
+    normalization)
   - Always succeeds (returns empty array if no files configured)
   - No metadata included (only file paths)"
    :read-only t
@@ -1706,14 +1731,15 @@ Behavior:
    #'org-mcp--tool-update-todo-state
    :id "org-update-todo-state"
    :description
-   "Update the TODO state of an Org headline.  Changes the task state \
-while preserving the headline title, tags, and other properties.  \
+   "Update the TODO state of an Org headline.  Changes the task state
+while preserving the headline title, tags, and other properties.
 Creates an Org ID property for the headline if one doesn't exist.
 
 Parameters:
   uri - URI of the headline to update (string, required)
-        Formats: org-headline://{absolute-path}#{url-encoded-path}
-                 org-id://{uuid}
+        Formats:
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
   current_state - Expected current TODO state (string, required)
                   Use empty string \"\" if headline has no TODO state
                   Must match actual state or tool will error
@@ -1733,7 +1759,7 @@ Error cases:
   - Headline not found: URI path doesn't resolve to a headline
   - Unsaved changes: File has unsaved modifications in a buffer
 
-Security: Only files in org-mcp-allowed-files can be modified.  The \
+Security: Only files in org-mcp-allowed-files can be modified.  The
 tool validates the current state to prevent race conditions."
    :read-only nil
    :server-id org-mcp--server-id)
@@ -1741,8 +1767,8 @@ tool validates the current state to prevent race conditions."
    #'org-mcp--tool-add-todo
    :id "org-add-todo"
    :description
-   "Add a new TODO item to an Org file at a specified location.  \
-Creates the headline with TODO state, tags, and optional body content.  \
+   "Add a new TODO item to an Org file at a specified location.
+Creates the headline with TODO state, tags, and optional body content.
 Automatically creates an Org ID property for the new headline.
 
 Parameters:
@@ -1776,7 +1802,7 @@ Returns JSON object:
 Error cases:
   - Invalid title: Empty, whitespace-only, or contains newlines
   - Invalid TODO state: Not in org-todo-keywords
-  - Invalid tags: Not in org-tag-alist, invalid characters, or \
+  - Invalid tags: Not in org-tag-alist, invalid characters, or
 violates mutex groups
   - Invalid body: Contains conflicting headlines or unbalanced blocks
   - File access denied: Referenced file not in org-mcp-allowed-files
@@ -1786,7 +1812,7 @@ violates mutex groups
 
 Positioning behavior:
   - With parent_uri only: Appends as last child of parent
-  - With parent_uri + after_uri: Inserts immediately after specified \
+  - With parent_uri + after_uri: Inserts immediately after specified
 sibling
   - Top-level (parent_uri with no fragment): Adds at end of file
 
@@ -1797,15 +1823,16 @@ Security: Only files in org-mcp-allowed-files can be modified."
    #'org-mcp--tool-rename-headline
    :id "org-rename-headline"
    :description
-   "Rename an Org headline's title while preserving its TODO state, \
-tags, properties, and body content.  Creates an Org ID property for the \
-headline if one doesn't exist.
+   "Rename an Org headline's title while preserving its TODO state,
+tags, properties, and body content.  Creates an Org ID property for
+the headline if one doesn't exist.
 
 Parameters:
   uri - URI of the headline to rename (string, required)
-        Formats: org-headline://{absolute-path}#{url-encoded-path}
-                 org-id://{uuid}
-  current_title - Expected current title without TODO/tags (string, \
+        Formats:
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
+  current_title - Expected current title without TODO/tags (string,
 required)
                   Must match actual title or tool will error
                   Used to prevent race conditions
@@ -1832,7 +1859,7 @@ Preservation guarantees:
   - All properties (including custom IDs) remain unchanged
   - Body content and child headlines remain unchanged
 
-Security: Only files in org-mcp-allowed-files can be modified.  The \
+Security: Only files in org-mcp-allowed-files can be modified.  The
 tool validates the current title to prevent race conditions."
    :read-only nil
    :server-id org-mcp--server-id)
@@ -1840,23 +1867,25 @@ tool validates the current title to prevent race conditions."
    #'org-mcp--tool-edit-body
    :id "org-edit-body"
    :description
-   "Edit the body content of an Org headline using partial string \
-replacement.  Finds and replaces a substring within the headline's body \
-text.  Creates an Org ID property for the headline if one doesn't exist.
+   "Edit the body content of an Org headline using partial string
+replacement.  Finds and replaces a substring within the headline's
+body text.  Creates an Org ID property for the headline if one doesn't
+exist.
 
 Parameters:
   resource_uri - URI of the headline to edit (string, required)
-                 Formats: org-headline://{absolute-path}#{url-encoded-path}
-                          org-id://{uuid}
+                 Formats:
+                   - org-headline://{absolute-path}#{url-encoded-path}
+                   - org-id://{uuid}
   old_body - Substring to find and replace (string, required)
              Must appear exactly once unless replace_all is true
              Use empty string \"\" only for adding to empty nodes
   new_body - Replacement text (string, required)
              Cannot introduce headlines at same or higher level
              Must maintain balanced #+BEGIN/#+END blocks
-  replace_all - Replace all occurrences (boolean, optional, default \
-false)
-                When false, old_body must be unique in the body
+  replace_all - Replace all occurrences (boolean, optional, default
+                false). When false, old_body must be unique in the
+                body.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1867,17 +1896,6 @@ Special behavior - Empty old_body:
   - Only works if node body is empty or whitespace-only
   - Error if node already has content
   - Useful for adding initial content to newly created headlines
-
-Error cases:
-  - Text not found: old_body doesn't appear in the body
-  - Multiple occurrences: old_body appears multiple times without \
-replace_all
-  - Empty body conflict: old_body is \"\" but node has content
-  - Invalid new content: new_body contains headlines at conflicting levels
-  - Unbalanced blocks: new_body has unclosed #+BEGIN or orphaned #+END
-  - File access denied: Referenced file not in org-mcp-allowed-files
-  - Headline not found: resource_uri doesn't resolve to a headline
-  - Unsaved changes: File has unsaved modifications in a buffer
 
 Content validation:
   - Prevents introducing headlines that would break document structure
@@ -1891,17 +1909,20 @@ Security: Only files in org-mcp-allowed-files can be modified."
    #'org-mcp--tool-refile-headline
    :id "org-refile-headline"
    :description
-   "Move a headline and its entire subtree to become a child of a \
-different parent headline.  Uses Org's built-in org-refile function.  \
-Creates an Org ID property for the source headline if one doesn't exist.
+   "Move a headline and its entire subtree to become a child of a
+different parent headline.  Uses Org's built-in org-refile
+function.  Creates an Org ID property for the source headline if one
+doesn't exist.
 
 Parameters:
   source_uri - URI of the headline to move (string, required)
-               Formats: org-headline://{absolute-path}#{url-encoded-path}
-                        org-id://{uuid}
+               Formats:
+                 - org-headline://{absolute-path}#{url-encoded-path}
+                 - org-id://{uuid}
   target_parent_uri - URI of the new parent headline (string, required)
-                      Formats: org-headline://{absolute-path}#{url-encoded-path}
-                               org-id://{uuid}
+                      Formats:
+                        - org-headline://{absolute-path}#{url-encoded-path}
+                        - org-id://{uuid}
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1918,13 +1939,14 @@ Behavior:
 Security: Only files in org-mcp-allowed-files can be modified."
    :read-only nil
    :server-id org-mcp--server-id)
-  ;; Workaround tools for resource templates (until Claude Code supports templates)
+  ;; Workaround tools for resource templates (until Claude Code
+  ;; supports templates)
   (mcp-server-lib-register-tool
    #'org-mcp--tool-read-file
    :id "org-read-file"
    :description
-   "Read complete raw content of an Org file. Returns entire file as \
-plain text with all formatting, properties, and structure preserved. \
+   "Read complete raw content of an Org file. Returns entire file as
+plain text with all formatting, properties, and structure preserved.
 File must be in org-mcp-allowed-files.
 
 Parameters:
@@ -1937,9 +1959,9 @@ Returns: Plain text content of the entire Org file"
    #'org-mcp--tool-read-outline
    :id "org-read-outline"
    :description
-   "Get hierarchical structure of Org file as JSON outline. Returns all \
-headline titles and nesting relationships at full depth. File must be \
-in org-mcp-allowed-files.
+   "Get hierarchical structure of Org file as JSON outline. Returns
+   all headline titles and nesting relationships at full depth. File
+   must be in org-mcp-allowed-files.
 
 Parameters:
   file - Absolute path to Org file (string, required)
@@ -1951,16 +1973,18 @@ Returns: JSON object with hierarchical outline structure"
    #'org-mcp--tool-read-headline
    :id "org-read-headline"
    :description
-   "Read specific Org headline by hierarchical path. Returns headline with \
-TODO state, tags, properties, body text, and all nested subheadings. File \
-must be in org-mcp-allowed-files.
+   "Read specific Org headline by hierarchical path. Returns headline
+   with TODO state, tags, properties, body text, and all nested
+   subheadings. File must be in org-mcp-allowed-files.
 
 Parameters:
   file - Absolute path to Org file (string, required)
-  headline_path - Non-empty slash-separated path to headline (string, required)
-                  Only slashes (/) in headline titles must be encoded as %2F
+  headline_path - Non-empty slash-separated path to headline (string,
+                  required). Only slashes (/) in  headline titles must
+                  be encoded as %2F
                   Example: \"Project/Planning\" for nested headlines
-                  Example: \"A%2FB Testing\" for headline titled \"A/B Testing\"
+                  Example: \"A%2FB Testing\" for headline titled
+                  \"A/B Testing\"
                   To read entire files, use org-read-file instead
 
 Returns: Plain text content of the headline and its subtree"
@@ -1970,9 +1994,9 @@ Returns: Plain text content of the headline and its subtree"
    #'org-mcp--tool-read-by-id
    :id "org-read-by-id"
    :description
-   "Read Org headline by its unique ID property. More stable than path-based \
-access since IDs don't change when headlines are renamed or moved. File \
-containing the ID must be in org-mcp-allowed-files.
+   "Read Org headline by its unique ID property. More stable than
+path-based access since IDs don't change when headlines are renamed
+or moved. File containing the ID must be in org-mcp-allowed-files.
 
 Parameters:
   uuid - UUID from headline's ID property (string, required)
@@ -1985,8 +2009,9 @@ Returns: Plain text content of the headline and its subtree"
    "org://{filename}" #'org-mcp--handle-file-resource
    :name "Org file"
    :description
-   "Access the complete raw content of an Org file.  Returns the entire \
-file as plain text, preserving all formatting, properties, and structure.
+   "Access the complete raw content of an Org file.  Returns the
+entire file as plain text, preserving all formatting, properties, and
+structure.
 
 URI format: org://{filename}
   filename - Absolute path to the Org file (required)
@@ -2017,9 +2042,9 @@ Error cases:
    "org-outline://{filename}" #'org-mcp--handle-outline-resource
    :name "Org file outline"
    :description
-   "Get the hierarchical structure of an Org file as a JSON outline.  \
-Extracts headline titles and their nesting relationships up to 2 levels \
-deep.
+   "Get the hierarchical structure of an Org file as a JSON
+outline.  Extracts headline titles and their nesting relationships up
+to 2 levels deep.
 
 URI format: org-outline://{filename}
   filename - Absolute path to the Org file (required)
@@ -2070,8 +2095,9 @@ Error cases:
    #'org-mcp--handle-headline-resource
    :name "Org headline content"
    :description
-   "Access content of a specific Org headline by its path in the file \
-hierarchy.  Returns the headline and all its subheadings as plain text.
+   "Access content of a specific Org headline by its path in the
+file hierarchy.  Returns the headline and all its subheadings as
+plain text.
 
 URI format: org-headline://{filename}#{headline-path}
   filename - Absolute path (# characters must be encoded as %23)
@@ -2135,9 +2161,9 @@ Error cases:
    #'org-mcp--handle-id-resource
    :name "Org node by ID"
    :description
-   "Access content of an Org headline by its unique ID property.  More \
-stable than path-based access since IDs don't change when headlines are \
-renamed or moved.
+   "Access content of an Org headline by its unique ID property.
+More stable than path-based access since IDs don't change when
+headlines are renamed or moved.
 
 URI format: org-id://{uuid}
   uuid - Value of the headline's ID property (required)
