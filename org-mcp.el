@@ -231,10 +231,9 @@ nil otherwise.
 Throws a tool error if ID exists but file is not allowed."
   (if-let* ((id-file (org-id-find-id-file id)))
     ;; ID found in database, check if file is allowed
-    (let ((allowed-file (org-mcp--find-allowed-file id-file)))
-      (unless allowed-file
-        (org-mcp--tool-file-access-error id))
-      (expand-file-name allowed-file))
+    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+      (expand-file-name allowed-file)
+      (org-mcp--tool-file-access-error id))
     ;; ID not in database - might not exist or DB is stale
     ;; Fall back to searching allowed files manually
     (let ((found-file nil))
@@ -381,7 +380,7 @@ The filename parameter includes both file and headline path."
                 (expand-file-name allowed-file) headline-path)))
           (unless content
             (org-mcp--resource-not-found-error
-             "headline" (mapconcat #'identity headline-path "/")))
+             "Headline" (mapconcat #'identity headline-path "/")))
           content)
       ;; No headline path means get entire file
       (org-mcp--read-file-resource (expand-file-name allowed-file)))))
@@ -532,8 +531,9 @@ Preserves narrowing state across the refresh operation."
                     ;; Check if buffer was modified by hooks
                     (when (buffer-modified-p)
                       (org-mcp--tool-validation-error
-                       "Buffer for file %s was modified during refresh. \
-Check your `after-revert-hook' for functions that modify the buffer"
+                       "Buffer for file %s was modified during \
+refresh.  Check your `after-revert-hook' for \
+functions that modify the buffer"
                        file-path)))
                 ;; Restore narrowing even if revert fails
                 (when (and was-narrowed
@@ -578,9 +578,9 @@ RESPONSE-ALIST is an alist of response fields."
 
 (defun org-mcp--get-valid-todo-states ()
   "Get list of valid TODO states without annotations or separators.
-Processes `org-todo-keywords' by extracting all keywords, stripping
-annotations like \"(t!)\" using `org-remove-keyword-keys', and removing
-the \"|\" separator."
+Processes `org-todo-keywords' by extracting all keywords,
+stripping annotations like \"(t!)\" using
+`org-remove-keyword-keys', and removing the \"|\" separator."
   (delete
    "|"
    (org-remove-keyword-keys
@@ -994,7 +994,8 @@ MCP Parameters:
                     " "
                     title
                     "\n"))
-                  ;; Set point directly to the heading for org-todo and org-set-tags
+                  ;; Set point to heading for org-todo and
+                  ;; org-set-tags
                   (goto-char heading-start)
                   (end-of-line)))
             ;; Top-level heading
@@ -1168,7 +1169,8 @@ Special behavior:
           (when (string-match-p "\\`[[:space:]]*\\'" body-content)
             ;; Empty oldBody + empty body -> add content
             (if (string= old_body "")
-                (setq occurrence-count 1) ; Treat as single replacement
+                ;; Treat as single replacement
+                (setq occurrence-count 1)
               (org-mcp--tool-validation-error
                "Node has no body content")))
 
@@ -1433,9 +1435,11 @@ MCP Parameters:
                             .
                             ,(concat
                               org-mcp--org-id-prefix source-id))))))
-                  ;; Special case: refiling to file root (no target headline)
+                  ;; Special case: refiling to file root
+                  ;; (no target headline)
                   (let ((headline-text nil))
-                    ;; Extract the headline and its subtree, then delete it
+                    ;; Extract the headline and its subtree,
+                    ;; then delete it
                     (org-back-to-heading t)
                     (let ((start (point))
                           (end
@@ -1517,7 +1521,8 @@ MCP Parameters:
                  `((success . t)
                    (uri
                     . ,(concat org-mcp--org-id-prefix source-id)))))
-            ;; Special case: cross-file refile to file root (target-path is nil)
+            ;; Special case: cross-file refile to file root
+            ;; (target-path is nil)
             (let ((headline-text nil))
               ;; Extract headline in source buffer (current buffer)
               (goto-char (point-min))
@@ -1593,24 +1598,29 @@ MCP Parameters:
 (defun org-mcp--tool-read-headline (file headline_path)
   "Tool wrapper for org-headline://{filename}#{path} resource.
 FILE is the absolute path to an Org file.
-HEADLINE_PATH is the non-empty slash-separated path to headline.
+HEADLINE_PATH is the non-empty slash-separated path to
+headline.
 
 MCP Parameters:
   file - Absolute path to an Org file
-  headline_path - Non-empty slash-separated path to headline (string)
-                  Only slashes in headline titles must be encoded as %2F
+  headline_path - Non-empty slash-separated path to headline
+                  (string)
+                  Only slashes in headline titles must be
+                  encoded as %2F
                   Example: \"Project/Planning\" for nested headlines
                   Example: \"A%2FB Testing\" for headline titled
                   \"A/B Testing\"
-                  To read entire files, use org-read-file instead"
+                  To read entire files, use org-read-file
+                  instead"
   (unless (stringp headline_path)
     (org-mcp--tool-validation-error
-     "Parameter headline_path must be a string, got: %S (type: %s)"
+     "Parameter headline_path must be a string, got: %S \
+(type: %s)"
      headline_path (type-of headline_path)))
   (when (string-empty-p headline_path)
     (org-mcp--tool-validation-error
-     "Parameter headline_path must be non-empty; use org-read-file tool \
-to read entire files"))
+     "Parameter headline_path must be non-empty; use \
+org-read-file tool to read entire files"))
   (let ((full-path (concat file "#" headline_path)))
     (org-mcp--handle-headline-resource `(("filename" . ,full-path)))))
 
@@ -1909,19 +1919,22 @@ Security: Only files in org-mcp-allowed-files can be modified."
    #'org-mcp--tool-refile-headline
    :id "org-refile-headline"
    :description
-   "Move a headline and its entire subtree to become a child of a
-different parent headline.  Uses Org's built-in org-refile
-function.  Creates an Org ID property for the source headline if one
-doesn't exist.
+   "Move a headline and its entire subtree to become a child
+of a different parent headline.  Uses Org's built-in
+org-refile function.  Creates an Org ID property for the
+source headline if one doesn't exist.
 
 Parameters:
   source_uri - URI of the headline to move (string, required)
                Formats:
-                 - org-headline://{absolute-path}#{url-encoded-path}
+                 - org-headline://{absolute-path}#\
+{url-encoded-path}
                  - org-id://{uuid}
-  target_parent_uri - URI of the new parent headline (string, required)
+  target_parent_uri - URI of the new parent headline
+                      (string, required)
                       Formats:
-                        - org-headline://{absolute-path}#{url-encoded-path}
+                        - org-headline://{absolute-path}#\
+{url-encoded-path}
                         - org-id://{uuid}
 
 Returns JSON object:
