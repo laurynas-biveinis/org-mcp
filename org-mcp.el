@@ -1312,15 +1312,19 @@ MCP Parameters:
             ;; Same-file refile: switch to real buffer if it exists
             (let ((real-buffer (find-buffer-visiting source-file)))
               (if real-buffer
-                  ;; Real buffer exists - sync temp buffer content and switch to it
+                  ;; Real buffer exists - sync temp buffer content
+                  ;; and switch to it
                   (let ((temp-content (buffer-string)))
                     (with-current-buffer real-buffer
-                      ;; If buffer is modified after refresh, something is wrong
+                      ;; If buffer is modified after refresh,
+                      ;; something is wrong
                       (when (buffer-modified-p)
                         (org-mcp--tool-validation-error
-                         "Cannot refile: buffer was modified after refresh (possible hook or concurrent access)"))
-                      ;; DEFENSIVE: Force buffer sync even if refresh failed
-                      ;; This is redundant in normal case but handles edge cases
+                         "Cannot refile: buffer was modified after \
+refresh (possible hook or concurrent access)"))
+                      ;; DEFENSIVE: Force buffer sync even if
+                      ;; refresh failed.  This is redundant in
+                      ;; normal case but handles edge cases
                       (erase-buffer)
                       (insert temp-content)
                       (org-mode)
@@ -1352,7 +1356,8 @@ MCP Parameters:
 
                                 ;; Perform the refile
                                 (goto-char source-pos)
-                                (deactivate-mark) ; Ensure no active region interferes
+                                ;; Ensure no active region interferes
+                                (deactivate-mark)
                                 (org-refile nil nil target-rfloc)
 
                                 ;; Save and return
@@ -1364,11 +1369,13 @@ MCP Parameters:
                                     ,(concat
                                       org-mcp--org-id-prefix
                                       source-id)))))))
-                        ;; Special case: refiling to file root (no target headline)
+                        ;; Special case: refiling to file root
+                        ;; (no target headline)
                         (org-mcp--goto-headline-from-uri
                          (list source-id) t)
                         (let ((headline-text nil))
-                          ;; Extract the headline and its subtree, then delete it
+                          ;; Extract the headline and its subtree,
+                          ;; then delete it
                           (org-back-to-heading t)
                           (let ((start (point))
                                 (end
