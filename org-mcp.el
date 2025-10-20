@@ -1934,14 +1934,12 @@ source headline if one doesn't exist.
 Parameters:
   source_uri - URI of the headline to move (string, required)
                Formats:
-                 - org-headline://{absolute-path}#\
-{url-encoded-path}
+                 - org-headline://{absolute-path}#{url-encoded-path}
                  - org-id://{uuid}
   target_parent_uri - URI of the new parent headline
                       (string, required)
                       Formats:
-                        - org-headline://{absolute-path}#\
-{url-encoded-path}
+                        - org-headline://{absolute-path}#{url-encoded-path}
                         - org-id://{uuid}
 
 Returns JSON object:
