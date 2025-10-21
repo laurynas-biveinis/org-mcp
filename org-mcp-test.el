@@ -818,12 +818,7 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
     (should (equal (alist-get 'new_state result) new-state))
     (should (stringp (alist-get 'uri result)))
     (should (string-prefix-p "org-id://" (alist-get 'uri result)))
-    ;; Verify file content
-    (with-temp-buffer
-      (insert-file-contents test-file)
-      (let ((buffer-content (buffer-string)))
-        (should
-         (string-match expected-content-regex buffer-content))))
+    (org-mcp-test--verify-file-matches test-file expected-content-regex)
     result))
 
 (defun org-mcp-test--check-add-todo-result
@@ -841,27 +836,20 @@ EXPECTED-PATTERN if provided, is a regexp that the file content should match."
   (should (string-prefix-p "org-id://" (alist-get 'uri result)))
   (should (equal (alist-get 'file result) basename))
   (should (equal (alist-get 'title result) expected-title))
-  ;; Check file content if pattern provided
   (when expected-pattern
-    (with-temp-buffer
-      (insert-file-contents test-file)
-      (should (string-match-p expected-pattern (buffer-string))))))
+    (org-mcp-test--verify-file-matches test-file expected-pattern)))
 
 (defun org-mcp-test--assert-error-and-file (test-file error-form)
   "Assert that ERROR-FORM throws an error and TEST-FILE remains unchanged.
 ERROR-FORM should be a form that is expected to signal an error.
 The file content is saved before the error test and verified to be
 unchanged after."
-  ;; Save original content before test
   (let ((original-content
          (with-temp-buffer
            (insert-file-contents test-file)
            (buffer-string))))
     (should-error (eval error-form) :type 'mcp-server-lib-tool-error)
-    ;; Verify file has not changed
-    (with-temp-buffer
-      (insert-file-contents test-file)
-      (should (string= (buffer-string) original-content)))))
+    (org-mcp-test--verify-file-eq test-file original-content)))
 
 (defun org-mcp-test--read-resource-expecting-error
     (uri expected-error-message)
@@ -2971,6 +2959,12 @@ REPLACE-ALL if true, replace all occurrences (default: nil)."
     (insert-file-contents test-file)
     (should (string= (buffer-string) expected-content))))
 
+(defun org-mcp-test--verify-file-matches (test-file expected-pattern)
+  "Verify TEST-FILE content matches EXPECTED-PATTERN regexp."
+  (with-temp-buffer
+    (insert-file-contents test-file)
+    (should (string-match-p expected-pattern (buffer-string)))))
+
 (defmacro org-mcp-test--assert-error-and-unchanged
     (error-form test-file expected-content)
   "Assert ERROR-FORM throws an error and TEST-FILE remains unchanged.
@@ -2994,9 +2988,7 @@ EXPECTED-ID if provided, check the returned URI has this exact ID."
     (if expected-id
         (should (equal uri (concat "org-id://" expected-id)))
       (should (string-prefix-p "org-id://" uri))))
-  (with-temp-buffer
-    (insert-file-contents test-file)
-    (should (string-match-p expected-pattern (buffer-string)))))
+  (org-mcp-test--verify-file-matches test-file expected-pattern))
 
 (ert-deftest org-mcp-test-edit-body-single-line ()
   "Test org-edit-body tool for single-line replacement."
