@@ -555,6 +555,32 @@ Third review content."
    "Third review content\\.\\'")
   "Regex for duplicate headlines after renaming first occurrence.")
 
+(defconst org-mcp-test--content-hierarchy-before
+  "* First Section
+** Target
+Some content.
+* Second Section
+** Other Item
+More content.
+** Target
+This Target is under Second Section, not First Section."
+  "Content with duplicate 'Target' headlines under different parents.")
+
+(defconst org-mcp-test--regex-hierarchy-second-target-renamed
+  (concat
+   "\\`\\* First Section\n"
+   "\\*\\* Target\n"
+   "Some content\\.\n"
+   "\\* Second Section\n"
+   "\\*\\* Other Item\n"
+   "More content\\.\n"
+   "\\*\\* Renamed Target\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:\n"
+   "This Target is under Second Section, not First Section\\.\\'")
+  "Regex for hierarchy test after renaming second Target.")
+
 ;; Expected patterns for edit-body tests
 
 (defconst org-mcp-test--pattern-edit-body-single-line
@@ -2885,44 +2911,29 @@ This test documents the first-match behavior when duplicate headlines exist."
 Ensures that when searching for nested headlines, the function
 correctly restricts search to the parent's subtree."
   (let ((initial-content
-         "* First Section
-** Target
-Some content.
-* Second Section
-** Other Item
-More content.
-** Target
-This Target is under Second Section, not First Section."))
+         org-mcp-test--content-hierarchy-before))
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file)))
         (org-mcp-test--with-enabled
-          ;; Try to access "First Section/Target"
-          ;; But after finding "First Section", the search continues
-          ;; and might find "Second Section/Target" instead
           (let* ((resource-uri
-                  (format "org-headline://%s#Second%%20Section/Target"
-                          test-file))
-                 (params
-                  `((uri . ,resource-uri)
-                    (current_title . "Target")
-                    (new_title . "Renamed Target")))
-                 (result-text
-                  (mcp-server-lib-ert-call-tool
-                   "org-rename-headline" params))
-                 (result (json-read-from-string result-text)))
-            ;; Should succeed and rename the correct Target
-            (should (equal (alist-get 'success result) t))
-            (with-temp-buffer
-              (insert-file-contents test-file)
+                (format "org-headline://%s#Second%%20Section/Target"
+                        test-file))
+               (params
+                `((uri . ,resource-uri)
+                  (current_title . "Target")
+                  (new_title . "Renamed Target")))
+               (result-text
+                (mcp-server-lib-ert-call-tool
+                 "org-rename-headline" params))
+               (result (json-read-from-string result-text)))
+          ;; Should succeed and rename the correct Target
+          (should (equal (alist-get 'success result) t))
+          (with-temp-buffer
+            (insert-file-contents test-file)
               (let ((content (buffer-string)))
-                ;; First Section's Target should NOT be renamed
                 (should
                  (string-match-p
-                  "\\* First Section\n\\*\\* Target" content))
-                ;; Second Section's Target SHOULD be renamed
-                (should
-                 (string-match-p
-                  "\\* Second Section\n\\*\\* Other Item\n[^\n]*\n\\*\\* Renamed Target"
+                  org-mcp-test--regex-hierarchy-second-target-renamed
                   content))))))))))
 
 (ert-deftest org-mcp-test-rename-headline-with-todo-keyword ()
