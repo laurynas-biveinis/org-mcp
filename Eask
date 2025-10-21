@@ -1,7 +1,7 @@
 ;; -*- mode: eask; lexical-binding: t -*-
 
 (package "org-mcp"
-         "0.1.0"
+         "0.9.0"
          "MCP server for Org-mode")
 
 (website-url "https://github.com/laurynas-biveinis/org-mcp")
@@ -20,7 +20,7 @@
 
 (script "test" "eask test ert org-mcp-test.el")
 
-(script "org-lint" 
+(script "org-lint"
         (concat "emacs -Q --batch "
                 "--eval \"(require 'org)\" "
                 "--eval \"(require 'org-lint)\" "

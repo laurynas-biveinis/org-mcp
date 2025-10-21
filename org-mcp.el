@@ -4,7 +4,7 @@
 
 ;; Author: org-mcp contributors
 ;; Keywords: tools, convenience
-;; Version: 0.1.0
+;; Version: 0.9.0
 ;; Package-Requires: ((emacs "27.1") (mcp-server-lib "0.2.0"))
 ;; Homepage: https://github.com/laurynas-biveinis/org-mcp
 
