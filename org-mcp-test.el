@@ -17,6 +17,7 @@
 ;;; Test Data Constants
 
 ;; Initial content strings for various test scenarios
+
 (defconst org-mcp-test--content-empty ""
   "Empty org file content.")
 
@@ -59,20 +60,6 @@ Third child content."
 Main package file"
    org-mcp-test--level2-parent-level3-sibling-id)
   "Level 2 parent with level 3 children - matches emacs.org structure.")
-
-(defconst org-mcp-test--regex-after-sibling-level3
-  (concat "\\`\\* Top Level\n"
-          "\\*\\* Review the package\n"
-          "\\*\\*\\* Review org-mcp\\.el\n"
-          " *:PROPERTIES:\n"
-          " *:ID: +" org-mcp-test--level2-parent-level3-sibling-id "\n"
-          " *:END:\n"
-          "Main package file\n"
-          "\\*\\*\\* TODO Review org-mcp-test\\.el +.*:internet:.*\n"
-          " *:PROPERTIES:\n"
-          " *:ID: +[a-fA-F0-9-]+\n"
-          " *:END:\n\\'")
-  "Expected pattern after adding TODO after level 3 sibling.")
 
 (defconst org-mcp-test--content-simple-todo
   "* TODO Original Task
@@ -122,34 +109,6 @@ Third line of content."
 (defconst org-mcp-test--content-with-id-uri
   (format "org-id://%s" org-mcp-test--content-with-id-id)
   "URI for org-mcp-test--content-with-id.")
-
-(defconst org-mcp-test--expected-regex-renamed-task-with-id
-  (format
-   (concat
-    "\\`\\* Renamed Task with ID\n"
-    ":PROPERTIES:\n"
-    ":ID: +%s\n"
-    ":END:\n"
-    "First line of content\\.\n"
-    "Second line of content\\.\n"
-    "Third line of content\\.\\'")
-   org-mcp-test--content-with-id-id)
-  "Regex matching complete buffer after renaming Task with ID.")
-
-(defconst org-mcp-test--expected-regex-todo-to-in-progress-with-id
-  (format
-   (concat
-    "\\`"
-    "\\* IN-PROGRESS Task with ID\n"
-    ":PROPERTIES:\n"
-    ":ID: +%s\n"
-    ":END:\n"
-    "First line of content\\.\n"
-    "Second line of content\\.\n"
-    "Third line of content\\."
-    "\\'")
-   org-mcp-test--content-with-id-id)
-  "Expected regex for TODO to IN-PROGRESS state change with ID.")
 
 (defconst org-mcp-test--content-slash-in-headline
   "* Project A/B Testing
@@ -214,43 +173,6 @@ Task content."
 :END:"
    org-mcp-test--timestamp-id)
   "Task with an ID property but no body content.")
-
-(defconst org-mcp-test--expected-timestamp-id-done-regex
-  (concat
-   "\\`\\* DONE Task with timestamp ID"
-   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
-   "\\(?:.\\|\n\\)*\\'")
-  "Regex matching complete buffer after updating timestamp ID task to DONE.")
-
-(defconst org-mcp-test--expected-task-one-in-progress-regex
-  (concat
-   "\\`\\* IN-PROGRESS Task One"
-   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
-   "\\(?:.\\|\n\\)*\\'")
-  "Regex matching complete buffer with Task One in IN-PROGRESS state.")
-
-(defconst org-mcp-test--expected-task-with-id-in-progress-regex
-  (concat
-   "\\`\\* IN-PROGRESS Task with ID"
-   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
-   "\\(?:.\\|\n\\)*\\'")
-  "Regex matching complete buffer with Task with ID in IN-PROGRESS state.")
-
-(defconst org-mcp-test--expected-regex-top-level-with-header
-  (concat
-   "\\`#\\+TITLE: My Org Document\n"
-   "#\\+AUTHOR: Test Author\n"
-   "#\\+DATE: 2024-01-01\n"
-   "#\\+OPTIONS: toc:nil\n"
-   "\n"
-   "\\* TODO New Top Task +.*:urgent:\n"
-   "\\(?: *:PROPERTIES:\n"
-   " *:ID: +[^\n]+\n"
-   " *:END:\n\\)?"
-   "\n?"
-   "\\* Existing Task\n"
-   "Some content here\\.\\'")
-  "Regex matching complete buffer after adding top-level TODO with headers.")
 
 (defconst org-mcp-test--content-title-header-only
   "#+TITLE: Test Org File
@@ -323,19 +245,183 @@ First task
 Second task"
   "Headlines containing # character in titles.")
 
-(defconst org-mcp-test--expected-first-section-from-nested-targets
+(defconst org-mcp-test--parent-with-one-child-parent-project-id
+  "parent-project-test-id-001"
+  "ID for Parent Project in parent-with-one-child.")
+
+(defconst org-mcp-test--parent-with-one-child-first-child-id
+  "first-child-test-id-002"
+  "ID for First Child in parent-with-one-child.")
+
+(defconst org-mcp-test--content-parent-with-one-child
+  (format
+   "* TODO Parent Project                                                     :work:
+:PROPERTIES:
+:ID:       %s
+:END:
+** TODO Parent Task                                                       :work:
+*** TODO First Child                                                      :work:
+:PROPERTIES:
+:ID:       %s
+:END:"
+   org-mcp-test--parent-with-one-child-parent-project-id
+   org-mcp-test--parent-with-one-child-first-child-id)
+  "Parent at level 2 with one child at level 3.")
+
+(defconst org-mcp-test--content-todo-with-tags
+  "* TODO Task with Tags :work:urgent:\nTask description."
+  "TODO task with tags and body.")
+
+(defconst org-mcp-test--content-slash-not-nested-before
+  "* Parent
+** Real Child
+Content here.
+* Parent/Child
+This is a single headline with a slash, not nested under Parent."
+  "Content with Parent having a child and separate Parent/Child headline.")
+
+(defconst org-mcp-test--content-percent-before
+  "* 50% Complete
+This task is half done.
+* Use %20 for spaces
+Documentation about URL encoding."
+  "Headlines with percent signs for URL encoding tests.")
+
+(defconst org-mcp-test--content-with-id-repeated-text
+  "* Test Heading
+:PROPERTIES:
+:ID: test-id
+:END:
+First occurrence of pattern.
+Some other text.
+Second occurrence of pattern.
+More text.
+Third occurrence of pattern."
+  "Heading with ID and repeated text patterns.")
+
+(defconst org-mcp-test--content-duplicate-headlines-before
+  "* Team Updates
+** Project Review
+First review content.
+* Development Tasks
+** Project Review
+Second review content.
+* Planning
+** Project Review
+Third review content."
+  "Content with duplicate 'Project Review' headlines under different parents.")
+
+(defconst org-mcp-test--content-hierarchy-before
   "* First Section
 ** Target
-Some content."
-  "Expected content when extracting First Section from nested-targets.")
+Some content.
+* Second Section
+** Other Item
+More content.
+** Target
+This Target is under Second Section, not First Section."
+  "Content with duplicate 'Target' headlines under different parents.")
+
+(defconst org-mcp-test--content-todo-keywords-before
+  "* Project Management
+** TODO Review Documents
+This task needs to be renamed
+** DONE Review Code
+This is already done"
+  "Parent with TODO and DONE children for testing keyword handling.")
 
 
-;; Regex patterns for validation
+;; Expected patterns and validation regexes
 ;;
 ;; Note on property drawer patterns: The patterns use ` *` (zero or more
 ;; spaces) before :PROPERTIES:, :ID:, and :END: lines to maintain compatibility
 ;; across Emacs versions. Emacs 27.2 indents property drawers with 3 spaces,
 ;; while Emacs 28+ does not add indentation.
+
+(defconst org-mcp-test--regex-after-sibling-level3
+  (concat "\\`\\* Top Level\n"
+          "\\*\\* Review the package\n"
+          "\\*\\*\\* Review org-mcp\\.el\n"
+          " *:PROPERTIES:\n"
+          " *:ID: +" org-mcp-test--level2-parent-level3-sibling-id "\n"
+          " *:END:\n"
+          "Main package file\n"
+          "\\*\\*\\* TODO Review org-mcp-test\\.el +.*:internet:.*\n"
+          " *:PROPERTIES:\n"
+          " *:ID: +[a-fA-F0-9-]+\n"
+          " *:END:\n\\'")
+  "Expected pattern after adding TODO after level 3 sibling.")
+
+(defconst org-mcp-test--expected-regex-renamed-task-with-id
+  (format
+   (concat
+    "\\`\\* Renamed Task with ID\n"
+    ":PROPERTIES:\n"
+    ":ID: +%s\n"
+    ":END:\n"
+    "First line of content\\.\n"
+    "Second line of content\\.\n"
+    "Third line of content\\.\\'")
+   org-mcp-test--content-with-id-id)
+  "Regex matching complete buffer after renaming Task with ID.")
+
+(defconst org-mcp-test--expected-regex-todo-to-in-progress-with-id
+  (format
+   (concat
+    "\\`"
+    "\\* IN-PROGRESS Task with ID\n"
+    ":PROPERTIES:\n"
+    ":ID: +%s\n"
+    ":END:\n"
+    "First line of content\\.\n"
+    "Second line of content\\.\n"
+    "Third line of content\\."
+    "\\'")
+   org-mcp-test--content-with-id-id)
+  "Expected regex for TODO to IN-PROGRESS state change with ID.")
+
+(defconst org-mcp-test--expected-timestamp-id-done-regex
+  (concat
+   "\\`\\* DONE Task with timestamp ID"
+   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+   "\\(?:.\\|\n\\)*\\'")
+  "Regex matching complete buffer after updating timestamp ID task to DONE.")
+
+(defconst org-mcp-test--expected-task-one-in-progress-regex
+  (concat
+   "\\`\\* IN-PROGRESS Task One"
+   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+   "\\(?:.\\|\n\\)*\\'")
+  "Regex matching complete buffer with Task One in IN-PROGRESS state.")
+
+(defconst org-mcp-test--expected-task-with-id-in-progress-regex
+  (concat
+   "\\`\\* IN-PROGRESS Task with ID"
+   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+   "\\(?:.\\|\n\\)*\\'")
+  "Regex matching complete buffer with Task with ID in IN-PROGRESS state.")
+
+(defconst org-mcp-test--expected-regex-top-level-with-header
+  (concat
+   "\\`#\\+TITLE: My Org Document\n"
+   "#\\+AUTHOR: Test Author\n"
+   "#\\+DATE: 2024-01-01\n"
+   "#\\+OPTIONS: toc:nil\n"
+   "\n"
+   "\\* TODO New Top Task +.*:urgent:\n"
+   "\\(?: *:PROPERTIES:\n"
+   " *:ID: +[^\n]+\n"
+   " *:END:\n\\)?"
+   "\n?"
+   "\\* Existing Task\n"
+   "Some content here\\.\\'")
+  "Regex matching complete buffer after adding top-level TODO with headers.")
+
+(defconst org-mcp-test--expected-first-section-from-nested-targets
+  "* First Section
+** Target
+Some content."
+  "Expected content when extracting First Section from nested-targets.")
 
 (defconst org-mcp-test--regex-todo-after-headers
   (concat
@@ -362,29 +448,6 @@ Some content."
    "\\*\\* TODO Child Task +.*:work:.*\n"
    "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
   "Pattern for child TODO (level 2) added under parent (level 1) with existing child (level 2).")
-
-(defconst org-mcp-test--parent-with-one-child-parent-project-id
-  "parent-project-test-id-001"
-  "ID for Parent Project in parent-with-one-child.")
-
-(defconst org-mcp-test--parent-with-one-child-first-child-id
-  "first-child-test-id-002"
-  "ID for First Child in parent-with-one-child.")
-
-(defconst org-mcp-test--content-parent-with-one-child
-  (format
-   "* TODO Parent Project                                                     :work:
-:PROPERTIES:
-:ID:       %s
-:END:
-** TODO Parent Task                                                       :work:
-*** TODO First Child                                                      :work:
-:PROPERTIES:
-:ID:       %s
-:END:"
-   org-mcp-test--parent-with-one-child-parent-project-id
-   org-mcp-test--parent-with-one-child-first-child-id)
-  "Parent at level 2 with one child at level 3.")
 
 (defconst org-mcp-test--regex-second-child-same-level
   (concat
@@ -436,10 +499,6 @@ Some content."
    "First line of body\\.$")
   "Pattern for renamed simple TODO with generated ID.")
 
-(defconst org-mcp-test--content-todo-with-tags
-  "* TODO Task with Tags :work:urgent:\nTask description."
-  "TODO task with tags and body.")
-
 (defconst org-mcp-test--pattern-renamed-todo-with-tags
   (concat
    "^\\* TODO Renamed Task[ \t]+:work:urgent:\n"
@@ -478,14 +537,6 @@ Some content."
    "Some other content\\.$")
   "Pattern for renamed headline containing slash character.")
 
-(defconst org-mcp-test--content-slash-not-nested-before
-  "* Parent
-** Real Child
-Content here.
-* Parent/Child
-This is a single headline with a slash, not nested under Parent."
-  "Content with Parent having a child and separate Parent/Child headline.")
-
 (defconst org-mcp-test--regex-slash-not-nested-after
   (concat
    "\\`\\* Parent\n"
@@ -498,13 +549,6 @@ This is a single headline with a slash, not nested under Parent."
    "This is a single headline with a slash, not nested under Parent\\.\\'")
   "Regex for slash-not-nested test after renaming Parent/Child.")
 
-(defconst org-mcp-test--content-percent-before
-  "* 50% Complete
-This task is half done.
-* Use %20 for spaces
-Documentation about URL encoding."
-  "Headlines with percent signs for URL encoding tests.")
-
 (defconst org-mcp-test--regex-percent-after
   (concat "\\`\\* 75% Complete\n"
           ":PROPERTIES:\n"
@@ -514,30 +558,6 @@ Documentation about URL encoding."
           "\\* Use %20 for spaces\n"
           "Documentation about URL encoding\\.\\'")
   "Expected pattern after renaming headline with percent sign.")
-
-(defconst org-mcp-test--content-with-id-repeated-text
-  "* Test Heading
-:PROPERTIES:
-:ID: test-id
-:END:
-First occurrence of pattern.
-Some other text.
-Second occurrence of pattern.
-More text.
-Third occurrence of pattern."
-  "Heading with ID and repeated text patterns.")
-
-(defconst org-mcp-test--content-duplicate-headlines-before
-  "* Team Updates
-** Project Review
-First review content.
-* Development Tasks
-** Project Review
-Second review content.
-* Planning
-** Project Review
-Third review content."
-  "Content with duplicate 'Project Review' headlines under different parents.")
 
 (defconst org-mcp-test--regex-duplicate-first-renamed
   (concat
@@ -555,17 +575,6 @@ Third review content."
    "Third review content\\.\\'")
   "Regex for duplicate headlines after renaming first occurrence.")
 
-(defconst org-mcp-test--content-hierarchy-before
-  "* First Section
-** Target
-Some content.
-* Second Section
-** Other Item
-More content.
-** Target
-This Target is under Second Section, not First Section."
-  "Content with duplicate 'Target' headlines under different parents.")
-
 (defconst org-mcp-test--regex-hierarchy-second-target-renamed
   (concat
    "\\`\\* First Section\n"
@@ -580,14 +589,6 @@ This Target is under Second Section, not First Section."
    " *:END:\n"
    "This Target is under Second Section, not First Section\\.\\'")
   "Regex for hierarchy test after renaming second Target.")
-
-(defconst org-mcp-test--content-todo-keywords-before
-  "* Project Management
-** TODO Review Documents
-This task needs to be renamed
-** DONE Review Code
-This is already done"
-  "Parent with TODO and DONE children for testing keyword handling.")
 
 (defconst org-mcp-test--regex-todo-keywords-after
   (concat
