@@ -27,32 +27,21 @@ Some content here.
 More content."
   "Parent task with a child task.")
 
-(defconst org-mcp-test--nested-siblings-second-child-id
-  "nested-siblings-second-child-id-001"
-  "ID for Second Child in nested-siblings.")
-
-(defconst org-mcp-test--nested-siblings-parent-id
-  "nested-siblings-parent-id-002"
-  "ID for Parent Task in nested-siblings.")
-
 (defconst org-mcp-test--content-nested-siblings
-  (format
-   "* Parent Task
+  "* Parent Task
 :PROPERTIES:
-:ID:       %s
+:ID:       nested-siblings-parent-id-002
 :END:
 ** First Child
 First child content.
 It spans multiple lines.
 ** Second Child
 :PROPERTIES:
-:ID:       %s
+:ID:       nested-siblings-second-child-id-001
 :END:
 Second child content.
 ** Third Child
 Third child content."
-   org-mcp-test--nested-siblings-parent-id
-   org-mcp-test--nested-siblings-second-child-id)
   "Parent with multiple child tasks.")
 
 (defconst org-mcp-test--level2-parent-level3-sibling-id
@@ -91,11 +80,6 @@ First line of body.
 Second line of body.
 Third line of body."
   "Simple TODO task with three-line body.")
-
-(defconst org-mcp-test--content-todo-with-tags
-  "* TODO Task with Tags :work:urgent:
-Task description."
-  "TODO task with tags.")
 
 (defconst org-mcp-test--content-headline-no-todo
   "* Regular Headline
@@ -136,19 +120,14 @@ Third line of content."
 
 (defconst org-mcp-test--expected-regex-todo-to-in-progress-with-id
   (concat
-   ;; Match start of buffer
    "\\`"
-   ;; Match the updated headline
    "\\* IN-PROGRESS Task with ID\n"
-   ;; Match the PROPERTIES drawer with the specific ID
    ":PROPERTIES:\n"
    ":ID: +550e8400-e29b-41d4-a716-446655440000\n"
    ":END:\n"
-   ;; Match the body text
    "First line of content\\.\n"
    "Second line of content\\.\n"
    "Third line of content\\."
-   ;; Match end of buffer
    "\\'")
   "Expected regex for TODO to IN-PROGRESS state change with ID.")
 
@@ -159,42 +138,13 @@ This is a headline with a slash in it.
 Some other content."
   "Headlines containing slash characters.")
 
-(defconst org-mcp-test--content-parent-child-slash
-  "* Parent
-** Real Child
-Content here.
-* Parent/Child
-This is a single headline with a slash, not nested under Parent."
-  "Mixed nested and slash-containing headlines.")
-
-(defconst org-mcp-test--content-percent-in-headline
-  "* 50% Complete
-This task is half done.
-* Use %20 for spaces
-Documentation about URL encoding."
-  "Headlines containing percent signs.")
-
-(defconst org-mcp-test--content-duplicate-headlines
-  "* Team Updates
-** Project Review
-First review content.
-* Development Tasks
-** Project Review
-Second review content.
-* Quality Assurance
-** Project Review
-Third review content.
-** Code Review
-Code review content."
-  "Multiple headlines with the same name.")
-
 (defconst org-mcp-test--content-wrong-levels
   "* First Parent
 Some content in first parent.
 * Second Parent
 ** Other Child
 *** Target Headline
-Wrong content at level 3 - should NOT be found via First Parent/Target Headline path.
+This should NOT be found via First Parent/Target Headline path.
 * Third Parent
 ** Target Headline
 This is actually a child of Third Parent, not First Parent!"
