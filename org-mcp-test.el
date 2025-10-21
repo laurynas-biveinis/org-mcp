@@ -231,6 +231,22 @@ Task content."
    "\\(?:.\\|\n\\)*\\'")
   "Regex matching complete buffer with Task with ID in IN-PROGRESS state.")
 
+(defconst org-mcp-test--expected-regex-top-level-with-header
+  (concat
+   "\\`#\\+TITLE: My Org Document\n"
+   "#\\+AUTHOR: Test Author\n"
+   "#\\+DATE: 2024-01-01\n"
+   "#\\+OPTIONS: toc:nil\n"
+   "\n"
+   "\\* TODO New Top Task +.*:urgent:\n"
+   "\\(?: *:PROPERTIES:\n"
+   " *:ID: +[^\n]+\n"
+   " *:END:\n\\)?"
+   "\n?"
+   "\\* Existing Task\n"
+   "Some content here\\.\\'")
+  "Regex matching complete buffer after adding top-level TODO with headers.")
+
 (defconst org-mcp-test--content-title-header-only
   "#+TITLE: Test Org File
 
@@ -1806,29 +1822,13 @@ Another task."))
          "New Top Task"
          (file-name-nondirectory test-file)
          test-file)
-        ;; Need extra validation for headers
+        ;; Verify complete buffer content
         (with-temp-buffer
           (insert-file-contents test-file)
-          (let ((content (buffer-string)))
-            ;; Check that headers are still at the top
-            (should (string-match-p "^#\\+TITLE:" content))
-            ;; Check that the new task comes after headers but before existing
-            (should
-             (string-match-p
-              (concat
-               "^#\\+TITLE: My Org Document\n"
-               "#\\+AUTHOR: Test Author\n"
-               "#\\+DATE: 2024-01-01\n"
-               "#\\+OPTIONS: toc:nil\n"
-               "\n"
-               "\\* TODO New Top Task +.*:urgent:\n"
-               "\\(?: *:PROPERTIES:\n"
-               " *:ID: +[^\n]+\n"
-               " *:END:\n\\)?"
-               "\n?"
-               "\\* Existing Task\n"
-               "Some content here\\.")
-              content))))))))
+          (should
+           (string-match-p
+            org-mcp-test--expected-regex-top-level-with-header
+            (buffer-string))))))))
 
 (ert-deftest org-mcp-test-add-todo-invalid-state ()
   "Test that adding TODO with invalid state throws error."
