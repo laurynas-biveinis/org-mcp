@@ -1234,13 +1234,7 @@ NEW-TITLE is the invalid new title that should be rejected."
         ;; Verify that file wasn't changed
         (with-temp-buffer
           (insert-file-contents test-file)
-          (let ((content (buffer-string)))
-            ;; Headline should be unchanged
-            (should
-             (string-match-p
-              (format "^\\* %s$"
-                      (regexp-quote headline-title))
-              content))))))))
+          (should (string= (buffer-string) initial-content)))))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
