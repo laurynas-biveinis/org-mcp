@@ -183,9 +183,26 @@ Task content."
    org-mcp-test--timestamp-id)
   "Task with an ID property but no body content.")
 
-(defconst org-mcp-test--expected-timestamp-id-done
-  "* DONE Task with timestamp ID"
-  "Expected first line after updating timestamp ID task to DONE.")
+(defconst org-mcp-test--expected-timestamp-id-done-regex
+  (concat
+   "\\`\\* DONE Task with timestamp ID"
+   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+   "\\(?:.\\|\n\\)*\\'")
+  "Regex matching complete buffer after updating timestamp ID task to DONE.")
+
+(defconst org-mcp-test--expected-task-one-in-progress-regex
+  (concat
+   "\\`\\* IN-PROGRESS Task One"
+   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+   "\\(?:.\\|\n\\)*\\'")
+  "Regex matching complete buffer with Task One in IN-PROGRESS state.")
+
+(defconst org-mcp-test--expected-task-with-id-in-progress-regex
+  (concat
+   "\\`\\* IN-PROGRESS Task with ID"
+   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+   "\\(?:.\\|\n\\)*\\'")
+  "Regex matching complete buffer with Task with ID in IN-PROGRESS state.")
 
 (defconst org-mcp-test--content-title-header-only
   "#+TITLE: Test Org File
@@ -721,14 +738,14 @@ AFTERURI is optional URI of sibling to insert after."
 
 (defun org-mcp-test--update-and-verify-todo
     (resource-uri
-     old-state new-state &optional test-file expected-content)
+     old-state new-state &optional test-file expected-content-regex)
   "Update TODO state and verify the result via MCP JSON-RPC.
 RESOURCE-URI is the URI to update.
 OLD-STATE is the current TODO state to update from.
 NEW-STATE is the new TODO state to update to.
 TEST-FILE if provided, verify file content after update.
-EXPECTED-CONTENT if provided with TEST-FILE, verify file contains this
-exact content."
+EXPECTED-CONTENT-REGEX if provided with TEST-FILE, verify file matches this
+anchored regex that matches the complete buffer."
   (let* ((params
           `((uri . ,resource-uri)
             (current_state . ,old-state)
@@ -745,28 +762,12 @@ exact content."
     (should (string-prefix-p "org-id://" (alist-get 'uri result)))
     ;; Verify file content if test-file provided
     (when test-file
-      (when expected-content
+      (when expected-content-regex
         (with-temp-buffer
           (insert-file-contents test-file)
           (let ((buffer-content (buffer-string)))
-            ;; Build a regex that matches the expected content
-            ;; The expected-content should be a headline like "* IN-PROGRESS Task One"
-            ;; We need to match: headline, optional PROPERTIES drawer with ID, then rest of content
-            (let*
-                ((expected-regex
-                  (concat
-                   ;; Match start of buffer
-                   "\\`"
-                   ;; Match the headline exactly as provided
-                   (regexp-quote expected-content)
-                   ;; Optional newline and PROPERTIES drawer with ID
-                   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
-                   ;; Match any remaining content (body text, etc.) to end of buffer
-                   "\\(?:.\\|\n\\)*"
-                   ;; Match end of buffer
-                   "\\'")))
-              (should
-               (string-match expected-regex buffer-content)))))))
+            (should
+             (string-match expected-content-regex buffer-content))))))
     result))
 
 (defun org-mcp-test--check-add-todo-result
@@ -1538,7 +1539,7 @@ properly checks parent-child relationships and levels."
                  (format "org-headline://%s#Task%%20One" test-file)))
             (org-mcp-test--update-and-verify-todo
              resource-uri "TODO" "IN-PROGRESS"
-             test-file "* IN-PROGRESS Task One")))))))
+             test-file org-mcp-test--expected-task-one-in-progress-regex)))))))
 
 (ert-deftest org-mcp-test-update-todo-state-mismatch ()
   "Test TODO state update fails on state mismatch."
@@ -1569,7 +1570,7 @@ properly checks parent-child relationships and levels."
             (org-mcp-test--update-and-verify-todo
              uri "TODO" "DONE"
              test-file
-             org-mcp-test--expected-timestamp-id-done)))))))
+             org-mcp-test--expected-timestamp-id-done-regex)))))))
 
 (ert-deftest org-mcp-test-update-todo-state-empty-newstate-invalid ()
   "Test that empty string for newState is rejected."
@@ -1620,7 +1621,7 @@ properly checks parent-child relationships and levels."
                                test-file)))
                   (org-mcp-test--update-and-verify-todo
                    resource-uri "TODO" "IN-PROGRESS"
-                   test-file "* IN-PROGRESS Task One")
+                   test-file org-mcp-test--expected-task-one-in-progress-regex)
                   ;; Verify the buffer was also updated
                   (with-current-buffer buffer
                     (goto-char (point-min))
@@ -1708,7 +1709,8 @@ Another task description."))
           (let ((result
                  (org-mcp-test--update-and-verify-todo
                   org-mcp-test--content-with-id-uri "TODO" "IN-PROGRESS"
-                  test-file "* IN-PROGRESS Task with ID")))
+                  test-file
+                  org-mcp-test--expected-task-with-id-in-progress-regex)))
             (should
              (equal
               (alist-get 'uri result)
