@@ -2590,25 +2590,25 @@ paths and only matches headlines at the appropriate hierarchy level."
 
 (ert-deftest org-mcp-test-rename-headline-id-not-found ()
   "Test error when ID doesn't exist."
-  (let ((initial-content "* Some Task\nContent here."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-id-track-globally nil)
-            (org-id-locations-file nil))
-        (org-mcp-test--with-enabled
-          ;; Try to rename non-existent ID
-          (let* ((resource-uri "org-id://non-existent-id-12345")
-                 (request
-                  (mcp-server-lib-create-tools-call-request
-                   "org-rename-headline" 1
-                   `((uri . ,resource-uri)
-                     (current_title . "Whatever")
-                     (new_title . "Should Fail"))))
-                 (response
-                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-            (should-error
-             (mcp-server-lib-ert-process-tool-response response)
-             :type 'mcp-server-lib-tool-error)))))))
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-headline-no-todo
+    (let ((org-mcp-allowed-files (list test-file))
+          (org-id-track-globally nil)
+          (org-id-locations-file nil))
+      (org-mcp-test--with-enabled
+        ;; Try to rename non-existent ID
+        (let* ((resource-uri "org-id://non-existent-id-12345")
+               (request
+                (mcp-server-lib-create-tools-call-request
+                 "org-rename-headline" 1
+                 `((uri . ,resource-uri)
+                   (current_title . "Whatever")
+                   (new_title . "Should Fail"))))
+               (response
+                (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
+          (should-error
+           (mcp-server-lib-ert-process-tool-response response)
+           :type 'mcp-server-lib-tool-error))))))
 
 (ert-deftest org-mcp-test-rename-headline-with-slash ()
   "Test renaming a headline containing a slash character.
