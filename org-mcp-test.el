@@ -513,6 +513,34 @@ More text.
 Third occurrence of pattern."
   "Heading with ID and repeated text patterns.")
 
+(defconst org-mcp-test--content-duplicate-headlines-before
+  "* Team Updates
+** Project Review
+First review content.
+* Development Tasks
+** Project Review
+Second review content.
+* Planning
+** Project Review
+Third review content."
+  "Content with duplicate 'Project Review' headlines under different parents.")
+
+(defconst org-mcp-test--regex-duplicate-first-renamed
+  (concat
+   "\\`\\* Team Updates\n"
+   "\\*\\* Q1 Review\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:\n"
+   "First review content\\.\n"
+   "\\* Development Tasks\n"
+   "\\*\\* Project Review\n"
+   "Second review content\\.\n"
+   "\\* Planning\n"
+   "\\*\\* Project Review\n"
+   "Third review content\\.\\'")
+  "Regex for duplicate headlines after renaming first occurrence.")
+
 ;; Expected patterns for edit-body tests
 
 (defconst org-mcp-test--pattern-edit-body-single-line
@@ -2780,48 +2808,22 @@ More content."
 (ert-deftest org-mcp-test-rename-headline-duplicate-first-match ()
   "Test that when multiple headlines have the same name, first match is renamed.
 This test documents the first-match behavior when duplicate headlines exist."
-  (let ((initial-content
-         "* Team Updates
-** Project Review
-First review content.
-* Development Tasks
-** Project Review
-Second review content.
-* Planning
-** Project Review
-Third review content."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; Use headline:// URI with ambiguous path
-          (let ((resource-uri
-                 (format "org-headline://%s#Project%%20Review"
-                         test-file)))
-            ;; Should succeed - renames first match
-            (org-mcp--tool-rename-headline
-             resource-uri "Project Review" "Q1 Review"))
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-duplicate-headlines-before
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; Use headline:// URI with ambiguous path
+        (let ((resource-uri
+               (format "org-headline://%s#Project%%20Review"
+                       test-file)))
+          ;; Should succeed - renames first match
+          (org-mcp--tool-rename-headline
+           resource-uri "Project Review" "Q1 Review"))
 
-          ;; Verify only first occurrence was renamed
-          (with-temp-buffer
-            (insert-file-contents test-file)
-            (let ((content (buffer-string)))
-              ;; Check entire structure: first renamed with ID, others unchanged
-              (should
-               (string-match-p
-                (concat
-                 "\\`\\* Team Updates\n"
-                 "\\*\\* Q1 Review\n" ; First renamed
-                 " *:PROPERTIES:\n"
-                 " *:ID: +[A-F0-9-]+\n" ; ID added
-                 " *:END:\n"
-                 "First review content\\.\n"
-                 "\\* Development Tasks\n"
-                 "\\*\\* Project Review\n" ; Second unchanged
-                 "Second review content\\.\n"
-                 "\\* Planning\n"
-                 "\\*\\* Project Review\n" ; Third unchanged
-                 "Third review content\\.\\'")
-                content)))))))))
+        ;; Verify only first occurrence was renamed
+        (org-mcp-test--verify-file-matches
+         test-file
+         org-mcp-test--regex-duplicate-first-renamed)))))
 
 (ert-deftest org-mcp-test-rename-headline-creates-id ()
   "Test that renaming a headline creates an Org ID and returns it."
