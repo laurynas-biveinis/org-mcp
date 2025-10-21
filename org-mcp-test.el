@@ -2424,24 +2424,21 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-rename-headline-title-mismatch ()
   "Test that rename fails when current title doesn't match."
-  (let ((initial-content "* TODO Actual Task\nTask description."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords '((sequence "TODO" "|" "DONE"))))
-        (org-mcp-test--with-enabled
-          ;; Try to rename with wrong current title
-          (let* ((resource-uri
-                  (format "org-headline://%s#Actual%%20Task"
-                          test-file)))
-            (should-error
-             (org-mcp-test--call-rename-headline-expecting-error
-              resource-uri "Wrong Title" "Updated Task")
-             :type 'mcp-server-lib-tool-error)
-            ;; Verify file was not modified
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              (should
-               (string= (buffer-string) initial-content)))))))))
+  (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-simple-todo
+    (let ((org-mcp-allowed-files (list test-file))
+          (org-todo-keywords '((sequence "TODO" "|" "DONE"))))
+      (org-mcp-test--with-enabled
+        ;; Try to rename with wrong current title
+        (let* ((resource-uri
+                (format "org-headline://%s#Original%%20Task"
+                        test-file)))
+          (should-error
+           (org-mcp-test--call-rename-headline-expecting-error
+            resource-uri "Wrong Title" "Updated Task")
+           :type 'mcp-server-lib-tool-error)
+          ;; Verify file was not modified
+          (org-mcp-test--verify-file-eq
+           test-file org-mcp-test--content-simple-todo))))))
 
 (ert-deftest org-mcp-test-rename-headline-preserve-tags ()
   "Test that renaming preserves tags."
