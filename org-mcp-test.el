@@ -453,6 +453,17 @@ Some content."
    "Some content\\.$")
   "Pattern for renamed headline without TODO state.")
 
+(defconst org-mcp-test--pattern-renamed-slash-headline
+  (concat
+   "^\\* Project A/B Experiments\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:\n"
+   "This is a headline with a slash in it\\.\n"
+   "\\* Other Task\n"
+   "Some other content\\.$")
+  "Pattern for renamed headline containing slash character.")
+
 (defconst org-mcp-test--content-with-id-repeated-text
   "* Test Heading
 :PROPERTIES:
@@ -2613,47 +2624,39 @@ paths and only matches headlines at the appropriate hierarchy level."
 (ert-deftest org-mcp-test-rename-headline-with-slash ()
   "Test renaming a headline containing a slash character.
 Slashes must be properly URL-encoded to avoid path confusion."
-  (let ((initial-content
-         "* Project A/B Testing
-This is a headline with a slash in it.
-* Other Task
-Some other content."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; The slash should be encoded as %2F in the URI
-          (let* ((resource-uri
-                  (format
-                   "org-headline://%s#Project%%20A%%2FB%%20Testing"
-                   test-file))
-                 (params
-                  `((uri . ,resource-uri)
-                    (current_title . "Project A/B Testing")
-                    (new_title . "Project A/B Experiments")))
-                 (result-text
-                  (mcp-server-lib-ert-call-tool
-                   "org-rename-headline" params))
-                 (result (json-read-from-string result-text)))
-            ;; Check result
-            (should (equal (alist-get 'success result) t))
-            (should
-             (equal
-              (alist-get 'previous_title result)
-              "Project A/B Testing"))
-            (should
-             (equal
-              (alist-get 'new_title result) "Project A/B Experiments"))
-            ;; Should return an org-id:// URI
-            (should
-             (string-match "^org-id://" (alist-get 'uri result)))
-            ;; Verify file content
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              ;; Check complete buffer with single regex
-              (should
-               (string-match-p
-                "^\\* Project A/B Experiments\n *:PROPERTIES:\n *:ID: +[A-F0-9-]+\n *:END:\nThis is a headline with a slash in it\\.\n\\* Other Task\nSome other content\\.$"
-                (buffer-string))))))))))
+  (org-mcp-test--with-temp-org-file
+      test-file org-mcp-test--content-slash-in-headline
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; The slash should be encoded as %2F in the URI
+        (let* ((resource-uri
+                (format
+                 "org-headline://%s#Project%%20A%%2FB%%20Testing"
+                 test-file))
+               (params
+                `((uri . ,resource-uri)
+                  (current_title . "Project A/B Testing")
+                  (new_title . "Project A/B Experiments")))
+               (result-text
+                (mcp-server-lib-ert-call-tool
+                 "org-rename-headline" params))
+               (result (json-read-from-string result-text)))
+          ;; Check result
+          (should (equal (alist-get 'success result) t))
+          (should
+           (equal
+            (alist-get 'previous_title result)
+            "Project A/B Testing"))
+          (should
+           (equal
+            (alist-get 'new_title result) "Project A/B Experiments"))
+          ;; Should return an org-id:// URI
+          (should
+           (string-match "^org-id://" (alist-get 'uri result)))
+          ;; Verify file content
+          (org-mcp-test--verify-file-matches
+           test-file
+           org-mcp-test--pattern-renamed-slash-headline))))))
 
 (ert-deftest org-mcp-test-rename-headline-slash-not-nested ()
   "Test that headline with slash is not treated as nested path.
