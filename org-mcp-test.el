@@ -176,6 +176,18 @@ Other content.
 This Target is under Second Section, not First Section."
   "Multiple targets in different sections.")
 
+(defconst org-mcp-test--content-nested-path-navigation
+  "* Parent One
+** Other Heading
+Some other content.
+* Parent Two
+** Another Heading
+More content.
+* Parent Three
+** Child
+This Child is under Parent Three, not Parent Two."
+  "Nested structure for testing path navigation correctness.")
+
 (defconst org-mcp-test--timestamp-id "20240101T120000"
   "Timestamp-format ID value.")
 
@@ -2528,39 +2540,30 @@ This is valid Org-mode syntax and should be allowed."
   "Test correct headline path navigation in nested structures.
 Verifies that the implementation correctly navigates nested headline
 paths and only matches headlines at the appropriate hierarchy level."
-  (let ((initial-content
-         "* Parent One
-** Other Heading
-Some other content.
-* Parent Two
-** Another Heading
-More content.
-* Parent Three
-** Child
-This Child is under Parent Three, not Parent Two."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; Try to rename "Parent Two/Child"
-          ;; But there's no Child under Parent Two!
-          ;; The function should fail, but it might incorrectly
-          ;; find Parent Three's Child
-          (let* ((resource-uri
-                  (format "org-headline://%s#Parent%%20Two/Child"
-                          test-file)))
-            ;; This should throw an error because Parent Two has no Child
-            (let* ((request
-                    (mcp-server-lib-create-tools-call-request
-                     "org-rename-headline" 1
-                     `((uri . ,resource-uri)
-                       (current_title . "Child")
-                       (new_title . "Renamed Child"))))
-                   (response
-                    (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-              (should-error
-               (mcp-server-lib-ert-process-tool-response response)
-               :type 'mcp-server-lib-tool-error))))))))
-
+  (let ((initial-content org-mcp-test--content-nested-path-navigation))
+    (org-mcp-test--with-temp-org-file
+     test-file initial-content
+     (let ((org-mcp-allowed-files (list test-file)))
+       (org-mcp-test--with-enabled
+        ;; Try to rename "Parent Two/Child"
+        ;; But there's no Child under Parent Two!
+        ;; The function should fail, but it might incorrectly
+        ;; find Parent Three's Child
+        (let* ((resource-uri
+                (format "org-headline://%s#Parent%%20Two/Child"
+                        test-file)))
+          ;; This should throw an error because Parent Two has no Child
+          (let* ((request
+                   (mcp-server-lib-create-tools-call-request
+                    "org-rename-headline" 1
+                    `((uri . ,resource-uri)
+                      (current_title . "Child")
+                      (new_title . "Renamed Child"))))
+                 (response
+                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
+            (should-error
+             (mcp-server-lib-ert-process-tool-response response)
+             :type 'mcp-server-lib-tool-error))))))))
 
 (ert-deftest org-mcp-test-rename-headline-by-id ()
   "Test renaming a headline accessed by org-id URI."
