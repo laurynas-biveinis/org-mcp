@@ -1922,41 +1922,6 @@ Content validation:
 Security: Only files in org-mcp-allowed-files can be modified."
    :read-only nil
    :server-id org-mcp--server-id)
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-refile-headline
-   :id "org-refile-headline"
-   :description
-   "Move a headline and its entire subtree to become a child
-of a different parent headline.  Uses Org's built-in
-org-refile function.  Creates an Org ID property for the
-source headline if one doesn't exist.
-
-Parameters:
-  source_uri - URI of the headline to move (string, required)
-               Formats:
-                 - org-headline://{absolute-path}#{url-encoded-path}
-                 - org-id://{uuid}
-  target_parent_uri - URI of the new parent headline
-                      (string, required)
-                      Formats:
-                        - org-headline://{absolute-path}#{url-encoded-path}
-                        - org-id://{uuid}
-
-Returns JSON object:
-  success - Always true on success (boolean)
-  uri - ID-based URI (org-id://{uuid}) for the refiled headline
-
-Behavior:
-  - Moves source headline to become the last child of target parent
-  - Automatically adjusts heading level to parent level + 1
-  - Preserves all TODO state, tags, properties, and body content
-  - Works across different files
-  - Source headline is removed from its original location
-  - Both source and target files are saved after the operation
-
-Security: Only files in org-mcp-allowed-files can be modified."
-   :read-only nil
-   :server-id org-mcp--server-id)
   ;; Workaround tools for resource templates (until Claude Code
   ;; supports templates)
   (mcp-server-lib-register-tool
@@ -2244,8 +2209,6 @@ Error cases:
   (mcp-server-lib-unregister-tool
    "org-rename-headline" org-mcp--server-id)
   (mcp-server-lib-unregister-tool "org-edit-body" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool
-   "org-refile-headline" org-mcp--server-id)
   ;; Unregister workaround tools
   (mcp-server-lib-unregister-tool "org-read-file" org-mcp--server-id)
   (mcp-server-lib-unregister-tool
