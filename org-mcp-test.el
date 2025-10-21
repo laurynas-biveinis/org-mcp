@@ -268,6 +268,23 @@ Task content."
 ** Other Child"
   "Parent tasks with children for testing sibling relationships.")
 
+(defconst org-mcp-test--other-child-id "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+  "ID value for Other Child in afterUri-not-sibling test.")
+
+(defconst org-mcp-test--content-parent-child-siblings-with-other-child-id
+  (format
+   "* Parent Task
+** Child One
+** Child Two
+* Other Parent
+** Other Child
+:PROPERTIES:
+:ID:       %s
+:END:
+"
+   org-mcp-test--other-child-id)
+  "Parent-child-siblings content with ID for Other Child.")
+
 (defconst org-mcp-test--content-parent-task-simple
   "* Parent Task
 Some parent content.
@@ -2197,58 +2214,31 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-add-todo-afterUri-not-sibling ()
   "Test error when afterUri is not a child of parentUri."
-  (let ((initial-content org-mcp-test--content-parent-child-siblings))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            (org-tag-alist '("work")))
-        ;; Add ID to "Other Child" - not a child of Parent Task
-        (with-temp-buffer
-          (set-visited-file-name test-file t)
-          (insert-file-contents test-file)
-          (org-mode)
-          (goto-char (point-min))
-          (re-search-forward "^\\*\\* Other Child")
-          (org-id-get-create)
-          (let ((other-id (org-id-get)))
-            (write-region (point-min) (point-max) test-file)
-            ;; Kill any buffer visiting the test file
-            (let ((buf (find-buffer-visiting test-file)))
-              (when buf
-                (kill-buffer buf)))
-
-
-            (org-mcp-test--with-id-setup `((,other-id . ,test-file))
-              (let* ((parent-uri
-                      (format "org-headline://%s#Parent%%20Task"
-                              test-file))
-                     (after-uri (format "org-id://%s" other-id)))
-                ;; Error: Other Child is not a child of Parent Task
-                (should-error
-                 (org-mcp-test--call-add-todo
-                  "New Task" "TODO" '("work") nil parent-uri
-                  after-uri)
-                 :type 'mcp-server-lib-tool-error)
-                ;; Verify file was NOT modified from its state with IDs
-                (with-temp-buffer
-                  (insert-file-contents test-file)
-                  ;; Should still have the original structure with IDs added
-                  (should
-                   (string-match-p
-                    (concat
-                     "^\\* Parent Task\n"
-                     "\\*\\* Child One\n"
-                     "\\*\\* Child Two\n"
-                     "\\* Other Parent\n"
-                     "\\*\\* Other Child\n"
-                     "\\(?::PROPERTIES:\n"
-                     ":ID: +[^\n]+\n"
-                     ":END:\n\\)?")
-                    (buffer-string)))
-                  ;; But should NOT have "New Task"
-                  (should-not
-                   (string-match-p
-                    "New Task" (buffer-string))))))))))))
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-parent-child-siblings-with-other-child-id
+    (let ((org-mcp-allowed-files (list test-file))
+          (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+          (org-tag-alist '("work")))
+      (org-mcp-test--with-id-setup
+          `((,org-mcp-test--other-child-id . ,test-file))
+        (let* ((parent-uri
+                (format "org-headline://%s#Parent%%20Task"
+                        test-file))
+               (after-uri
+                (format "org-id://%s" org-mcp-test--other-child-id)))
+          ;; Error: Other Child is not a child of Parent Task
+          (should-error
+           (org-mcp-test--call-add-todo
+            "New Task" "TODO" '("work") nil parent-uri
+            after-uri)
+           :type 'mcp-server-lib-tool-error)
+          ;; Verify file was NOT modified
+          (with-temp-buffer
+            (insert-file-contents test-file)
+            (should
+             (string=
+              (buffer-string)
+              org-mcp-test--content-parent-child-siblings-with-other-child-id))))))))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
