@@ -431,6 +431,28 @@ Some content."
    "First line of body\\.$")
   "Pattern for renamed simple TODO with generated ID.")
 
+(defconst org-mcp-test--content-todo-with-tags
+  "* TODO Task with Tags :work:urgent:\nTask description."
+  "TODO task with tags and body.")
+
+(defconst org-mcp-test--pattern-renamed-todo-with-tags
+  (concat
+   "^\\* TODO Renamed Task[ \t]+:work:urgent:\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:\n"
+   "Task description\\.$")
+  "Pattern for renamed TODO task preserving tags.")
+
+(defconst org-mcp-test--pattern-renamed-headline-no-todo
+  (concat
+   "^\\* Updated Headline\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:\n"
+   "Some content\\.$")
+  "Pattern for renamed headline without TODO state.")
+
 (defconst org-mcp-test--content-with-id-repeated-text
   "* Test Heading
 :PROPERTIES:
@@ -2442,68 +2464,59 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-rename-headline-preserve-tags ()
   "Test that renaming preserves tags."
-  (let ((initial-content
-         "* TODO Task with Tags :work:urgent:\nTask description."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            (org-tag-alist '("work" "urgent" "personal")))
-        (org-mcp-test--with-enabled
-          ;; Rename the headline
-          (let* ((resource-uri
-                  (format "org-headline://%s#Task%%20with%%20Tags"
-                          test-file))
-                 (params
-                  `((uri . ,resource-uri)
-                    (current_title . "Task with Tags")
-                    (new_title . "Renamed Task")))
-                 (result-text
-                  (mcp-server-lib-ert-call-tool
-                   "org-rename-headline" params))
-                 (result (json-read-from-string result-text)))
-            ;; Check result
-            (should (equal (alist-get 'success result) t))
-            (should
-             (equal
-              (alist-get 'previous_title result) "Task with Tags"))
-            (should
-             (equal (alist-get 'new_title result) "Renamed Task"))
-            ;; Verify file content - tags should be preserved
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              ;; org-edit-headline may add spaces for tag alignment
-              (should
-               (string-match-p
-                "^\\* TODO Renamed Task[ \t]+:work:urgent:\n *:PROPERTIES:\n *:ID: +[A-F0-9-]+\n *:END:\nTask description\\.$"
-                (buffer-string))))))))))
+  (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-todo-with-tags
+    (let ((org-mcp-allowed-files (list test-file))
+          (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+          (org-tag-alist '("work" "urgent" "personal")))
+      (org-mcp-test--with-enabled
+        ;; Rename the headline
+        (let* ((resource-uri
+                (format "org-headline://%s#Task%%20with%%20Tags"
+                        test-file))
+               (params
+                `((uri . ,resource-uri)
+                  (current_title . "Task with Tags")
+                  (new_title . "Renamed Task")))
+               (result-text
+                (mcp-server-lib-ert-call-tool
+                 "org-rename-headline" params))
+               (result (json-read-from-string result-text)))
+          ;; Check result
+          (should (equal (alist-get 'success result) t))
+          (should
+           (equal
+            (alist-get 'previous_title result) "Task with Tags"))
+          (should
+           (equal (alist-get 'new_title result) "Renamed Task"))
+          ;; Verify file content - tags should be preserved
+          ;; org-edit-headline may add spaces for tag alignment
+          (org-mcp-test--verify-file-matches
+           test-file
+           org-mcp-test--pattern-renamed-todo-with-tags))))))
 
 (ert-deftest org-mcp-test-rename-headline-no-todo ()
   "Test renaming a regular headline without TODO state."
-  (let ((initial-content "* Regular Headline\nSome content."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; Rename the headline
-          (let* ((resource-uri
-                  (format "org-headline://%s#Regular%%20Headline"
-                          test-file))
-                 (params
-                  `((uri . ,resource-uri)
-                    (current_title . "Regular Headline")
-                    (new_title . "Updated Headline")))
-                 (result-text
-                  (mcp-server-lib-ert-call-tool
-                   "org-rename-headline" params))
-                 (result (json-read-from-string result-text)))
-            ;; Check result
-            (should (equal (alist-get 'success result) t))
-            ;; Verify file content
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              (should
-               (string-match-p
-                "^\\* Updated Headline\n *:PROPERTIES:\n *:ID: +[A-F0-9-]+\n *:END:\nSome content\\.$"
-                (buffer-string))))))))))
+  (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-headline-no-todo
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; Rename the headline
+        (let* ((resource-uri
+                (format "org-headline://%s#Regular%%20Headline"
+                        test-file))
+               (params
+                `((uri . ,resource-uri)
+                  (current_title . "Regular Headline")
+                  (new_title . "Updated Headline")))
+               (result-text
+                (mcp-server-lib-ert-call-tool
+                 "org-rename-headline" params))
+               (result (json-read-from-string result-text)))
+          ;; Check result
+          (should (equal (alist-get 'success result) t))
+          ;; Verify file content
+          (org-mcp-test--verify-file-matches
+           test-file
+           org-mcp-test--pattern-renamed-headline-no-todo))))))
 
 (ert-deftest org-mcp-test-rename-headline-nested-path-navigation ()
   "Test correct headline path navigation in nested structures.
