@@ -464,6 +464,26 @@ Some content."
    "Some other content\\.$")
   "Pattern for renamed headline containing slash character.")
 
+(defconst org-mcp-test--content-slash-not-nested-before
+  "* Parent
+** Real Child
+Content here.
+* Parent/Child
+This is a single headline with a slash, not nested under Parent."
+  "Content with Parent having a child and separate Parent/Child headline.")
+
+(defconst org-mcp-test--regex-slash-not-nested-after
+  (concat
+   "\\`\\* Parent\n"
+   "\\*\\* Real Child\n"
+   "Content here\\.\n"
+   "\\* Parent-Child Renamed\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:\n"
+   "This is a single headline with a slash, not nested under Parent\\.\\'")
+  "Regex for slash-not-nested test after renaming Parent/Child.")
+
 (defconst org-mcp-test--content-with-id-repeated-text
   "* Test Heading
 :PROPERTIES:
@@ -2662,44 +2682,29 @@ Slashes must be properly URL-encoded to avoid path confusion."
   "Test that headline with slash is not treated as nested path.
 Verifies that 'Parent/Child' is treated as a single headline,
 not as Child under Parent."
-  (let ((initial-content
-         "* Parent
-** Real Child
-Content here.
-* Parent/Child
-This is a single headline with a slash, not nested under Parent."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; Try to rename the "Parent/Child" headline
-          (let* ((resource-uri
-                  ;; Slash encoded as %2F to indicate single headline
-                  (format "org-headline://%s#Parent%%2FChild"
-                          test-file))
-                 (params
-                  `((uri . ,resource-uri)
-                    (current_title . "Parent/Child")
-                    (new_title . "Parent-Child Renamed")))
-                 (result-text
-                  (mcp-server-lib-ert-call-tool
-                   "org-rename-headline" params))
-                 (result (json-read-from-string result-text)))
-            ;; Should succeed
-            (should (equal (alist-get 'success result) t))
-            ;; Verify file content
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              (let ((content (buffer-string)))
-                ;; The single headline with slash should be renamed
-                (should
-                 (string-match-p
-                  "^\\* Parent-Child Renamed$" content))
-                ;; The actual Parent headline should be unchanged
-                (should (string-match-p "^\\* Parent$" content))
-                ;; The Real Child should still be under Parent
-                (should
-                 (string-match-p
-                  "^\\*\\* Real Child$" content))))))))))
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-slash-not-nested-before
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; Try to rename the "Parent/Child" headline
+        (let* ((resource-uri
+                ;; Slash encoded as %2F to indicate single headline
+                (format "org-headline://%s#Parent%%2FChild"
+                        test-file))
+               (params
+                `((uri . ,resource-uri)
+                  (current_title . "Parent/Child")
+                  (new_title . "Parent-Child Renamed")))
+               (result-text
+                (mcp-server-lib-ert-call-tool
+                 "org-rename-headline" params))
+               (result (json-read-from-string result-text)))
+          ;; Should succeed
+          (should (equal (alist-get 'success result) t))
+          ;; Verify file content
+          (org-mcp-test--verify-file-matches
+           test-file
+           org-mcp-test--regex-slash-not-nested-after))))))
 
 (ert-deftest org-mcp-test-rename-headline-with-percent ()
   "Test renaming a headline containing a percent sign.
