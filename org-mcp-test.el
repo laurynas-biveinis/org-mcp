@@ -484,6 +484,23 @@ This is a single headline with a slash, not nested under Parent."
    "This is a single headline with a slash, not nested under Parent\\.\\'")
   "Regex for slash-not-nested test after renaming Parent/Child.")
 
+(defconst org-mcp-test--content-percent-before
+  "* 50% Complete
+This task is half done.
+* Use %20 for spaces
+Documentation about URL encoding."
+  "Headlines with percent signs for URL encoding tests.")
+
+(defconst org-mcp-test--regex-percent-after
+  (concat "\\`\\* 75% Complete\n"
+          ":PROPERTIES:\n"
+          ":ID: +[A-F0-9-]+\n"
+          ":END:\n"
+          "This task is half done\\.\n"
+          "\\* Use %20 for spaces\n"
+          "Documentation about URL encoding\\.\\'")
+  "Expected pattern after renaming headline with percent sign.")
+
 (defconst org-mcp-test--content-with-id-repeated-text
   "* Test Heading
 :PROPERTIES:
@@ -2709,43 +2726,35 @@ not as Child under Parent."
 (ert-deftest org-mcp-test-rename-headline-with-percent ()
   "Test renaming a headline containing a percent sign.
 Percent signs must be properly URL-encoded to avoid double-encoding issues."
-  (let ((initial-content
-         "* 50% Complete
-This task is half done.
-* Use %20 for spaces
-Documentation about URL encoding."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; The percent should be encoded as %25 in the URI
-          (let* ((resource-uri
-                  (format "org-headline://%s#50%%25%%20Complete"
-                          test-file))
-                 (params
-                  `((uri . ,resource-uri)
-                    (current_title . "50% Complete")
-                    (new_title . "75% Complete")))
-                 (result-text
-                  (mcp-server-lib-ert-call-tool
-                   "org-rename-headline" params))
-                 (result (json-read-from-string result-text)))
-            ;; Check result
-            (should (equal (alist-get 'success result) t))
-            (should
-             (equal (alist-get 'previous_title result) "50% Complete"))
-            (should
-             (equal (alist-get 'new_title result) "75% Complete"))
-            ;; Should return an org-id:// URI
-            (should
-             (string-match "^org-id://" (alist-get 'uri result)))
-            ;; Verify file content
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              ;; Check complete buffer with single regex
-              (should
-               (string-match-p
-                "^\\* 75% Complete\n *:PROPERTIES:\n *:ID: +[A-F0-9-]+\n *:END:\nThis task is half done\\.\n\\* Use %20 for spaces\nDocumentation about URL encoding\\.$"
-                (buffer-string))))))))))
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-percent-before
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; The percent should be encoded as %25 in the URI
+        (let* ((resource-uri
+                (format "org-headline://%s#50%%25%%20Complete"
+                        test-file))
+               (params
+                `((uri . ,resource-uri)
+                  (current_title . "50% Complete")
+                  (new_title . "75% Complete")))
+               (result-text
+                (mcp-server-lib-ert-call-tool
+                 "org-rename-headline" params))
+               (result (json-read-from-string result-text)))
+          ;; Check result
+          (should (equal (alist-get 'success result) t))
+          (should
+           (equal (alist-get 'previous_title result) "50% Complete"))
+          (should
+           (equal (alist-get 'new_title result) "75% Complete"))
+          ;; Should return an org-id:// URI
+          (should
+           (string-match "^org-id://" (alist-get 'uri result)))
+          ;; Verify file content
+          (org-mcp-test--verify-file-matches
+           test-file
+           org-mcp-test--regex-percent-after))))))
 
 (ert-deftest org-mcp-test-rename-headline-reject-empty-string ()
   "Test that renaming to an empty string is rejected."
