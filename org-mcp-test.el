@@ -737,15 +737,13 @@ AFTERURI is optional URI of sibling to insert after."
     (error "Expected error but got success: %s" result)))
 
 (defun org-mcp-test--update-and-verify-todo
-    (resource-uri
-     old-state new-state &optional test-file expected-content-regex)
+    (resource-uri old-state new-state test-file expected-content-regex)
   "Update TODO state and verify the result via MCP JSON-RPC.
 RESOURCE-URI is the URI to update.
 OLD-STATE is the current TODO state to update from.
 NEW-STATE is the new TODO state to update to.
-TEST-FILE if provided, verify file content after update.
-EXPECTED-CONTENT-REGEX if provided with TEST-FILE, verify file matches this
-anchored regex that matches the complete buffer."
+TEST-FILE is the file to verify content after update.
+EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
   (let* ((params
           `((uri . ,resource-uri)
             (current_state . ,old-state)
@@ -760,14 +758,12 @@ anchored regex that matches the complete buffer."
     (should (equal (alist-get 'new_state result) new-state))
     (should (stringp (alist-get 'uri result)))
     (should (string-prefix-p "org-id://" (alist-get 'uri result)))
-    ;; Verify file content if test-file provided
-    (when test-file
-      (when expected-content-regex
-        (with-temp-buffer
-          (insert-file-contents test-file)
-          (let ((buffer-content (buffer-string)))
-            (should
-             (string-match expected-content-regex buffer-content))))))
+    ;; Verify file content
+    (with-temp-buffer
+      (insert-file-contents test-file)
+      (let ((buffer-content (buffer-string)))
+        (should
+         (string-match expected-content-regex buffer-content))))
     result))
 
 (defun org-mcp-test--check-add-todo-result
