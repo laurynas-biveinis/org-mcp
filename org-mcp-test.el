@@ -118,17 +118,32 @@ Third line of content."
   (format "org-id://%s" org-mcp-test--content-with-id-id)
   "URI for org-mcp-test--content-with-id.")
 
+(defconst org-mcp-test--expected-regex-renamed-task-with-id
+  (format
+   (concat
+    "\\`\\* Renamed Task with ID\n"
+    ":PROPERTIES:\n"
+    ":ID: +%s\n"
+    ":END:\n"
+    "First line of content\\.\n"
+    "Second line of content\\.\n"
+    "Third line of content\\.\\'")
+   org-mcp-test--content-with-id-id)
+  "Regex matching complete buffer after renaming Task with ID.")
+
 (defconst org-mcp-test--expected-regex-todo-to-in-progress-with-id
-  (concat
-   "\\`"
-   "\\* IN-PROGRESS Task with ID\n"
-   ":PROPERTIES:\n"
-   ":ID: +550e8400-e29b-41d4-a716-446655440000\n"
-   ":END:\n"
-   "First line of content\\.\n"
-   "Second line of content\\.\n"
-   "Third line of content\\."
-   "\\'")
+  (format
+   (concat
+    "\\`"
+    "\\* IN-PROGRESS Task with ID\n"
+    ":PROPERTIES:\n"
+    ":ID: +%s\n"
+    ":END:\n"
+    "First line of content\\.\n"
+    "Second line of content\\.\n"
+    "Third line of content\\."
+    "\\'")
+   org-mcp-test--content-with-id-id)
   "Expected regex for TODO to IN-PROGRESS state change with ID.")
 
 (defconst org-mcp-test--content-slash-in-headline
@@ -2583,14 +2598,9 @@ This Child is under Parent Three, not Parent Two."))
             (with-temp-buffer
               (insert-file-contents test-file)
               (let ((content (buffer-string)))
-                ;; Title should be renamed
                 (should
-                 (string-match-p
-                  "^\\* Renamed Task with ID$" content))
-                ;; ID should be unchanged
-                (should
-                 (string-match-p
-                  ":ID:       550e8400-e29b-41d4-a716-446655440000"
+                 (string-match
+                  org-mcp-test--expected-regex-renamed-task-with-id
                   content))))))))))
 
 (ert-deftest org-mcp-test-rename-headline-id-not-found ()
