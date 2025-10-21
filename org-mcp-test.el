@@ -581,6 +581,26 @@ This Target is under Second Section, not First Section."
    "This Target is under Second Section, not First Section\\.\\'")
   "Regex for hierarchy test after renaming second Target.")
 
+(defconst org-mcp-test--content-todo-keywords-before
+  "* Project Management
+** TODO Review Documents
+This task needs to be renamed
+** DONE Review Code
+This is already done"
+  "Parent with TODO and DONE children for testing keyword handling.")
+
+(defconst org-mcp-test--regex-todo-keywords-after
+  (concat
+   "\\`\\* Project Management\n"
+   "\\*\\* TODO Q1 Planning Review\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +[A-F0-9-]+\n"
+   " *:END:\n"
+   "This task needs to be renamed\n"
+   "\\*\\* DONE Review Code\n"
+   "This is already done\\'")
+  "Regex for todo-keywords test after renaming TODO headline.")
+
 ;; Expected patterns for edit-body tests
 
 (defconst org-mcp-test--pattern-edit-body-single-line
@@ -2939,38 +2959,23 @@ correctly restricts search to the parent's subtree."
 (ert-deftest org-mcp-test-rename-headline-with-todo-keyword ()
   "Test that headlines with TODO keywords can be renamed.
 The navigation function should find headlines even when they have TODO keywords."
-  (let ((initial-content
-         "* Project Management
-** TODO Review Documents
-This task needs to be renamed
-** DONE Review Code
-This is already done"))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; Try to rename using the headline title without TODO keyword
-          (let
-              ((resource-uri
-                (format
-                 "org-headline://%s#Project%%20Management/Review%%20Documents"
-                 test-file)))
-            ;; This should work - finding "Review Documents" even though
-            ;; the actual headline is "TODO Review Documents"
-            (org-mcp--tool-rename-headline
-             resource-uri "Review Documents" "Q1 Planning Review"))
+  (org-mcp-test--with-temp-org-file
+      test-file org-mcp-test--content-todo-keywords-before
+    (let ((org-mcp-allowed-files (list test-file)))
+      (org-mcp-test--with-enabled
+        ;; Try to rename using the headline title without TODO keyword
+        (let ((resource-uri
+               (format
+                "org-headline://%s#Project%%20Management/Review%%20Documents"
+                test-file)))
+          ;; This should work - finding "Review Documents" even though
+          ;; the actual headline is "TODO Review Documents"
+          (org-mcp--tool-rename-headline
+           resource-uri "Review Documents" "Q1 Planning Review"))
 
-          ;; Verify the headline was renamed correctly
-          (with-temp-buffer
-            (insert-file-contents test-file)
-            (let ((content (buffer-string)))
-              ;; The TODO keyword should be preserved
-              (should
-               (string-match-p
-                "^\\*\\* TODO Q1 Planning Review$" content))
-              ;; The DONE headline should be unchanged
-              (should
-               (string-match-p
-                "^\\*\\* DONE Review Code$" content)))))))))
+        ;; Verify the headline was renamed correctly
+        (org-mcp-test--verify-file-matches
+         test-file org-mcp-test--regex-todo-keywords-after)))))
 
 ;;; org-edit-body tests
 
