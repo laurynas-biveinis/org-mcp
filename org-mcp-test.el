@@ -86,6 +86,11 @@ Third line of body."
 Some content."
   "Regular headline without TODO state.")
 
+(defconst org-mcp-test--content-headline-no-id
+  "* Headline Without ID
+Content here."
+  "Headline without ID property for create-id tests.")
+
 (defconst org-mcp-test--content-with-id-id
   "550e8400-e29b-41d4-a716-446655440000"
   "ID value for org-mcp-test--content-with-id.")
@@ -452,6 +457,15 @@ Some content."
    " *:END:\n"
    "Some content\\.$")
   "Pattern for renamed headline without TODO state.")
+
+(defconst org-mcp-test--pattern-renamed-headline-with-id
+  (concat
+   "\\`\\* Renamed Headline\n"
+   ":PROPERTIES:\n"
+   ":ID: +[A-F0-9-]+\n"
+   ":END:\n"
+   "Content here\\.\\'")
+  "Pattern for headline renamed with ID creation.")
 
 (defconst org-mcp-test--pattern-renamed-slash-headline
   (concat
@@ -2827,58 +2841,43 @@ This test documents the first-match behavior when duplicate headlines exist."
 
 (ert-deftest org-mcp-test-rename-headline-creates-id ()
   "Test that renaming a headline creates an Org ID and returns it."
-  (let ((initial-content
-         "* Headline Without ID
-Content here."))
-    (org-mcp-test--with-temp-org-file test-file initial-content
+  (org-mcp-test--with-temp-org-file
+      test-file org-mcp-test--content-headline-no-id
       (let ((org-mcp-allowed-files (list test-file))
             (org-id-track-globally t)
             (org-id-locations-file (make-temp-file "test-org-id")))
         (org-mcp-test--with-enabled
-          ;; Rename headline using path-based URI
-          (let* ((resource-uri
-                  (format
-                   "org-headline://%s#Headline%%20Without%%20ID"
-                   test-file))
-                 (params
-                  `((uri . ,resource-uri)
-                    (current_title . "Headline Without ID")
-                    (new_title . "Renamed Headline")))
-                 (request
-                  (mcp-server-lib-create-tools-call-request
-                   "org-rename-headline" 1 params))
-                 (response
-                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-                 (result
-                  (mcp-server-lib-ert-process-tool-response
-                   response)))
-            ;; Check result
-            (should (equal (alist-get 'success result) t))
-            (should
-             (equal
-              (alist-get 'previous_title result)
-              "Headline Without ID"))
-            (should
-             (equal (alist-get 'new_title result) "Renamed Headline"))
-            ;; The returned URI should now be an org-id:// URI
-            (let ((returned-uri (alist-get 'uri result)))
-              (should (string-match "^org-id://" returned-uri))
-              ;; Extract the ID from the URI
-              (let ((id
-                     (replace-regexp-in-string
-                      "^org-id://" "" returned-uri)))
-                ;; Verify the ID was added to the file
-                (with-temp-buffer
-                  (insert-file-contents test-file)
-                  (let ((content (buffer-string)))
-                    ;; Title should be renamed
-                    (should
-                     (string-match-p
-                      "^\\* Renamed Headline$" content))
-                    ;; ID property should exist
-                    (should
-                     (string-match-p
-                      (format ":ID:\\s-+%s" id) content))))))))))))
+         ;; Rename headline using path-based URI
+         (let* ((resource-uri
+                 (format
+                  "org-headline://%s#Headline%%20Without%%20ID"
+                  test-file))
+                (params
+                 `((uri . ,resource-uri)
+                   (current_title . "Headline Without ID")
+                   (new_title . "Renamed Headline")))
+                (request
+                 (mcp-server-lib-create-tools-call-request
+                  "org-rename-headline" 1 params))
+                (response
+                 (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+                (result
+                 (mcp-server-lib-ert-process-tool-response
+                  response)))
+           ;; Check result
+           (should (equal (alist-get 'success result) t))
+           (should
+            (equal
+             (alist-get 'previous_title result)
+             "Headline Without ID"))
+           (should
+            (equal (alist-get 'new_title result) "Renamed Headline"))
+           ;; The returned URI should now be an org-id:// URI
+           (should (string-match "^org-id://" (alist-get (quote uri) result)))
+           ;; Verify the file content matches expected pattern
+           (org-mcp-test--verify-file-matches
+            test-file
+            org-mcp-test--pattern-renamed-headline-with-id))))))
 
 
 (ert-deftest org-mcp-test-rename-headline-hierarchy ()
