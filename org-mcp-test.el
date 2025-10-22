@@ -763,6 +763,18 @@ UUID is the ID property of the headline to read."
   (let ((params `((uuid . ,uuid))))
     (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
 
+(defun org-mcp-test--call-update-todo-state (uri current-state new-state)
+  "Call org-update-todo-state tool via JSON-RPC and return the result.
+URI is the headline URI, CURRENT-STATE is the expected current TODO state,
+NEW-STATE is the new TODO state to set."
+  (let* ((params
+          `((uri . ,uri)
+            (current_state . ,current-state)
+            (new_state . ,new-state)))
+         (result-text
+          (mcp-server-lib-ert-call-tool "org-update-todo-state" params)))
+    (json-read-from-string result-text)))
+
 ;; Test helper macros
 
 (defmacro org-mcp-test--with-enabled (&rest body)
@@ -979,14 +991,9 @@ OLD-STATE is the current TODO state to update from.
 NEW-STATE is the new TODO state to update to.
 TEST-FILE is the file to verify content after update.
 EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
-  (let* ((params
-          `((uri . ,resource-uri)
-            (current_state . ,old-state)
-            (new_state . ,new-state)))
-         (result-text
-          (mcp-server-lib-ert-call-tool
-           "org-update-todo-state" params))
-         (result (json-read-from-string result-text)))
+  (let ((result
+         (org-mcp-test--call-update-todo-state
+          resource-uri old-state new-state)))
     (should (= (length result) 4))
     (should (equal (alist-get 'success result) t))
     (should (equal (alist-get 'previous_state result) old-state))
