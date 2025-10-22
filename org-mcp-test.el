@@ -103,17 +103,6 @@ This should NOT be found via First Parent/Target Headline path.
 This is actually a child of Third Parent, not First Parent!"
   "Test content with same headline names at different levels.")
 
-(defconst org-mcp-test--content-nested-targets
-  "* First Section
-** Target
-Some content.
-* Second Section
-** Other Item
-Other content.
-** Target
-This Target is under Second Section, not First Section."
-  "Multiple targets in different sections.")
-
 (defconst org-mcp-test--content-nested-path-navigation
   "* Parent One
 ** Other Heading
@@ -312,6 +301,26 @@ This is already done"
 ;; across Emacs versions. Emacs 27.2 indents property drawers with 3 spaces,
 ;; while Emacs 28+ does not add indentation.
 
+(defconst org-mcp-test--expected-parent-task-from-nested-siblings
+  (format
+   "* Parent Task
+:PROPERTIES:
+:ID:       nested-siblings-parent-id-002
+:END:
+Some parent content.
+** First Child
+First child content.
+It spans multiple lines.
+** Second Child
+:PROPERTIES:
+:ID:       %s
+:END:
+Second child content.
+** Third Child
+Third child content."
+   org-mcp-test--content-with-id-id)
+  "Expected content when extracting Parent Task from nested-siblings.")
+
 (defconst org-mcp-test--regex-after-sibling-level3
   (concat "\\`\\* Top Level\n"
           "\\*\\* Review the package\n"
@@ -398,12 +407,6 @@ This is already done"
    "\\* Existing Task\n"
    "Some content here\\.\\'")
   "Regex matching complete buffer after adding top-level TODO with headers.")
-
-(defconst org-mcp-test--expected-first-section-from-nested-targets
-  "* First Section
-** Target
-Some content."
-  "Expected content when extracting First Section from nested-targets.")
 
 (defconst org-mcp-test--regex-todo-after-headers
   (concat
@@ -882,10 +885,10 @@ FILE-PATH if provided uses this exact file path instead of creating temp file."
             (setq test-file
                   (make-temp-file "org-mcp-test" nil extension))
             (with-temp-file test-file
-              (insert org-mcp-test--content-nested-targets)))
+              (insert org-mcp-test--content-nested-siblings)))
           (let ((org-mcp-allowed-files (list test-file))
                 (uri
-                 (format "org-headline://%s#First%%20Section"
+                 (format "org-headline://%s#Parent%%20Task"
                          test-file)))
             (org-mcp-test--with-enabled
               ;; Try to access headline in file
@@ -894,7 +897,7 @@ FILE-PATH if provided uses this exact file path instead of creating temp file."
                `((uri . ,uri)
                  (text
                   .
-                  ,org-mcp-test--expected-first-section-from-nested-targets)
+                  ,org-mcp-test--expected-parent-task-from-nested-siblings)
                  (mimeType . "text/plain"))))))
       ;; Only cleanup if we created the file
       (unless file-path
