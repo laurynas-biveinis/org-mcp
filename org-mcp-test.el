@@ -520,9 +520,9 @@ Some content."
 (defconst org-mcp-test--pattern-renamed-headline-with-id
   (concat
    "\\`\\* Renamed Headline\n"
-   ":PROPERTIES:\n"
-   ":ID:[ \t]+[A-Fa-f0-9-]+\n"
-   ":END:\n"
+   " *:PROPERTIES:\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
+   " *:END:\n"
    "Content here\\.\\'")
   "Pattern for headline renamed with ID creation.")
 
@@ -551,9 +551,9 @@ Some content."
 
 (defconst org-mcp-test--regex-percent-after
   (concat "\\`\\* 75% Complete\n"
-          ":PROPERTIES:\n"
-          ":ID:[ \t]+[A-Fa-f0-9-]+\n"
-          ":END:\n"
+          " *:PROPERTIES:\n"
+          " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
+          " *:END:\n"
           "This task is half done\\.\n"
           "\\* Use %20 for spaces\n"
           "Documentation about URL encoding\\.\\'")
