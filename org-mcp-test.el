@@ -195,7 +195,6 @@ This task needs to be renamed
 This is already done"
   "Parent with TODO and DONE children for testing keyword handling.")
 
-
 ;; Expected patterns and validation regexes
 ;;
 ;; Note on property drawer patterns: The patterns use ` *` (zero or more
@@ -318,22 +317,6 @@ Second child content.
    "Second child content\\.\n"
    "\\*\\* Third Child #3\\'")
   "Regex matching complete buffer after adding top-level TODO with headers.")
-
-(defconst org-mcp-test--regex-todo-after-headers
-  (concat
-   "^#\\+TITLE: My Org Document\n"
-   "#\\+AUTHOR: Test Author\n"
-   "#\\+DATE: 2024-01-01\n"
-   "#\\+OPTIONS: toc:nil\n"
-   "\n"
-   "\\* TODO New Top Task +.*:urgent:\n"
-   "\\(?: *:PROPERTIES:\n"
-   " *:ID: +[^\n]+\n"
-   " *:END:\n\\)?"
-   "\n?"
-   "\\* Existing Task\n"
-   "Some content here\\.")
-  "Pattern for TODO added after org headers.")
 
 (defconst org-mcp-test--regex-child-under-parent
   (format
@@ -579,8 +562,6 @@ Second child content.
    "This is already done\\'")
   "Regex for todo-keywords test after renaming TODO headline.")
 
-;; Expected patterns for edit-body tests
-
 (defconst org-mcp-test--pattern-edit-body-single-line
   (format (concat
            "\\`#\\+TITLE: My Org Document\n"
@@ -653,7 +634,6 @@ Second child content.
    org-mcp-test--content-with-id-id)
   "Pattern for nested headlines edit-body test result.")
 
-
 (defconst org-mcp-test--pattern-edit-body-empty
   (concat
    "\\*\\* Third Child #3New content added\\.\n"
@@ -697,8 +677,6 @@ Second child content.
    "\\*\\* Third Child #3")
   "Pattern for edit-body accepting lower-level headlines.")
 
-;; Expected patterns for tool tests
-
 (defconst org-mcp-test--pattern-tool-read-headline-single
   (concat
    "\\`\\* Parent/Child\n"
@@ -726,28 +704,24 @@ Second child content.
    org-mcp-test--content-with-id-id)
   "Pattern for org-read-by-id tool result.")
 
-
-;; Helper functions for calling MCP tools
+;;; Helper functions for calling MCP tools
 
 (defun org-mcp-test--call-get-todo-config ()
   "Call org-get-todo-config tool via JSON-RPC and return the result."
   (let ((result
          (mcp-server-lib-ert-call-tool "org-get-todo-config" nil)))
-    ;; Parse the JSON string result
     (json-read-from-string result)))
 
 (defun org-mcp-test--call-get-tag-config ()
   "Call org-get-tag-config tool via JSON-RPC and return the result."
   (let ((result
          (mcp-server-lib-ert-call-tool "org-get-tag-config" nil)))
-    ;; Parse the JSON string result
     (json-read-from-string result)))
 
 (defun org-mcp-test--call-get-allowed-files ()
   "Call org-get-allowed-files tool via JSON-RPC and return the result."
   (let ((result
          (mcp-server-lib-ert-call-tool "org-get-allowed-files" nil)))
-    ;; Parse the JSON string result
     (json-read-from-string result)))
 
 ;; Test helper macros
