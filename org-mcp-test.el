@@ -872,13 +872,6 @@ and binds `sequences' and `semantics' from the result for use in BODY."
                (semantics (cdr (assoc 'semantics result))))
            ,@body)))))
 
-(defun org-mcp-test--verify-file-content (file-path expected-regexp)
-  "Check that FILE-PATH contain text matching EXPECTED-REGEXP."
-  (with-temp-buffer
-    (insert-file-contents file-path)
-    (goto-char (point-min))
-    (should (re-search-forward expected-regexp nil t))))
-
 (defun org-mcp-test--test-headline-resource-with-extension
     (extension &optional file-path)
   "Test headline resource with file having EXTENSION.
@@ -1910,8 +1903,8 @@ Another task description."))
             resource-uri "TODO" "IN-PROGRESS")
            :type 'mcp-server-lib-tool-error)
           ;; Verify file was NOT modified
-          (org-mcp-test--verify-file-content
-           test-file "^\\* TODO Task One"))))))
+          (org-mcp-test--verify-file-matches
+           test-file "^\\* TODO Task One\nTask description\\.$"))))))
 
 (ert-deftest org-mcp-test-update-todo-state-by-id ()
   "Test updating TODO state using org-id:// URI."
