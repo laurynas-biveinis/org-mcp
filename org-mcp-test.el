@@ -48,8 +48,7 @@ It spans multiple lines.
 :ID:       %s
 :END:
 Second child content.
-** Third Child
-Third child content."
+** Third Child"
    org-mcp-test--content-nested-siblings-parent-id
    org-mcp-test--content-with-id-id)
   "Parent with multiple child tasks.")
@@ -144,12 +143,6 @@ This should NOT be found via First Parent/Target Headline path.
 This is actually a child of Third Parent, not First Parent!"
    org-mcp-test--other-child-id)
   "Test content with same headline names at different levels.")
-
-(defconst org-mcp-test--content-parent-task-simple
-  "* Parent Task
-Some parent content.
-* Another Task"
-  "Simple parent task with sibling.")
 
 (defconst org-mcp-test--content-headers-with-task
   "#+TITLE: My Org Document
@@ -286,8 +279,7 @@ It spans multiple lines.
 :ID:       %s
 :END:
 Second child content.
-** Third Child
-Third child content."
+** Third Child"
    org-mcp-test--content-with-id-id)
   "Expected content when extracting Parent Task from nested-siblings.")
 
@@ -321,8 +313,7 @@ Third child content."
     ":ID: +%s\n"
     ":END:\n"
     "Second child content\\.\n"
-    "\\*\\* Third Child\n"
-    "Third child content\\.\\'")
+    "\\*\\* Third Child\\'")
    org-mcp-test--content-with-id-id)
   "Regex matching complete buffer after renaming Second Child.")
 
@@ -407,7 +398,6 @@ Third child content."
     "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
     "Second child content\\.\n"
     "\\*\\* Third Child\n"
-    "Third child content\\.\n"
     "\\*\\* TODO Child Task +.*:work:.*\n"
     "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
    org-mcp-test--content-with-id-id)
@@ -443,8 +433,7 @@ Third child content."
    "Second child content\\.\n\n?"
    "\\*\\* TODO New Task After Second +:[^\n]*\n"
    "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
-   "\\*\\* Third Child\n"
-   "Third child content\\.")
+   "\\*\\* Third Child")
   "Pattern for TODO added after specific sibling.")
 
 (defconst org-mcp-test--regex-todo-without-tags
@@ -469,7 +458,6 @@ Third child content."
    " *:END:\n\\)?"
    "Second child content\\.\n"
    "\\*\\* Third Child\n"
-   "Third child content\\.\n"
    "\\*\\* TODO Child via ID +:work:\n"
    "\\(?: *:PROPERTIES:\n"
    " *:ID: +[^\n]+\n"
@@ -509,8 +497,7 @@ Third child content."
     "\\*\\* Second Child\n"
     "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
     "Second child content\\.\n"
-    "\\*\\* Third Child\n"
-    "Third child content\\.\n?"
+    "\\*\\* Third Child\n?"
     "\\'")
    org-mcp-test--content-with-id-id)
   "Pattern for renamed headline without TODO state.")
@@ -531,8 +518,7 @@ Third child content."
     "\\*\\* Renamed Child\n"
     " *:PROPERTIES:\n"
     " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
-    " *:END:\n"
-    "Third child content\\.\\'")
+    " *:END:\n?\\'")
    org-mcp-test--content-with-id-id)
   "Pattern for headline renamed with ID creation.")
 
@@ -630,7 +616,6 @@ Third child content."
            ":END:\n"
            "Updated second child content\\.\n"
            "\\*\\* Third Child\n"
-           "Third child content\\.\n"
            "?\\'")
           org-mcp-test--content-with-id-id)
   "Pattern for single-line edit-body test result.")
@@ -677,17 +662,16 @@ Third child content."
     "\\*\\* Second Child\n"
     "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
     "Second child content\\.\n"
-    "\\*\\* Third Child\n"
+    "\\*\\* Third Child\n?"
     "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
-    "Third child content\\.\n"
-    "?\\'")
+    "\\'")
    org-mcp-test--content-with-id-id)
   "Pattern for nested headlines edit-body test result.")
 
 
 (defconst org-mcp-test--pattern-edit-body-empty
   (concat
-   "\\* Another TaskNew content added\\.\n"
+   "\\*\\* Third ChildNew content added\\.\n"
    " *:PROPERTIES:\n"
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:")
@@ -725,8 +709,7 @@ Third child content."
    "\\(?: *:PROPERTIES:\n" ; Subheading gets ID
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n\\)?"
-   "\\*\\* Third Child\n"
-   "Third child content\\.")
+   "\\*\\* Third Child")
   "Pattern for edit-body accepting lower-level headlines.")
 
 ;; Expected patterns for tool tests
@@ -3144,11 +3127,11 @@ content here."
 (ert-deftest org-mcp-test-edit-body-empty ()
   "Test org-edit-body tool can add content to empty body."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-parent-task-simple
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (let* ((resource-uri
-                (format "org-headline://%s#Another%%20Task"
+                (format "org-headline://%s#Parent%%20Task/Third%%20Child"
                         test-file))
                (result
                 (org-mcp-test--call-edit-body
