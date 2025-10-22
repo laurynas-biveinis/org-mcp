@@ -35,7 +35,9 @@
 
 (defconst org-mcp-test--content-nested-siblings
   (format
-   "* Parent Task
+   "#+TITLE: My Org Document
+
+* Parent Task
 :PROPERTIES:
 :ID:       %s
 :END:
@@ -51,7 +53,7 @@ Second child content.
 ** Third Child"
    org-mcp-test--content-nested-siblings-parent-id
    org-mcp-test--content-with-id-id)
-  "Parent with multiple child tasks.")
+  "Parent with multiple child tasks and doc file header.")
 
 (defconst org-mcp-test--level2-parent-level3-sibling-id
   "level2-parent-level3-sibling-id-001"
@@ -143,16 +145,6 @@ This should NOT be found via First Parent/Target Headline path.
 This is actually a child of Third Parent, not First Parent!"
    org-mcp-test--other-child-id)
   "Test content with same headline names at different levels.")
-
-(defconst org-mcp-test--content-headers-with-task
-  "#+TITLE: My Org Document
-#+AUTHOR: Test Author
-#+DATE: 2024-01-01
-#+OPTIONS: toc:nil
-
-* Existing Task
-Some content here."
-  "Org file with headers and existing task.")
 
 (defconst org-mcp-test--content-siblings-after-test
   "* Parent Task
@@ -300,7 +292,9 @@ Second child content.
 (defconst org-mcp-test--expected-regex-renamed-second-child
   (format
    (concat
-    "\\`\\* Parent Task\n"
+    "\\`#\\+TITLE: My Org Document\n"
+    "\n"
+    "\\* Parent Task\n"
     ":PROPERTIES:\n"
     ":ID: +nested-siblings-parent-id-002\n"
     ":END:\n"
@@ -356,17 +350,26 @@ Second child content.
 (defconst org-mcp-test--expected-regex-top-level-with-header
   (concat
    "\\`#\\+TITLE: My Org Document\n"
-   "#\\+AUTHOR: Test Author\n"
-   "#\\+DATE: 2024-01-01\n"
-   "#\\+OPTIONS: toc:nil\n"
    "\n"
    "\\* TODO New Top Task +.*:urgent:\n"
    "\\(?: *:PROPERTIES:\n"
    " *:ID: +[^\n]+\n"
    " *:END:\n\\)?"
    "\n?"
-   "\\* Existing Task\n"
-   "Some content here\\.\\'")
+   "\\* Parent Task\n"
+   ":PROPERTIES:\n"
+   ":ID: +" org-mcp-test--content-nested-siblings-parent-id "\n"
+   ":END:\n"
+   "Some parent content\\.\n"
+   "\\*\\* First Child\n"
+   "First child content\\.\n"
+   "It spans multiple lines\\.\n"
+   "\\*\\* Second Child\n"
+   ":PROPERTIES:\n"
+   ":ID: +" org-mcp-test--content-with-id-id "\n"
+   ":END:\n"
+   "Second child content\\.\n"
+   "\\*\\* Third Child\\'")
   "Regex matching complete buffer after adding top-level TODO with headers.")
 
 (defconst org-mcp-test--regex-todo-after-headers
@@ -485,7 +488,9 @@ Second child content.
 (defconst org-mcp-test--pattern-renamed-headline-no-todo
   (format
    (concat
-    "\\`\\* Parent Task\n"
+    "\\`#\\+TITLE: My Org Document\n"
+    "\n"
+    "\\* Parent Task\n"
     "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
     "Some parent content\\.\n"
     "\\*\\* Updated Child\n"
@@ -505,7 +510,9 @@ Second child content.
 (defconst org-mcp-test--pattern-renamed-headline-with-id
   (format
    (concat
-    "\\`\\* Parent Task\n"
+    "\\`#\\+TITLE: My Org Document\n"
+    "\n"
+    "\\* Parent Task\n"
     "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
     "Some parent content\\.\n"
     "\\*\\* First Child\n"
@@ -602,7 +609,9 @@ Second child content.
 
 (defconst org-mcp-test--pattern-edit-body-single-line
   (format (concat
-           "\\`\\* Parent Task\n"
+           "\\`#\\+TITLE: My Org Document\n"
+           "\n"
+           "\\* Parent Task\n"
            ":PROPERTIES:\n"
            ":ID: +nested-siblings-parent-id-002\n"
            ":END:\n"
@@ -652,7 +661,9 @@ Second child content.
 (defconst org-mcp-test--pattern-edit-body-nested-headlines
   (format
    (concat
-    "\\`\\* Parent Task\n"
+    "\\`#\\+TITLE: My Org Document\n"
+    "\n"
+    "\\* Parent Task\n"
     "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
     "Updated parent content\n"
     "\\*\\* First Child\n"
@@ -1982,7 +1993,7 @@ Another task."))
 
 (ert-deftest org-mcp-test-add-todo-top-level-with-header ()
   "Test adding top-level TODO after header comments."
-  (let ((initial-content org-mcp-test--content-headers-with-task))
+  (let ((initial-content org-mcp-test--content-nested-siblings))
     (org-mcp-test--with-add-todo-setup test-file initial-content
       (let* ((parent-uri (format "org-headline://%s#" test-file))
              (result
