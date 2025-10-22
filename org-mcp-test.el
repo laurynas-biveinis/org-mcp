@@ -775,6 +775,15 @@ NEW-STATE is the new TODO state to set."
           (mcp-server-lib-ert-call-tool "org-update-todo-state" params)))
     (json-read-from-string result-text)))
 
+(defun org-mcp-test--build-resource-read-expected-fields (uri expected-text)
+  "Build expected fields alist for resource read verification.
+URI is the resource URI.
+EXPECTED-TEXT is the expected text content.
+Returns an alist with uri, text, and mimeType fields."
+  `((uri . ,uri)
+    (text . ,expected-text)
+    (mimeType . "text/plain")))
+
 (defun org-mcp-test--verify-resource-read (uri expected-text)
   "Verify resource read with org-mcp enabled.
 URI is the resource URI to read.
@@ -783,9 +792,8 @@ The helper automatically checks that URI and mimeType match expected values."
   (org-mcp-test--with-enabled
     (mcp-server-lib-ert-verify-resource-read
      uri
-     `((uri . ,uri)
-       (text . ,expected-text)
-       (mimeType . "text/plain")))))
+     (org-mcp-test--build-resource-read-expected-fields
+      uri expected-text))))
 
 ;; Test helper macros
 
@@ -1693,9 +1701,8 @@ properly checks parent-child relationships and levels."
       (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
         (mcp-server-lib-ert-verify-resource-read
          uri
-         `((uri . ,uri)
-           (text . ,test-content)
-           (mimeType . "text/plain")))))))
+         (org-mcp-test--build-resource-read-expected-fields
+          uri test-content))))))
 
 (ert-deftest org-mcp-test-id-resource-not-found ()
   "Test ID resource error for non-existent ID."
