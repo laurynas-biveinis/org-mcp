@@ -775,12 +775,17 @@ NEW-STATE is the new TODO state to set."
           (mcp-server-lib-ert-call-tool "org-update-todo-state" params)))
     (json-read-from-string result-text)))
 
-(defun org-mcp-test--verify-resource-read (uri expected-result)
+(defun org-mcp-test--verify-resource-read (uri expected-text)
   "Verify resource read with org-mcp enabled.
 URI is the resource URI to read.
-EXPECTED-RESULT is the expected result alist."
+EXPECTED-TEXT is the expected text content.
+The helper automatically checks that URI and mimeType match expected values."
   (org-mcp-test--with-enabled
-    (mcp-server-lib-ert-verify-resource-read uri expected-result)))
+    (mcp-server-lib-ert-verify-resource-read
+     uri
+     `((uri . ,uri)
+       (text . ,expected-text)
+       (mimeType . "text/plain")))))
 
 ;; Test helper macros
 
@@ -893,11 +898,7 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
           ;; Try to access headline in file
           (org-mcp-test--verify-resource-read
            uri
-           `((uri . ,uri)
-             (text
-              .
-              ,org-mcp-test--expected-parent-task-from-nested-siblings)
-             (mimeType . "text/plain"))))
+           org-mcp-test--expected-parent-task-from-nested-siblings))
       (delete-file test-file))))
 
 (defun org-mcp-test--call-add-todo
@@ -1454,9 +1455,7 @@ NEW-TITLE is the invalid new title that should be rejected."
       (let ((uri (format "org://%s" test-file)))
         (org-mcp-test--verify-resource-read
          uri
-         `((uri . ,uri)
-           (text . ,test-content)
-           (mimeType . "text/plain")))))))
+         test-content)))))
 
 (ert-deftest org-mcp-test-outline-resource-returns-structure ()
   "Test that outline resource returns document structure."
@@ -1553,17 +1552,13 @@ Content of subsection 2.1."))
                      test-file)))
         (org-mcp-test--verify-resource-read
          uri
-         `((uri . ,uri)
-           (text
-            .
-            ,(concat
-              "* First Section\n"
-              "Some content in first section.\n"
-              "** Subsection 1.1\n"
-              "Content of subsection 1.1.\n"
-              "** Subsection 1.2\n"
-              "Content of subsection 1.2."))
-           (mimeType . "text/plain"))))
+         (concat
+          "* First Section\n"
+          "Some content in first section.\n"
+          "** Subsection 1.1\n"
+          "Content of subsection 1.1.\n"
+          "** Subsection 1.2\n"
+          "Content of subsection 1.2.")))
       ;; Test getting a nested headline
       (let ((uri
              (format (concat
@@ -1572,12 +1567,8 @@ Content of subsection 2.1."))
                      test-file)))
         (org-mcp-test--verify-resource-read
          uri
-         `((uri . ,uri)
-           (text
-            .
-            ,(concat
-              "** Subsection 1.1\n" "Content of subsection 1.1."))
-           (mimeType . "text/plain")))))))
+         (concat
+          "** Subsection 1.1\n" "Content of subsection 1.1."))))))
 
 (ert-deftest org-mcp-test-headline-resource-not-found ()
   "Test headline resource error for non-existent headline."
@@ -1601,9 +1592,7 @@ Content of subsection 2.1."))
                     encoded-path)))
       (org-mcp-test--verify-resource-read
        uri
-       `((uri . ,uri)
-         (text . "** First Child 50% Complete\nFirst child content.\nIt spans multiple lines.")
-         (mimeType . "text/plain"))))))
+       "** First Child 50% Complete\nFirst child content.\nIt spans multiple lines."))))
 
 (ert-deftest org-mcp-test-headline-resource-headline-with-hash ()
   "Test headline resource with # in headline title."
@@ -1615,9 +1604,7 @@ Content of subsection 2.1."))
                      file)))
         (org-mcp-test--verify-resource-read
          uri
-         `((uri . ,uri)
-           (text . "** Third Child #3")
-           (mimeType . "text/plain")))))))
+         "** Third Child #3")))))
 
 (ert-deftest
     org-mcp-test-headline-resource-file-and-headline-with-hash
@@ -1633,9 +1620,7 @@ Content of subsection 2.1."))
                     encoded-path)))
       (org-mcp-test--verify-resource-read
        uri
-       `((uri . ,uri)
-         (text . "** Third Child #3")
-         (mimeType . "text/plain"))))))
+       "** Third Child #3"))))
 
 (ert-deftest org-mcp-test-headline-resource-txt-extension ()
   "Test that headline resource works with .txt files, not just .org files."
