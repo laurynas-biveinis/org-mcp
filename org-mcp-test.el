@@ -42,7 +42,7 @@
 :ID:       %s
 :END:
 Some parent content.
-** First Child
+** First Child 50%% Complete
 First child content.
 It spans multiple lines.
 ** Second Child
@@ -158,13 +158,6 @@ Content here.
 This is a single headline with a slash, not nested under Parent."
   "Content with Parent having a child and separate Parent/Child headline.")
 
-(defconst org-mcp-test--content-percent-before
-  "* 50% Complete
-This task is half done.
-* Use %20 for spaces
-Documentation about URL encoding."
-  "Headlines with percent signs for URL encoding tests.")
-
 (defconst org-mcp-test--content-with-id-repeated-text
   "* Test Heading
 :PROPERTIES:
@@ -223,7 +216,7 @@ This is already done"
 :ID:       nested-siblings-parent-id-002
 :END:
 Some parent content.
-** First Child
+** First Child 50%% Complete
 First child content.
 It spans multiple lines.
 ** Second Child
@@ -259,7 +252,7 @@ Second child content.
     ":ID: +nested-siblings-parent-id-002\n"
     ":END:\n"
     "Some parent content\\.\n"
-    "\\*\\* First Child\n"
+    "\\*\\* First Child 50%% Complete\n"
     "First child content\\.\n"
     "It spans multiple lines\\.\n"
     "\\*\\* Renamed Second Child\n"
@@ -321,7 +314,7 @@ Second child content.
    ":ID: +" org-mcp-test--content-nested-siblings-parent-id "\n"
    ":END:\n"
    "Some parent content\\.\n"
-   "\\*\\* First Child\n"
+   "\\*\\* First Child 50% Complete\n"
    "First child content\\.\n"
    "It spans multiple lines\\.\n"
    "\\*\\* Second Child\n"
@@ -354,7 +347,7 @@ Second child content.
     "^\\* Parent Task\n"
     "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
     "Some parent content\\.\n"
-    "\\*\\* First Child\n"
+    "\\*\\* First Child 50%% Complete\n"
     "First child content\\.\n"
     "It spans multiple lines\\.\n"
     "\\*\\* Second Child\n"
@@ -393,7 +386,7 @@ Second child content.
    ":ID: +" org-mcp-test--content-nested-siblings-parent-id "\n"
    ":END:\n"
    "Some parent content\\.\n"
-   "\\*\\* First Child\n"
+   "\\*\\* First Child 50% Complete\n"
    ":PROPERTIES:\n"
    ":ID: +[^\n]+\n"
    ":END:\n"
@@ -422,7 +415,7 @@ Second child content.
    " *:ID: +[^\n]+\n"
    " *:END:\n\\)?"
    "Some parent content\\.\n"
-   "\\*\\* First Child\n"
+   "\\*\\* First Child 50% Complete\n"
    "First child content\\.\n"
    "It spans multiple lines\\.\n"
    "\\*\\* Second Child\n"
@@ -485,7 +478,7 @@ Second child content.
     "\\* Parent Task\n"
     "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
     "Some parent content\\.\n"
-    "\\*\\* First Child\n"
+    "\\*\\* First Child 50%% Complete\n"
     "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
     "First child content\\.\n"
     "It spans multiple lines\\.\n"
@@ -523,13 +516,29 @@ Second child content.
   "Regex for slash-not-nested test after renaming Parent/Child.")
 
 (defconst org-mcp-test--regex-percent-after
-  (concat "\\`\\* 75% Complete\n"
-          " *:PROPERTIES:\n"
-          " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
-          " *:END:\n"
-          "This task is half done\\.\n"
-          "\\* Use %20 for spaces\n"
-          "Documentation about URL encoding\\.\\'")
+  (format
+   (concat
+    "\\`#\\+TITLE: My Org Document\n"
+    "\n"
+    "\\* Parent Task\n"
+    ":PROPERTIES:\n"
+    ":ID: +%s\n"
+    ":END:\n"
+    "Some parent content\\.\n"
+    "\\*\\* First Child 75%% Complete\n"
+    " *:PROPERTIES:\n"
+    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
+    " *:END:\n"
+    "First child content\\.\n"
+    "It spans multiple lines\\.\n"
+    "\\*\\* Second Child\n"
+    ":PROPERTIES:\n"
+    ":ID: +%s\n"
+    ":END:\n"
+    "Second child content\\.\n"
+    "\\*\\* Third Child #3\\'")
+   org-mcp-test--content-nested-siblings-parent-id
+   org-mcp-test--content-with-id-id)
   "Expected pattern after renaming headline with percent sign.")
 
 (defconst org-mcp-test--regex-duplicate-first-renamed
@@ -586,7 +595,7 @@ Second child content.
            ":ID: +nested-siblings-parent-id-002\n"
            ":END:\n"
            "Some parent content\\.\n"
-           "\\*\\* First Child\n"
+           "\\*\\* First Child 50%% Complete\n"
            "First child content\\.\n"
            "It spans multiple lines\\.\n"
            "\\*\\* Second Child\n"
@@ -636,7 +645,7 @@ Second child content.
     "\\* Parent Task\n"
     "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
     "Updated parent content\n"
-    "\\*\\* First Child\n"
+    "\\*\\* First Child 50%% Complete\n"
     "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
     "First child content\\.\n"
     "It spans multiple lines\\.\n"
@@ -676,7 +685,7 @@ Second child content.
    " *:ID: +nested-siblings-parent-id-002\n"
    " *:END:\n"
    "Some parent content\\.\n"
-   "\\*\\* First Child\n"
+   "\\*\\* First Child 50% Complete\n"
    "First child content\\.\n"
    "It spans multiple lines\\.\n"
    "\\*\\* Second Child\n"
@@ -704,7 +713,7 @@ Second child content.
 
 (defconst org-mcp-test--pattern-tool-read-headline-nested
   (concat
-   "\\`\\*\\* First Child\n"
+   "\\`\\*\\* First Child 50% Complete\n"
    "First child content\\.\n"
    "It spans multiple lines\\.\n"
    "?\\'")
@@ -1570,12 +1579,12 @@ Content of subsection 2.1."))
       ;; Test accessing the file with # encoded as %23
       (let* ((encoded-path (replace-regexp-in-string "#" "%23" file))
              (uri
-              (format "org-headline://%s#Parent%%20Task/First%%20Child"
+              (format "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
                       encoded-path)))
         (mcp-server-lib-ert-verify-resource-read
          uri
          `((uri . ,uri)
-           (text . "** First Child\nFirst child content.\nIt spans multiple lines.")
+           (text . "** First Child 50% Complete\nFirst child content.\nIt spans multiple lines.")
            (mimeType . "text/plain")))))))
 
 (ert-deftest org-mcp-test-headline-resource-headline-with-hash ()
@@ -2321,15 +2330,15 @@ This is valid Org-mode syntax and should be allowed."
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords '((sequence "TODO" "|" "DONE")))
             (org-tag-alist '("work")))
-        ;; First add ID to First Child so we can reference it
+        ;; First add ID to First Child 50% Complete so we can reference it
         (let ((first-id nil))
           (with-temp-buffer
             (set-visited-file-name test-file t)
             (insert-file-contents test-file)
             (org-mode)
             (goto-char (point-min))
-            ;; Add ID to First Child
-            (re-search-forward "^\\*\\* First Child")
+            ;; Add ID to First Child 50% Complete
+            (re-search-forward "^\\*\\* First Child 50% Complete")
             (org-id-get-create)
             (setq first-id (org-id-get))
             (write-region (point-min) (point-max) test-file))
@@ -2615,11 +2624,11 @@ This is valid Org-mode syntax and should be allowed."
       (org-mcp-test--with-enabled
         ;; Rename the headline
         (let* ((resource-uri
-                (format "org-headline://%s#Parent%%20Task/First%%20Child"
+                (format "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
                         test-file))
                (params
                 `((uri . ,resource-uri)
-                  (current_title . "First Child")
+                  (current_title . "First Child 50% Complete")
                   (new_title . "Updated Child")))
                (result-text
                 (mcp-server-lib-ert-call-tool
@@ -2793,17 +2802,17 @@ not as Child under Parent."
   "Test renaming a headline containing a percent sign.
 Percent signs must be properly URL-encoded to avoid double-encoding issues."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-percent-before
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         ;; The percent should be encoded as %25 in the URI
         (let* ((resource-uri
-                (format "org-headline://%s#50%%25%%20Complete"
+                (format "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
                         test-file))
                (params
                 `((uri . ,resource-uri)
-                  (current_title . "50% Complete")
-                  (new_title . "75% Complete")))
+                  (current_title . "First Child 50% Complete")
+                  (new_title . "First Child 75% Complete")))
                (result-text
                 (mcp-server-lib-ert-call-tool
                  "org-rename-headline" params))
@@ -2811,9 +2820,9 @@ Percent signs must be properly URL-encoded to avoid double-encoding issues."
           ;; Check result
           (should (equal (alist-get 'success result) t))
           (should
-           (equal (alist-get 'previous_title result) "50% Complete"))
+           (equal (alist-get 'previous_title result) "First Child 50% Complete"))
           (should
-           (equal (alist-get 'new_title result) "75% Complete"))
+           (equal (alist-get 'new_title result) "First Child 75% Complete"))
           ;; Should return an org-id:// URI
           (should
            (string-match "^org-id://" (alist-get 'uri result)))
@@ -2840,7 +2849,7 @@ More content."
   "Test that renaming to a title with embedded newline is rejected."
   (org-mcp-test--assert-rename-headline-rejected
    org-mcp-test--content-nested-siblings
-   "Parent Task/First Child"
+   "Parent Task/First Child 50% Complete"
    "First Line\nSecond Line"))
 
 (ert-deftest org-mcp-test-rename-headline-duplicate-first-match ()
@@ -3348,7 +3357,7 @@ Some quote
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (let* ((params `((file . ,test-file)
-                         (headline_path . "Parent%20Task/First%20Child")))
+                         (headline_path . "Parent%20Task/First%20Child%2050%25%20Complete")))
                (result-text
                 (mcp-server-lib-ert-call-tool "org-read-headline" params)))
           (should
