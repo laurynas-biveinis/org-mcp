@@ -146,29 +146,6 @@ This is actually a child of Third Parent, not First Parent!"
    org-mcp-test--other-child-id)
   "Test content with same headline names at different levels.")
 
-(defconst org-mcp-test--parent-with-one-child-parent-project-id
-  "parent-project-test-id-001"
-  "ID for Parent Project in parent-with-one-child.")
-
-(defconst org-mcp-test--parent-with-one-child-first-child-id
-  "first-child-test-id-002"
-  "ID for First Child in parent-with-one-child.")
-
-(defconst org-mcp-test--content-parent-with-one-child
-  (format
-   "* TODO Parent Project                                                     :work:
-:PROPERTIES:
-:ID:       %s
-:END:
-** TODO Parent Task                                                       :work:
-*** TODO First Child                                                      :work:
-:PROPERTIES:
-:ID:       %s
-:END:"
-   org-mcp-test--parent-with-one-child-parent-project-id
-   org-mcp-test--parent-with-one-child-first-child-id)
-  "Parent at level 2 with one child at level 3.")
-
 (defconst org-mcp-test--content-todo-with-tags
   "* TODO Task with Tags :work:urgent:\nTask description."
   "TODO task with tags and body.")
@@ -391,11 +368,11 @@ Second child content.
 
 (defconst org-mcp-test--regex-second-child-same-level
   (concat
-   "\\`\\* TODO Parent Project +.*:work:.*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"  ; Parent Project may have ID
-   "\\*\\* TODO Parent Task +.*:work:.*\n"
-   "\\*\\*\\* TODO First Child +.*:work:.*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"  ; First Child may have ID
+   "\\`\\* Top Level\n"
+   "\\*\\* Review the package\n"
+   "\\*\\*\\* Review org-mcp\\.el\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"  ; Review org-mcp.el has ID
+   "Main package file\n"
    "\\*\\*\\* TODO Second Child +.*:work:.*\n"
    "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?\\'")  ; Second Child may have ID
   "Pattern for second child (level 3) added at same level as first child (level 3) under parent (level 2).")
@@ -2171,9 +2148,9 @@ Empty string should be treated as nil - append as last child."
   "Test that adding a second child creates it at the same level as first child.
 This tests the bug where the second child was created at level 4 instead of level 3."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-parent-with-one-child
+      org-mcp-test--content-level2-parent-level3-children
     (let* ((parent-uri
-            (format "org-headline://%s#Parent%%20Project/Parent%%20Task"
+            (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
                     test-file))
            (result
             (org-mcp-test--call-add-todo
