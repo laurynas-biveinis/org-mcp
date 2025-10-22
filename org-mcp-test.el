@@ -793,7 +793,8 @@ Sets up `org-id-track-globally' and `org-id-locations-file',
 then registers each ID location and enables MCP for BODY."
   (declare (indent 1) (debug t))
   `(let ((org-id-track-globally t)
-         (org-id-locations-file nil)) ; Prevent saving to disk
+         (org-id-locations-file nil) ; Prevent saving to disk
+         (org-id-locations nil))
      (dolist (id-loc ,id-locations)
        (org-id-add-location (car id-loc) (cdr id-loc)))
      (org-mcp-test--with-enabled
@@ -1721,10 +1722,8 @@ properly checks parent-child relationships and levels."
   "Test ID resource error for non-existent ID."
   (let ((test-content "* Section without ID\nNo ID here."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-id-locations-file nil)
-            (org-id-locations nil)) ; Make sure no IDs are registered
-        (org-mcp-test--with-enabled
+      (let ((org-mcp-allowed-files (list test-file)))
+        (org-mcp-test--with-id-setup '()
           (let ((uri "org-id://nonexistent-id-12345"))
             (org-mcp-test--read-resource-expecting-error
              uri "Cannot find ID: 'nonexistent-id-12345'")))))))
@@ -1905,10 +1904,8 @@ Another task description."))
     (org-mcp-test--with-temp-org-file test-file test-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords
-             '((sequence "TODO" "IN-PROGRESS" "|" "DONE")))
-            (org-id-locations-file nil)
-            (org-id-locations nil)) ; Make sure no IDs are registered
-        (org-mcp-test--with-enabled
+             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+        (org-mcp-test--with-id-setup '()
           ;; Try to update a non-existent ID
           (let ((resource-uri "org-id://nonexistent-uuid-12345"))
             (should-error
