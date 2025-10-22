@@ -62,11 +62,6 @@ Second line of body.
 Third line of body."
   "Simple TODO task with three-line body.")
 
-(defconst org-mcp-test--content-headline-no-todo
-  "* Regular Headline
-Some content."
-  "Regular headline without TODO state.")
-
 (defconst org-mcp-test--content-headline-no-id
   "* Headline Without ID
 Content here."
@@ -511,11 +506,21 @@ Some content."
 
 (defconst org-mcp-test--pattern-renamed-headline-no-todo
   (concat
-   "^\\* Updated Headline\n"
+   "\\`\\* Parent Task\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+   "Some parent content\\.\n"
+   "\\*\\* Updated Child\n"
    " *:PROPERTIES:\n"
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
-   "Some content\\.$")
+   "First child content\\.\n"
+   "It spans multiple lines\\.\n"
+   "\\*\\* Second Child\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-second-child-id-001\n *:END:\n\\)?"
+   "Second child content\\.\n"
+   "\\*\\* Third Child\n"
+   "Third child content\\.\n?"
+   "\\'")
   "Pattern for renamed headline without TODO state.")
 
 (defconst org-mcp-test--pattern-renamed-headline-with-id
@@ -1575,18 +1580,18 @@ Content of subsection 2.1."))
 (ert-deftest org-mcp-test-headline-resource-file-with-hash ()
   "Test headline resource with # in filename."
   (org-mcp-test--with-temp-org-file file
-      org-mcp-test--content-headline-no-todo
+      org-mcp-test--content-nested-siblings
     "org-mcp-test-file#"
     (org-mcp-test--with-enabled
       ;; Test accessing the file with # encoded as %23
       (let* ((encoded-path (replace-regexp-in-string "#" "%23" file))
              (uri
-              (format "org-headline://%s#Regular%%20Headline"
+              (format "org-headline://%s#Parent%%20Task/First%%20Child"
                       encoded-path)))
         (mcp-server-lib-ert-verify-resource-read
          uri
          `((uri . ,uri)
-           (text . "* Regular Headline\nSome content.")
+           (text . "** First Child\nFirst child content.\nIt spans multiple lines.")
            (mimeType . "text/plain")))))))
 
 (ert-deftest org-mcp-test-headline-resource-headline-with-hash ()
@@ -2643,17 +2648,17 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-rename-headline-no-todo ()
   "Test renaming a regular headline without TODO state."
-  (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-headline-no-todo
+  (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         ;; Rename the headline
         (let* ((resource-uri
-                (format "org-headline://%s#Regular%%20Headline"
+                (format "org-headline://%s#Parent%%20Task/First%%20Child"
                         test-file))
                (params
                 `((uri . ,resource-uri)
-                  (current_title . "Regular Headline")
-                  (new_title . "Updated Headline")))
+                  (current_title . "First Child")
+                  (new_title . "Updated Child")))
                (result-text
                 (mcp-server-lib-ert-call-tool
                  "org-rename-headline" params))
@@ -2738,7 +2743,7 @@ paths and only matches headlines at the appropriate hierarchy level."
 (ert-deftest org-mcp-test-rename-headline-id-not-found ()
   "Test error when ID doesn't exist."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-headline-no-todo
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file))
           (org-id-track-globally nil)
           (org-id-locations-file nil))
@@ -2872,8 +2877,8 @@ More content."
 (ert-deftest org-mcp-test-rename-headline-reject-newline ()
   "Test that renaming to a title with embedded newline is rejected."
   (org-mcp-test--assert-rename-headline-rejected
-   org-mcp-test--content-headline-no-todo
-   "Regular Headline"
+   org-mcp-test--content-nested-siblings
+   "Parent Task/First Child"
    "First Line\nSecond Line"))
 
 (ert-deftest org-mcp-test-rename-headline-duplicate-first-match ()
@@ -3327,13 +3332,13 @@ Some quote
 (ert-deftest org-mcp-test-tool-read-file ()
   "Test org-read-file tool returns same content as file resource."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-headline-no-todo
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (let* ((params `((file . ,test-file)))
                (result-text
                 (mcp-server-lib-ert-call-tool "org-read-file" params)))
-          (should (string= result-text org-mcp-test--content-headline-no-todo)))))))
+          (should (string= result-text org-mcp-test--content-nested-siblings)))))))
 
 (ert-deftest org-mcp-test-tool-read-outline ()
   "Test org-read-outline tool returns valid JSON outline structure."
@@ -3352,7 +3357,7 @@ Some quote
 (ert-deftest org-mcp-test-tool-read-headline-empty-path ()
   "Test org-read-headline with empty headline_path signals validation error."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-headline-no-todo
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (should-error
