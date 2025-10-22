@@ -62,11 +62,6 @@ Second line of body.
 Third line of body."
   "Simple TODO task with three-line body.")
 
-(defconst org-mcp-test--content-headline-no-id
-  "* Headline Without ID
-Content here."
-  "Headline without ID property for create-id tests.")
-
 (defconst org-mcp-test--content-with-id-id
   "550e8400-e29b-41d4-a716-446655440000"
   "ID value for org-mcp-test--content-with-id.")
@@ -525,11 +520,21 @@ Some content."
 
 (defconst org-mcp-test--pattern-renamed-headline-with-id
   (concat
-   "\\`\\* Renamed Headline\n"
+   "\\`\\* Parent Task\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+   "Some parent content\\.\n"
+   "\\*\\* First Child\n"
+   "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
+   "First child content\\.\n"
+   "It spans multiple lines\\.\n"
+   "\\*\\* Second Child\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-second-child-id-001\n *:END:\n\\)?"
+   "Second child content\\.\n"
+   "\\*\\* Renamed Child\n"
    " *:PROPERTIES:\n"
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
-   "Content here\\.\\'")
+   "Third child content\\.\\'")
   "Pattern for headline renamed with ID creation.")
 
 (defconst org-mcp-test--pattern-renamed-slash-headline
@@ -2904,7 +2909,7 @@ This test documents the first-match behavior when duplicate headlines exist."
 (ert-deftest org-mcp-test-rename-headline-creates-id ()
   "Test that renaming a headline creates an Org ID and returns it."
   (org-mcp-test--with-temp-org-file
-      test-file org-mcp-test--content-headline-no-id
+      test-file org-mcp-test--content-nested-siblings
       (let ((org-mcp-allowed-files (list test-file))
             (org-id-track-globally t)
             (org-id-locations-file (make-temp-file "test-org-id")))
@@ -2912,12 +2917,12 @@ This test documents the first-match behavior when duplicate headlines exist."
          ;; Rename headline using path-based URI
          (let* ((resource-uri
                  (format
-                  "org-headline://%s#Headline%%20Without%%20ID"
+                  "org-headline://%s#Parent%%20Task/Third%%20Child"
                   test-file))
                 (params
                  `((uri . ,resource-uri)
-                   (current_title . "Headline Without ID")
-                   (new_title . "Renamed Headline")))
+                   (current_title . "Third Child")
+                   (new_title . "Renamed Child")))
                 (request
                  (mcp-server-lib-create-tools-call-request
                   "org-rename-headline" 1 params))
@@ -2931,9 +2936,9 @@ This test documents the first-match behavior when duplicate headlines exist."
            (should
             (equal
              (alist-get 'previous_title result)
-             "Headline Without ID"))
+             "Third Child"))
            (should
-            (equal (alist-get 'new_title result) "Renamed Headline"))
+            (equal (alist-get 'new_title result) "Renamed Child"))
            ;; The returned URI should now be an org-id:// URI
            (should (string-match "^org-id://" (alist-get (quote uri) result)))
            ;; Verify the file content matches expected pattern
