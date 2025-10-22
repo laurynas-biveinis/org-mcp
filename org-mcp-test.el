@@ -872,20 +872,14 @@ and binds `sequences' and `semantics' from the result for use in BODY."
                (semantics (cdr (assoc 'semantics result))))
            ,@body)))))
 
-(defun org-mcp-test--test-headline-resource-with-extension
-    (extension &optional file-path)
+(defun org-mcp-test--test-headline-resource-with-extension (extension)
   "Test headline resource with file having EXTENSION.
-EXTENSION can be a string like \".txt\" or nil for no extension.
-FILE-PATH if provided uses this exact file path instead of creating temp file."
-  (let ((test-file file-path))
+EXTENSION can be a string like \".txt\" or nil for no extension."
+  (let ((test-file (make-temp-file "org-mcp-test" nil extension)))
     (unwind-protect
         (progn
-          (unless test-file
-            ;; Create temp file with extension
-            (setq test-file
-                  (make-temp-file "org-mcp-test" nil extension))
-            (with-temp-file test-file
-              (insert org-mcp-test--content-nested-siblings)))
+          (with-temp-file test-file
+            (insert org-mcp-test--content-nested-siblings))
           (let ((org-mcp-allowed-files (list test-file))
                 (uri
                  (format "org-headline://%s#Parent%%20Task"
@@ -899,9 +893,7 @@ FILE-PATH if provided uses this exact file path instead of creating temp file."
                   .
                   ,org-mcp-test--expected-parent-task-from-nested-siblings)
                  (mimeType . "text/plain"))))))
-      ;; Only cleanup if we created the file
-      (unless file-path
-        (delete-file test-file)))))
+      (delete-file test-file))))
 
 (defun org-mcp-test--call-add-todo
     (title todoState tags body parentUri &optional afterUri)
