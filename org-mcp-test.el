@@ -21,18 +21,12 @@
 (defconst org-mcp-test--content-empty ""
   "Empty org file content.")
 
-(defconst org-mcp-test--content-parent-child
-  "* Parent Task
-Some content here.
-** Another Task
-More content."
-  "Parent task with a child task.")
-
 (defconst org-mcp-test--content-nested-siblings
   "* Parent Task
 :PROPERTIES:
 :ID:       nested-siblings-parent-id-002
 :END:
+Some parent content.
 ** First Child
 First child content.
 It spans multiple lines.
@@ -442,9 +436,16 @@ Some content."
 (defconst org-mcp-test--regex-child-under-parent
   (concat
    "^\\* Parent Task\n"
-   "Some content here\\.\n"
-   "\\*\\* Another Task\n"
-   "More content\\.\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+   "Some parent content\\.\n"
+   "\\*\\* First Child\n"
+   "First child content\\.\n"
+   "It spans multiple lines\\.\n"
+   "\\*\\* Second Child\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-second-child-id-001\n *:END:\n\\)?"
+   "Second child content\\.\n"
+   "\\*\\* Third Child\n"
+   "Third child content\\.\n"
    "\\*\\* TODO Child Task +.*:work:.*\n"
    "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
   "Pattern for child TODO (level 2) added under parent (level 1) with existing child (level 2).")
@@ -649,10 +650,19 @@ Some content."
 (defconst org-mcp-test--pattern-edit-body-nested-headlines
   (concat
    "\\`\\* Parent Task\n"
-   "Updated parent content\\.\n" ; No ID when using org-headline://
-   "\\*\\* Another Task\n"
-   "\\(?: *:PROPERTIES:\n" ; Child may get an ID
-   " *:ID:[ \t]+[A-Fa-f0-9-]+\n" " *:END:\n\\)?" "More content\\.\n" "?\\'")
+   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+   "Updated parent content\n"
+   "\\*\\* First Child\n"
+   "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
+   "First child content\\.\n"
+   "It spans multiple lines\\.\n"
+   "\\*\\* Second Child\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-second-child-id-001\n *:END:\n\\)?"
+   "Second child content\\.\n"
+   "\\*\\* Third Child\n"
+   "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
+   "Third child content\\.\n"
+   "?\\'")
   "Pattern for nested headlines edit-body test result.")
 
 
@@ -2107,7 +2117,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-child-under-parent ()
   "Test adding a child TODO under an existing parent."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-parent-child
+      org-mcp-test--content-nested-siblings
     (let* ((parent-uri
             (format "org-headline://%s#Parent%%20Task" test-file))
            (result
@@ -2127,7 +2137,7 @@ Another task."))
   "Test adding a child TODO with empty string for after_uri.
 Empty string should be treated as nil - append as last child."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-parent-child
+      org-mcp-test--content-nested-siblings
     (let* ((parent-uri
             (format "org-headline://%s#Parent%%20Task" test-file))
            (result
@@ -3183,13 +3193,13 @@ content here."
 (ert-deftest org-mcp-test-edit-body-nested-headlines ()
   "Test org-edit-body preserves nested headlines."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-parent-child
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (let ((result
                (org-mcp-test--call-edit-body
                 (format "org-headline://%s#Parent%%20Task" test-file)
-                "Some content here"
+                "Some parent content."
                 "Updated parent content"
                 nil)))
           (org-mcp-test--check-edit-body-result
@@ -3235,18 +3245,18 @@ content here."
   "Test org-edit-body rejects newBody with higher-level headline.
 When editing a level 2 node, level 1 headlines should be rejected."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-parent-child
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (org-mcp-test--assert-error-and-unchanged
          (org-mcp--tool-edit-body
-          (format "org-headline://%s#Parent%%20Task/Another%%20Task"
+          (format "org-headline://%s#Parent%%20Task/Second%%20Child"
                   test-file)
-          "More content."
+          "Second child content."
           "New text
 * Top level heading"
           nil)
-         test-file org-mcp-test--content-parent-child)))))
+         test-file org-mcp-test--content-nested-siblings)))))
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-at-start ()
   "Test org-edit-body rejects newBody with headline at beginning."
