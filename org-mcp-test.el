@@ -146,16 +146,6 @@ This is actually a child of Third Parent, not First Parent!"
    org-mcp-test--other-child-id)
   "Test content with same headline names at different levels.")
 
-(defconst org-mcp-test--content-siblings-after-test
-  "* Parent Task
-** First Child
-First child content.
-** Second Child
-Second child content.
-** Third Child
-Third child content."
-  "Parent with children for testing after-sibling insertion.")
-
 (defconst org-mcp-test--content-headlines-with-hash
   "* Task #1
 First task
@@ -427,16 +417,26 @@ Second child content.
 
 (defconst org-mcp-test--regex-todo-after-sibling
   (concat
-   "^\\* Parent Task\n"
+   "^#\\+TITLE: My Org Document\n\n"
+   "\\* Parent Task\n"
+   ":PROPERTIES:\n"
+   ":ID: +" org-mcp-test--content-nested-siblings-parent-id "\n"
+   ":END:\n"
+   "Some parent content\\.\n"
    "\\*\\* First Child\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
+   ":PROPERTIES:\n"
+   ":ID: +[^\n]+\n"
+   ":END:\n"
    "First child content\\.\n"
+   "It spans multiple lines\\.\n\n?"
+   "\\*\\* TODO New Task After First +:[^\n]*\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
    "\\*\\* Second Child\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
-   "Second child content\\.\n\n?"
-   "\\*\\* TODO New Task After Second +:[^\n]*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
-   "\\*\\* Third Child")
+   ":PROPERTIES:\n"
+   ":ID: +" org-mcp-test--content-with-id-id "\n"
+   ":END:\n"
+   "Second child content\\.\n"
+   "\\*\\* Third Child\\'")
   "Pattern for TODO added after specific sibling.")
 
 (defconst org-mcp-test--regex-todo-without-tags
@@ -2344,36 +2344,36 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-add-todo-after-sibling ()
   "Test adding TODO after a specific sibling."
-  (let ((initial-content org-mcp-test--content-siblings-after-test))
+  (let ((initial-content org-mcp-test--content-nested-siblings))
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-todo-keywords '((sequence "TODO" "|" "DONE")))
             (org-tag-alist '("work")))
-        ;; First add IDs to existing items so we can reference them
-        (let ((second-id nil))
+        ;; First add ID to First Child so we can reference it
+        (let ((first-id nil))
           (with-temp-buffer
             (set-visited-file-name test-file t)
             (insert-file-contents test-file)
             (org-mode)
             (goto-char (point-min))
-            ;; Add ID to Second Child
-            (re-search-forward "^\\*\\* Second Child")
+            ;; Add ID to First Child
+            (re-search-forward "^\\*\\* First Child")
             (org-id-get-create)
-            (setq second-id (org-id-get))
+            (setq first-id (org-id-get))
             (write-region (point-min) (point-max) test-file))
           ;; Kill any buffer visiting the test file
           (let ((buf (find-buffer-visiting test-file)))
             (when buf
               (kill-buffer buf)))
 
-          (org-mcp-test--with-id-setup `((,second-id . ,test-file))
+          (org-mcp-test--with-id-setup `((,first-id . ,test-file))
             (let* ((parent-uri
                     (format "org-headline://%s#Parent%%20Task"
                             test-file))
-                   (after-uri (format "org-id://%s" second-id))
+                   (after-uri (format "org-id://%s" first-id))
                    (result
                     (org-mcp-test--call-add-todo
-                     "New Task After Second"
+                     "New Task After First"
                      "TODO"
                      '("work")
                      nil
@@ -2382,7 +2382,7 @@ This is valid Org-mode syntax and should be allowed."
               ;; Check result has exactly 4 fields
               (org-mcp-test--check-add-todo-result
                result
-               "New Task After Second"
+               "New Task After First"
                (file-name-nondirectory test-file)
                test-file
                org-mcp-test--regex-todo-after-sibling))))))))
