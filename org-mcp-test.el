@@ -786,15 +786,17 @@ NEW-STATE is the new TODO state to set."
          (mcp-server-lib-ert-with-server :tools t :resources t ,@body)
        (org-mcp-disable))))
 
-(defmacro org-mcp-test--with-id-setup (id-locations &rest body)
+(defmacro org-mcp-test--with-id-setup (allowed-files id-locations &rest body)
   "Set up org-id tracking with ID-LOCATIONS and run BODY.
+ALLOWED-FILES is the list of files to bind to `org-mcp-allowed-files'.
 ID-LOCATIONS is a list of (ID . FILE) cons cells to register.
 Sets up `org-id-track-globally' and `org-id-locations-file',
 then registers each ID location and enables MCP for BODY."
-  (declare (indent 1) (debug t))
+  (declare (indent 2) (debug t))
   `(let ((org-id-track-globally t)
          (org-id-locations-file nil) ; Prevent saving to disk
-         (org-id-locations nil))
+         (org-id-locations nil)
+         (org-mcp-allowed-files ,allowed-files))
      (dolist (id-loc ,id-locations)
        (org-id-add-location (car id-loc) (cdr id-loc)))
      (org-mcp-test--with-enabled
@@ -1708,25 +1710,24 @@ properly checks parent-child relationships and levels."
           ":END:\n"
           "Content of section with ID.")))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-id-setup
-            `(("12345678-abcd-efgh-ijkl-1234567890ab" . ,test-file))
-          (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
-            (mcp-server-lib-ert-verify-resource-read
-             uri
-             `((uri . ,uri)
-               (text . ,test-content)
-               (mimeType . "text/plain")))))))))
+      (org-mcp-test--with-id-setup
+          (list test-file)
+          `(("12345678-abcd-efgh-ijkl-1234567890ab" . ,test-file))
+        (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
+          (mcp-server-lib-ert-verify-resource-read
+           uri
+           `((uri . ,uri)
+             (text . ,test-content)
+             (mimeType . "text/plain"))))))))
 
 (ert-deftest org-mcp-test-id-resource-not-found ()
   "Test ID resource error for non-existent ID."
   (let ((test-content "* Section without ID\nNo ID here."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-id-setup '()
-          (let ((uri "org-id://nonexistent-id-12345"))
-            (org-mcp-test--read-resource-expecting-error
-             uri "Cannot find ID: 'nonexistent-id-12345'")))))))
+      (org-mcp-test--with-id-setup (list test-file) '()
+        (let ((uri "org-id://nonexistent-id-12345"))
+          (org-mcp-test--read-resource-expecting-error
+           uri "Cannot find ID: 'nonexistent-id-12345'"))))))
 
 (ert-deftest org-mcp-test-id-resource-file-not-allowed ()
   "Test ID resource validates file is in allowed list."
@@ -1739,13 +1740,14 @@ properly checks parent-child relationships and levels."
          ":ID: test-id-789\n"
          ":END:\n"
          "This file is not in allowed list.")
-      (let ((org-mcp-allowed-files (list allowed-file)))
-        (org-mcp-test--with-id-setup `(("test-id-789" . ,other-file))
-          (let ((uri "org-id://test-id-789"))
-            ;; Should get an error for file not allowed
-            (org-mcp-test--read-resource-expecting-error
-             uri
-             (format "'%s': the referenced file not in allowed list" "test-id-789"))))))))
+      (org-mcp-test--with-id-setup
+          (list allowed-file)
+          `(("test-id-789" . ,other-file))
+        (let ((uri "org-id://test-id-789"))
+          ;; Should get an error for file not allowed
+          (org-mcp-test--read-resource-expecting-error
+           uri
+           (format "'%s': the referenced file not in allowed list" "test-id-789")))))))
 
 (ert-deftest org-mcp-test-update-todo-state-success ()
   "Test successful TODO state update."
@@ -1782,11 +1784,10 @@ properly checks parent-child relationships and levels."
   "Test updating TODO state using timestamp-format ID (not UUID)."
   (let ((test-content org-mcp-test--content-timestamp-id))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords '((sequence "TODO" "|" "DONE"))))
-        (org-mcp-test--with-id-setup `(("20240101T120000"
-                                        .
-                                        ,test-file))
+      (let ((org-todo-keywords '((sequence "TODO" "|" "DONE"))))
+        (org-mcp-test--with-id-setup
+            (list test-file)
+            `(("20240101T120000" . ,test-file))
           (let ((uri "org-id://20240101T120000"))
             (org-mcp-test--update-and-verify-todo
              uri "TODO" "DONE"
@@ -1902,10 +1903,9 @@ Another task description."))
   "Test TODO state update fails for non-existent UUID."
   (let ((test-content "* TODO Task One\nTask description."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-        (org-mcp-test--with-id-setup '()
+        (org-mcp-test--with-id-setup (list test-file) '()
           ;; Try to update a non-existent ID
           (let ((resource-uri "org-id://nonexistent-uuid-12345"))
             (should-error
@@ -1920,10 +1920,10 @@ Another task description."))
   "Test updating TODO state using org-id:// URI."
   (let ((test-content org-mcp-test--content-with-id-todo))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         (org-mcp-test--with-id-setup
+            (list test-file)
             `((,org-mcp-test--content-with-id-id . ,test-file))
           (let ((result
                  (org-mcp-test--update-and-verify-todo
@@ -2193,10 +2193,10 @@ Tests that adding after a level 3 sibling correctly creates level 3 (not level 1
 Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (via ID)."
   (let ((initial-content org-mcp-test--content-level2-parent-level3-children))
     (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+      (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
             (org-tag-alist '("internet")))
         (org-mcp-test--with-id-setup
+            (list test-file)
             `((,org-mcp-test--level2-parent-level3-sibling-id . ,test-file))
           (let* ((parent-uri
                   (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
@@ -2339,8 +2339,7 @@ This is valid Org-mode syntax and should be allowed."
   "Test adding TODO after a specific sibling."
   (let ((initial-content org-mcp-test--content-nested-siblings))
     (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+      (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
             (org-tag-alist '("work")))
         ;; First add ID to First Child 50% Complete so we can reference it
         (let ((first-id nil))
@@ -2359,7 +2358,9 @@ This is valid Org-mode syntax and should be allowed."
             (when buf
               (kill-buffer buf)))
 
-          (org-mcp-test--with-id-setup `((,first-id . ,test-file))
+          (org-mcp-test--with-id-setup
+              (list test-file)
+              `((,first-id . ,test-file))
             (let* ((parent-uri
                     (format "org-headline://%s#Parent%%20Task"
                             test-file))
@@ -2385,10 +2386,10 @@ This is valid Org-mode syntax and should be allowed."
   "Test error when afterUri is not a child of parentUri."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-wrong-levels
-    (let ((org-mcp-allowed-files (list test-file))
-          (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+    (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
           (org-tag-alist '("work")))
       (org-mcp-test--with-id-setup
+          (list test-file)
           `((,org-mcp-test--other-child-id . ,test-file))
         (let* ((parent-uri
                 (format "org-headline://%s#First%%20Parent"
@@ -3001,96 +3002,99 @@ EXPECTED-ID if provided, check the returned URI has this exact ID."
   "Test org-edit-body tool for single-line replacement."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (let ((result
-               (org-mcp-test--call-edit-body
-                org-mcp-test--content-with-id-uri
-                "Second child content."
-                "Updated second child content."
-                nil)))
-          (org-mcp-test--check-edit-body-result
-           result
-           test-file
-           org-mcp-test--pattern-edit-body-single-line
-           org-mcp-test--content-with-id-id))))))
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (let ((result
+             (org-mcp-test--call-edit-body
+              org-mcp-test--content-with-id-uri
+              "Second child content."
+              "Updated second child content."
+              nil)))
+        (org-mcp-test--check-edit-body-result
+         result
+         test-file
+         org-mcp-test--pattern-edit-body-single-line
+         org-mcp-test--content-with-id-id)))))
 
 (ert-deftest org-mcp-test-edit-body-multiline ()
   "Test org-edit-body tool for multi-line replacement."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-with-id-todo
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (let ((result
-               (org-mcp-test--call-edit-body
-                org-mcp-test--content-with-id-uri
-                "Second line of content."
-                "This has been replaced
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (let ((result
+             (org-mcp-test--call-edit-body
+              org-mcp-test--content-with-id-uri
+              "Second line of content."
+              "This has been replaced
 with new multiline
 content here."
-                nil)))
-          (org-mcp-test--check-edit-body-result
-           result test-file org-mcp-test--pattern-edit-body-multiline
-           org-mcp-test--content-with-id-id))))))
+              nil)))
+        (org-mcp-test--check-edit-body-result
+         result test-file org-mcp-test--pattern-edit-body-multiline
+         org-mcp-test--content-with-id-id)))))
 
 (ert-deftest org-mcp-test-edit-body-multiple-without-replaceall ()
   "Test error for multiple occurrences without replaceAll."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-with-id-repeated-text
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup `(("test-id" . ,test-file))
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp--tool-edit-body
-          "org-id://test-id" "occurrence of pattern" "REPLACED" nil)
-         test-file org-mcp-test--content-with-id-repeated-text)))))
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `(("test-id" . ,test-file))
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp--tool-edit-body
+        "org-id://test-id" "occurrence of pattern" "REPLACED" nil)
+       test-file org-mcp-test--content-with-id-repeated-text))))
 
 (ert-deftest org-mcp-test-edit-body-replace-all ()
   "Test org-edit-body tool with replaceAll functionality."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-with-id-repeated-text
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup `(("test-id" . ,test-file))
-        (let ((result
-               (org-mcp-test--call-edit-body "org-id://test-id"
-                                             "occurrence of pattern"
-                                             "REPLACED"
-                                             t))) ; replaceAll = true
-          (org-mcp-test--check-edit-body-result
-           result
-           test-file
-           org-mcp-test--pattern-edit-body-replace-all))))))
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `(("test-id" . ,test-file))
+      (let ((result
+             (org-mcp-test--call-edit-body "org-id://test-id"
+                                           "occurrence of pattern"
+                                           "REPLACED"
+                                           t))) ; replaceAll = true
+        (org-mcp-test--check-edit-body-result
+         result
+         test-file
+         org-mcp-test--pattern-edit-body-replace-all)))))
 
 (ert-deftest org-mcp-test-edit-body-replace-all-explicit-false ()
   "Test that explicit replace_all=false triggers error on multiple matches."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-with-id-repeated-text
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup `(("test-id" . ,test-file))
-        ;; Should error because multiple occurrences exist
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp-test--call-edit-body "org-id://test-id"
-                                       "occurrence of pattern"
-                                       "REPLACED"
-                                       :false) ; :false = JSON false
-         test-file
-         org-mcp-test--content-with-id-repeated-text)))))
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `(("test-id" . ,test-file))
+      ;; Should error because multiple occurrences exist
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp-test--call-edit-body "org-id://test-id"
+                                     "occurrence of pattern"
+                                     "REPLACED"
+                                     :false) ; :false = JSON false
+       test-file
+       org-mcp-test--content-with-id-repeated-text))))
 
 (ert-deftest org-mcp-test-edit-body-not-found ()
   "Test org-edit-body tool error when text is not found."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri
-          "nonexistent text"
-          "replacement"
-          nil)
-         test-file org-mcp-test--content-nested-siblings)))))
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp--tool-edit-body
+        org-mcp-test--content-with-id-uri
+        "nonexistent text"
+        "replacement"
+        nil)
+       test-file org-mcp-test--content-nested-siblings))))
 
 (ert-deftest org-mcp-test-edit-body-empty ()
   "Test org-edit-body tool can add content to empty body."
@@ -3114,33 +3118,33 @@ content here."
   "Test error when oldBody is empty but body has content."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri
-          "" ; Empty oldBody
-          "replacement" nil)
-         test-file org-mcp-test--content-nested-siblings)))))
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp--tool-edit-body
+        org-mcp-test--content-with-id-uri
+        "" ; Empty oldBody
+        "replacement" nil)
+       test-file org-mcp-test--content-nested-siblings))))
 
 (ert-deftest org-mcp-test-edit-body-empty-with-properties ()
   "Test adding content to empty body with properties drawer."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-with-id-no-body
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup `((,org-mcp-test--timestamp-id
-                                      . ,test-file))
-        (let ((result
-               (org-mcp-test--call-edit-body
-                (format "org-id://%s" org-mcp-test--timestamp-id)
-                ""
-                "Content added after properties."
-                nil)))
-          (org-mcp-test--check-edit-body-result
-           result
-           test-file
-           org-mcp-test--pattern-edit-body-empty-with-props))))))
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--timestamp-id . ,test-file))
+      (let ((result
+             (org-mcp-test--call-edit-body
+              (format "org-id://%s" org-mcp-test--timestamp-id)
+              ""
+              "Content added after properties."
+              nil)))
+        (org-mcp-test--check-edit-body-result
+         result
+         test-file
+         org-mcp-test--pattern-edit-body-empty-with-props)))))
 
 (ert-deftest org-mcp-test-edit-body-nested-headlines ()
   "Test org-edit-body preserves nested headlines."
@@ -3163,35 +3167,35 @@ content here."
   "Test org-edit-body rejects newBody with headline marker in middle."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri "Second child content."
-          "replacement text
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp--tool-edit-body
+        org-mcp-test--content-with-id-uri "Second child content."
+        "replacement text
 * This would become a headline"
-          nil)
-         test-file org-mcp-test--content-nested-siblings)))))
+        nil)
+       test-file org-mcp-test--content-nested-siblings))))
 
 (ert-deftest org-mcp-test-edit-body-accept-lower-level-headline ()
   "Test org-edit-body accepts newBody with lower-level headline."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (let ((result
-               (org-mcp-test--call-edit-body
-                org-mcp-test--content-with-id-uri
-                "Second child content."
-                "some text
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (let ((result
+             (org-mcp-test--call-edit-body
+              org-mcp-test--content-with-id-uri
+              "Second child content."
+              "some text
 *** Subheading content"
-                nil)))
-          (org-mcp-test--check-edit-body-result
-           result
-           test-file
-           org-mcp-test--pattern-edit-body-accept-lower-level))))))
+              nil)))
+        (org-mcp-test--check-edit-body-result
+         result
+         test-file
+         org-mcp-test--pattern-edit-body-accept-lower-level)))))
 
 (ert-deftest org-mcp-test-edit-body-reject-higher-level-headline ()
   "Test org-edit-body rejects newBody with higher-level headline.
@@ -3214,65 +3218,65 @@ When editing a level 2 node, level 1 headlines should be rejected."
   "Test org-edit-body rejects newBody with headline at beginning."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri
-          "Second child content."
-          "* Heading at start"
-          nil)
-         test-file org-mcp-test--content-nested-siblings)))))
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp--tool-edit-body
+        org-mcp-test--content-with-id-uri
+        "Second child content."
+        "* Heading at start"
+        nil)
+       test-file org-mcp-test--content-nested-siblings))))
 
 (ert-deftest org-mcp-test-edit-body-reject-unbalanced-begin-block ()
   "Test org-edit-body rejects newBody with unbalanced BEGIN block."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri "Second child content."
-          "Some text
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp--tool-edit-body
+        org-mcp-test--content-with-id-uri "Second child content."
+        "Some text
 #+BEGIN_EXAMPLE
 Code without END_EXAMPLE"
-          nil)
-         test-file org-mcp-test--content-nested-siblings)))))
+        nil)
+       test-file org-mcp-test--content-nested-siblings))))
 
 (ert-deftest org-mcp-test-edit-body-reject-orphaned-end-block ()
   "Test org-edit-body rejects newBody with orphaned END block."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri "Second child content."
-          "Some text
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp--tool-edit-body
+        org-mcp-test--content-with-id-uri "Second child content."
+        "Some text
 #+END_SRC
 Without BEGIN_SRC"
-          nil)
-         test-file org-mcp-test--content-nested-siblings)))))
+        nil)
+       test-file org-mcp-test--content-nested-siblings))))
 
 (ert-deftest org-mcp-test-edit-body-reject-mismatched-blocks ()
   "Test org-edit-body rejects newBody with mismatched blocks."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri "Second child content."
-          "Text here
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp--tool-edit-body
+        org-mcp-test--content-with-id-uri "Second child content."
+        "Text here
 #+BEGIN_QUOTE
 Some quote
 #+END_EXAMPLE"
-          nil)
-         test-file org-mcp-test--content-nested-siblings)))))
+        nil)
+       test-file org-mcp-test--content-nested-siblings))))
 
 ;;; Resource template workaround tool tests
 
@@ -3336,15 +3340,15 @@ Some quote
 (ert-deftest org-mcp-test-tool-read-by-id ()
   "Test org-read-by-id tool returns headline content by ID."
   (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-id-setup
-          `((,org-mcp-test--content-with-id-id . ,test-file))
-        (let ((result-text
-               (org-mcp-test--call-read-by-id org-mcp-test--content-with-id-id)))
-          (should
-           (string-match-p
-            org-mcp-test--pattern-tool-read-by-id
-            result-text)))))))
+    (org-mcp-test--with-id-setup
+        (list test-file)
+        `((,org-mcp-test--content-with-id-id . ,test-file))
+      (let ((result-text
+             (org-mcp-test--call-read-by-id org-mcp-test--content-with-id-id)))
+        (should
+         (string-match-p
+          org-mcp-test--pattern-tool-read-by-id
+          result-text))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
