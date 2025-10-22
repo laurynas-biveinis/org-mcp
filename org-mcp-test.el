@@ -91,18 +91,6 @@ This is a headline with a slash in it.
 Some other content."
   "Headlines containing slash characters.")
 
-(defconst org-mcp-test--content-wrong-levels
-  "* First Parent
-Some content in first parent.
-* Second Parent
-** Other Child
-*** Target Headline
-This should NOT be found via First Parent/Target Headline path.
-* Third Parent
-** Target Headline
-This is actually a child of Third Parent, not First Parent!"
-  "Test content with same headline names at different levels.")
-
 (defconst org-mcp-test--timestamp-id "20240101T120000"
   "Timestamp-format ID value.")
 
@@ -125,12 +113,6 @@ Task content."
    org-mcp-test--timestamp-id)
   "Task with an ID property but no body content.")
 
-(defconst org-mcp-test--content-title-header-only
-  "#+TITLE: Test Org File
-
-"
-  "Org file with only a title header.")
-
 (defconst org-mcp-test--body-text-multiline
   (concat
    "This is the body text.\n"
@@ -138,30 +120,25 @@ Task content."
    "With some content.")
   "Multi-line body text for testing TODO items with content.")
 
-(defconst org-mcp-test--content-parent-child-siblings
-  "* Parent Task
-** Child One
-** Child Two
-* Other Parent
-** Other Child"
-  "Parent tasks with children for testing sibling relationships.")
-
 (defconst org-mcp-test--other-child-id "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
   "ID value for Other Child in afterUri-not-sibling test.")
 
-(defconst org-mcp-test--content-parent-child-siblings-with-other-child-id
+(defconst org-mcp-test--content-wrong-levels
   (format
-   "* Parent Task
-** Child One
-** Child Two
-* Other Parent
+   "* First Parent
+Some content in first parent.
+* Second Parent
 ** Other Child
 :PROPERTIES:
 :ID:       %s
 :END:
-"
+*** Target Headline
+This should NOT be found via First Parent/Target Headline path.
+* Third Parent
+** Target Headline
+This is actually a child of Third Parent, not First Parent!"
    org-mcp-test--other-child-id)
-  "Parent-child-siblings content with ID for Other Child.")
+  "Test content with same headline names at different levels.")
 
 (defconst org-mcp-test--content-parent-task-simple
   "* Parent Task
@@ -446,9 +423,8 @@ Third child content."
   (concat
    "^\\* TODO Task with Body +:[^\n]*\n"
    "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?" ; Optional properties
-   "This is the body text\\.\n"
-   "It has multiple lines\\.\n"
-   "With some content\\.\n?$")
+   (regexp-quote org-mcp-test--body-text-multiline)
+   "\n?$")
   "Pattern for TODO with body text.")
 
 (defconst org-mcp-test--regex-todo-after-sibling
@@ -2393,18 +2369,18 @@ This is valid Org-mode syntax and should be allowed."
 (ert-deftest org-mcp-test-add-todo-afterUri-not-sibling ()
   "Test error when afterUri is not a child of parentUri."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-parent-child-siblings-with-other-child-id
+      org-mcp-test--content-wrong-levels
     (let ((org-mcp-allowed-files (list test-file))
           (org-todo-keywords '((sequence "TODO" "|" "DONE")))
           (org-tag-alist '("work")))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--other-child-id . ,test-file))
         (let* ((parent-uri
-                (format "org-headline://%s#Parent%%20Task"
+                (format "org-headline://%s#First%%20Parent"
                         test-file))
                (after-uri
                 (format "org-id://%s" org-mcp-test--other-child-id)))
-          ;; Error: Other Child is not a child of Parent Task
+          ;; Error: Other Child is not a child of First Parent
           (should-error
            (org-mcp-test--call-add-todo
             "New Task" "TODO" '("work") nil parent-uri
@@ -2416,7 +2392,7 @@ This is valid Org-mode syntax and should be allowed."
             (should
              (string=
               (buffer-string)
-              org-mcp-test--content-parent-child-siblings-with-other-child-id))))))))
+              org-mcp-test--content-wrong-levels))))))))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
