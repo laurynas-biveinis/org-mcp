@@ -29,11 +29,15 @@
   (format "org-id://%s" org-mcp-test--content-with-id-id)
   "URI for org-mcp-test--content-with-id.")
 
+(defconst org-mcp-test--content-nested-siblings-parent-id
+  "nested-siblings-parent-id-002"
+  "ID for Parent Task in org-mcp-test--content-nested-siblings.")
+
 (defconst org-mcp-test--content-nested-siblings
   (format
    "* Parent Task
 :PROPERTIES:
-:ID:       nested-siblings-parent-id-002
+:ID:       %s
 :END:
 Some parent content.
 ** First Child
@@ -46,6 +50,7 @@ It spans multiple lines.
 Second child content.
 ** Third Child
 Third child content."
+   org-mcp-test--content-nested-siblings-parent-id
    org-mcp-test--content-with-id-id)
   "Parent with multiple child tasks.")
 
@@ -447,6 +452,29 @@ Third child content."
    "^\\* TODO Task Without Tags *\n" ; No tags, optional spaces
    "\\(?: *:PROPERTIES:\n" " *:ID: +[^\n]+\n" " *:END:\n\\)?$")
   "Pattern for TODO item without any tags.")
+
+(defconst org-mcp-test--pattern-add-todo-parent-id-uri
+  (concat
+   "^\\* Parent Task\n"
+   "\\(?: *:PROPERTIES:\n"
+   " *:ID: +[^\n]+\n"
+   " *:END:\n\\)?"
+   "Some parent content\\.\n"
+   "\\*\\* First Child\n"
+   "First child content\\.\n"
+   "It spans multiple lines\\.\n"
+   "\\*\\* Second Child\n"
+   "\\(?: *:PROPERTIES:\n"
+   " *:ID: +[^\n]+\n"
+   " *:END:\n\\)?"
+   "Second child content\\.\n"
+   "\\*\\* Third Child\n"
+   "Third child content\\.\n"
+   "\\*\\* TODO Child via ID +:work:\n"
+   "\\(?: *:PROPERTIES:\n"
+   " *:ID: +[^\n]+\n"
+   " *:END:\n\\)?$")
+  "Pattern for TODO added via parent ID URI.")
 
 (defconst org-mcp-test--pattern-renamed-simple-todo
   (concat
@@ -1630,7 +1658,7 @@ Content of subsection 2.1."))
 (ert-deftest org-mcp-test-headline-resource-path-traversal ()
   "Test that path traversal with ../ in org-headline URIs is rejected."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-parent-task-simple
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         ;; Test with ../ in the filename part
@@ -1645,7 +1673,7 @@ Content of subsection 2.1."))
 (ert-deftest org-mcp-test-headline-resource-encoded-path-traversal ()
   "Test that URL-encoded path traversal in org-headline URIs is rejected."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-parent-task-simple
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         ;; Test with URL-encoded ../ (%2E%2E%2F) in the filename part
@@ -2396,52 +2424,28 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
-  (let ((initial-content org-mcp-test--content-parent-task-simple))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords '((sequence "TODO(t!)" "|" "DONE(d!)")))
-            (org-tag-alist '("work"))
-            (org-id-locations-file nil))
-        ;; Add ID to Parent Task
-        (let ((parent-id nil))
-          (with-temp-buffer
-            (set-visited-file-name test-file t)
-            (insert-file-contents test-file)
-            (org-mode)
-            (goto-char (point-min))
-            (re-search-forward "^\\* Parent Task")
-            (org-id-get-create)
-            (setq parent-id (org-id-get))
-            (write-region (point-min) (point-max) test-file))
-          ;; Kill any buffer visiting the test file
-          (let ((buf (find-buffer-visiting test-file)))
-            (when buf
-              (kill-buffer buf)))
-
-          (org-mcp-test--with-enabled
-            ;; Use org-id:// for parent instead of org-headline://
-            (let* ((parent-uri (format "org-id://%s" parent-id))
-                   (result
-                    (org-mcp-test--call-add-todo
-                     "Child via ID" "TODO" '("work") nil parent-uri
-                     nil)))
-              ;; Check result has exactly 4 fields
-              (org-mcp-test--check-add-todo-result
-               result
-               "Child via ID"
-               (file-name-nondirectory test-file)
-               test-file
-               (concat
-                "^\\* Parent Task\n"
-                "\\(?: *:PROPERTIES:\n"
-                " *:ID: +[^\n]+\n"
-                " *:END:\n\\)?"
-                "Some parent content\\.\n\n?"
-                "\\*\\* TODO Child via ID +:work:\n"
-                "\\(?: *:PROPERTIES:\n"
-                " *:ID: +[^\n]+\n"
-                " *:END:\n\\)?\n?"
-                "\\* Another Task")))))))))
+  (org-mcp-test--with-temp-org-file test-file
+      org-mcp-test--content-nested-siblings
+    (let ((org-mcp-allowed-files (list test-file))
+          (org-todo-keywords '((sequence "TODO(t!)" "|" "DONE(d!)")))
+          (org-tag-alist '("work"))
+          (org-id-locations-file nil))
+      (org-mcp-test--with-enabled
+        ;; Use org-id:// for parent instead of org-headline://
+        (let* ((parent-uri
+                (format "org-id://%s"
+                        org-mcp-test--content-nested-siblings-parent-id))
+               (result
+                (org-mcp-test--call-add-todo
+                 "Child via ID" "TODO" '("work") nil parent-uri
+                 nil)))
+          ;; Check result has exactly 4 fields
+          (org-mcp-test--check-add-todo-result
+           result
+           "Child via ID"
+           (file-name-nondirectory test-file)
+           test-file
+           org-mcp-test--pattern-add-todo-parent-id-uri))))))
 
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-error ()
