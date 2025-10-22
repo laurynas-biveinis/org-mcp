@@ -90,12 +90,6 @@ Third line of content."
    org-mcp-test--content-with-id-id)
   "Task with an Org ID property, TODO state, and multiline content.")
 
-(defconst org-mcp-test--content-slash-in-headline
-  "* Project A/B Testing
-This is a headline with a slash in it.
-* Other Task
-Some other content."
-  "Headlines containing slash characters.")
 
 (defconst org-mcp-test--timestamp-id "20240101T120000"
   "Timestamp-format ID value.")
@@ -494,13 +488,14 @@ Second child content.
 
 (defconst org-mcp-test--pattern-renamed-slash-headline
   (concat
-   "^\\* Project A/B Experiments\n"
+   "\\`\\* Parent\n"
+   "\\*\\* Real Child\n"
+   "Content here\\.\n"
+   "\\* Parent/Child Renamed\n"
    " *:PROPERTIES:\n"
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
-   "This is a headline with a slash in it\\.\n"
-   "\\* Other Task\n"
-   "Some other content\\.$")
+   "This is a single headline with a slash, not nested under Parent\\.\\'")
   "Pattern for renamed headline containing slash character.")
 
 (defconst org-mcp-test--regex-slash-not-nested-after
@@ -706,8 +701,8 @@ Second child content.
 
 (defconst org-mcp-test--pattern-tool-read-headline-single
   (concat
-   "\\`\\* Project A/B Testing\n"
-   "This is a headline with a slash in it\\.\n"
+   "\\`\\* Parent/Child\n"
+   "This is a single headline with a slash, not nested under Parent\\.\n"
    "?\\'")
   "Pattern for org-read-headline tool single-level path result.")
 
@@ -2737,18 +2732,18 @@ paths and only matches headlines at the appropriate hierarchy level."
   "Test renaming a headline containing a slash character.
 Slashes must be properly URL-encoded to avoid path confusion."
   (org-mcp-test--with-temp-org-file
-      test-file org-mcp-test--content-slash-in-headline
+      test-file org-mcp-test--content-slash-not-nested-before
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         ;; The slash should be encoded as %2F in the URI
         (let* ((resource-uri
                 (format
-                 "org-headline://%s#Project%%20A%%2FB%%20Testing"
+                 "org-headline://%s#Parent%%2FChild"
                  test-file))
                (params
                 `((uri . ,resource-uri)
-                  (current_title . "Project A/B Testing")
-                  (new_title . "Project A/B Experiments")))
+                  (current_title . "Parent/Child")
+                  (new_title . "Parent/Child Renamed")))
                (result-text
                 (mcp-server-lib-ert-call-tool
                  "org-rename-headline" params))
@@ -2758,10 +2753,10 @@ Slashes must be properly URL-encoded to avoid path confusion."
           (should
            (equal
             (alist-get 'previous_title result)
-            "Project A/B Testing"))
+            "Parent/Child"))
           (should
            (equal
-            (alist-get 'new_title result) "Project A/B Experiments"))
+            (alist-get 'new_title result) "Parent/Child Renamed"))
           ;; Should return an org-id:// URI
           (should
            (string-match "^org-id://" (alist-get 'uri result)))
@@ -3338,11 +3333,11 @@ Some quote
 (ert-deftest org-mcp-test-tool-read-headline-single-level ()
   "Test org-read-headline with single-level path."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-slash-in-headline
+      org-mcp-test--content-slash-not-nested-before
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (let* ((params `((file . ,test-file)
-                         (headline_path . "Project%20A%2FB%20Testing")))
+                         (headline_path . "Parent%2FChild")))
                (result-text
                 (mcp-server-lib-ert-call-tool "org-read-headline" params)))
           (should
