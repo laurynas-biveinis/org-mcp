@@ -786,6 +786,28 @@ NEW-STATE is the new TODO state to set."
          (mcp-server-lib-ert-with-server :tools t :resources t ,@body)
        (org-mcp-disable))))
 
+(defmacro org-mcp-test--with-temp-org-file (var content &rest args)
+  "Create a temporary Org file, execute BODY, and ensure cleanup.
+VAR is the variable to bind the temp file path to.
+CONTENT is the initial content to write to the file.
+If first element of ARGS is a string, it's used as the filename prefix.
+Remaining elements are the body."
+  (declare (indent 2))
+  (let* ((filename
+          (or (when (stringp (car args))
+                (pop args))
+              "org-mcp-test"))
+         (body args))
+    `(let (,var)
+       (unwind-protect
+           (progn
+             (setq ,var
+                   (make-temp-file ,filename nil ".org" ,content))
+             (let ((org-mcp-allowed-files (list ,var)))
+               ,@body))
+         (when ,var
+           (delete-file ,var))))))
+
 (defmacro org-mcp-test--with-id-tracking
     (allowed-files id-locations &rest body)
   "Set up org-id tracking with ID-LOCATIONS and run BODY.
@@ -812,33 +834,12 @@ Sets up `org-id-track-globally' and `org-id-locations-file',
 then registers each ID location and enables MCP for BODY.
 The created temp file is automatically added to `org-mcp-allowed-files'."
   (declare (indent 2) (debug t))
-  `(org-mcp-test--with-temp-org-file ,file-var ,initial-content
-     (org-mcp-test--with-id-tracking
-         (list ,file-var)
-         (mapcar (lambda (id) (cons id ,file-var)) ,ids)
-       ,@body)))
-
-(defmacro org-mcp-test--with-temp-org-file (var content &rest args)
-  "Create a temporary Org file, execute BODY, and ensure cleanup.
-VAR is the variable to bind the temp file path to.
-CONTENT is the initial content to write to the file.
-If first element of ARGS is a string, it's used as the filename prefix.
-Remaining elements are the body."
-  (declare (indent 2))
-  (let* ((filename
-          (or (when (stringp (car args))
-                (pop args))
-              "org-mcp-test"))
-         (body args))
-    `(let (,var)
-       (unwind-protect
-           (progn
-             (setq ,var
-                   (make-temp-file ,filename nil ".org" ,content))
-             (let ((org-mcp-allowed-files (list ,var)))
-               ,@body))
-         (when ,var
-           (delete-file ,var))))))
+  `(org-mcp-test--with-temp-org-file
+    ,file-var ,initial-content
+    (org-mcp-test--with-id-tracking
+     (list ,file-var)
+     (mapcar (lambda (id) (cons id ,file-var)) ,ids)
+     ,@body)))
 
 (defun org-mcp-test--check-sequence
     (seq expected-type expected-keywords)
@@ -1360,8 +1361,7 @@ Sets up FILE-VAR with INITIAL-CONTENT and standard org configuration.
 Executes BODY with org-mcp enabled and standard variables set."
   (declare (indent 2))
   `(org-mcp-test--with-temp-org-file ,file-var ,initial-content
-     (let ((org-mcp-allowed-files (list ,file-var))
-           (org-todo-keywords
+     (let ((org-todo-keywords
             '((sequence "TODO" "IN-PROGRESS" "|" "DONE")))
            (org-tag-alist '("work" "personal" "urgent"))
            (org-id-locations-file nil))
@@ -1419,28 +1419,27 @@ INITIAL-CONTENT is the Org content to test with.
 HEADLINE-TITLE is the current headline to rename.
 NEW-TITLE is the invalid new title that should be rejected."
   (org-mcp-test--with-temp-org-file test-file initial-content
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; Try to rename - should fail
-        (let* ((resource-uri
-                (format "org-headline://%s#%s"
-                        test-file
-                        (url-hexify-string headline-title)))
-               (request
-                (mcp-server-lib-create-tools-call-request
-                 "org-rename-headline" 1
-                 `((uri . ,resource-uri)
-                   (current_title . ,headline-title)
-                   (new_title . ,new-title))))
-               (response
-                (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-          (should-error
-           (mcp-server-lib-ert-process-tool-response response)
-           :type 'mcp-server-lib-tool-error))
-        ;; Verify that file wasn't changed
-        (with-temp-buffer
-          (insert-file-contents test-file)
-          (should (string= (buffer-string) initial-content)))))))
+    (org-mcp-test--with-enabled
+      ;; Try to rename - should fail
+      (let* ((resource-uri
+              (format "org-headline://%s#%s"
+                      test-file
+                      (url-hexify-string headline-title)))
+             (request
+              (mcp-server-lib-create-tools-call-request
+               "org-rename-headline" 1
+               `((uri . ,resource-uri)
+                 (current_title . ,headline-title)
+                 (new_title . ,new-title))))
+             (response
+              (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
+        (should-error
+         (mcp-server-lib-ert-process-tool-response response)
+         :type 'mcp-server-lib-tool-error))
+      ;; Verify that file wasn't changed
+      (with-temp-buffer
+        (insert-file-contents test-file)
+        (should (string= (buffer-string) initial-content))))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
@@ -1460,14 +1459,13 @@ NEW-TITLE is the invalid new title that should be rejected."
   "Test that reading a resource returns file content."
   (let ((test-content "* Test Heading\nThis is test content."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          (let ((uri (format "org://%s" test-file)))
-            (mcp-server-lib-ert-verify-resource-read
-             uri
-             `((uri . ,uri)
-               (text . ,test-content)
-               (mimeType . "text/plain")))))))))
+      (org-mcp-test--with-enabled
+        (let ((uri (format "org://%s" test-file)))
+          (mcp-server-lib-ert-verify-resource-read
+           uri
+           `((uri . ,uri)
+             (text . ,test-content)
+             (mimeType . "text/plain"))))))))
 
 (ert-deftest org-mcp-test-outline-resource-returns-structure ()
   "Test that outline resource returns document structure."
@@ -1483,54 +1481,53 @@ Content of second section.
 *** Deep subsection
 Very deep content."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          (let* ((uri (format "org-outline://%s" test-file))
-                 (request
-                  (mcp-server-lib-create-resources-read-request uri))
-                 (response-json
-                  (mcp-server-lib-process-jsonrpc request mcp-server-lib-ert-server-id))
-                 (response
-                  (json-parse-string response-json
+      (org-mcp-test--with-enabled
+        (let* ((uri (format "org-outline://%s" test-file))
+               (request
+                (mcp-server-lib-create-resources-read-request uri))
+               (response-json
+                (mcp-server-lib-process-jsonrpc request mcp-server-lib-ert-server-id))
+               (response
+                (json-parse-string response-json
+                                   :object-type 'alist))
+               (result (alist-get 'result response))
+               (contents (alist-get 'contents result)))
+          ;; Check if we have an error instead of result
+          (when (alist-get 'error response)
+            (error
+             "Resource request failed: %s"
+             (alist-get 'message (alist-get 'error response))))
+          (let* ((outline-json (alist-get 'text (aref contents 0)))
+                 (outline
+                  (json-parse-string outline-json
                                      :object-type 'alist))
-                 (result (alist-get 'result response))
-                 (contents (alist-get 'contents result)))
-            ;; Check if we have an error instead of result
-            (when (alist-get 'error response)
-              (error
-               "Resource request failed: %s"
-               (alist-get 'message (alist-get 'error response))))
-            (let* ((outline-json (alist-get 'text (aref contents 0)))
-                   (outline
-                    (json-parse-string outline-json
-                                       :object-type 'alist))
-                   (headings (alist-get 'headings outline)))
-              ;; Check we have the right number of top-level headings
-              (should (= (length headings) 2))
-              ;; Check first heading
-              (let ((first (aref headings 0)))
+                 (headings (alist-get 'headings outline)))
+            ;; Check we have the right number of top-level headings
+            (should (= (length headings) 2))
+            ;; Check first heading
+            (let ((first (aref headings 0)))
+              (should
+               (equal (alist-get 'title first) "First Section"))
+              (should (= (alist-get 'level first) 1))
+              ;; Check children of first heading
+              (let ((children (alist-get 'children first)))
+                (should (= (length children) 2))
                 (should
-                 (equal (alist-get 'title first) "First Section"))
-                (should (= (alist-get 'level first) 1))
-                ;; Check children of first heading
-                (let ((children (alist-get 'children first)))
-                  (should (= (length children) 2))
-                  (should
-                   (equal
-                    (alist-get 'title (aref children 0))
-                    "Subsection 1.1"))
-                  (should
-                   (equal
-                    (alist-get 'title (aref children 1))
-                    "Subsection 1.2"))))
-              ;; Check second heading
-              (let ((second (aref headings 1)))
+                 (equal
+                  (alist-get 'title (aref children 0))
+                  "Subsection 1.1"))
                 (should
-                 (equal (alist-get 'title second) "Second Section"))
-                (should (= (alist-get 'level second) 1))
-                ;; Deep subsection is empty (level 3 under level 1)
-                (should
-                 (= (length (alist-get 'children second)) 0))))))))))
+                 (equal
+                  (alist-get 'title (aref children 1))
+                  "Subsection 1.2"))))
+            ;; Check second heading
+            (let ((second (aref headings 1)))
+              (should
+               (equal (alist-get 'title second) "Second Section"))
+              (should (= (alist-get 'level second) 1))
+              ;; Deep subsection is empty (level 3 under level 1)
+              (should
+               (= (length (alist-get 'children second)) 0)))))))))
 
 (ert-deftest org-mcp-test-file-not-in-allowed-list-returns-error ()
   "Test that reading a file not in allowed list returns an error."
@@ -1559,50 +1556,48 @@ Content in second section.
 ** Subsection 2.1
 Content of subsection 2.1."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          ;; Test getting a top-level headline
-          (let ((uri
-                 (format "org-headline://%s#First%%20Section"
-                         test-file)))
-            (mcp-server-lib-ert-verify-resource-read
-             uri
-             `((uri . ,uri)
-               (text
-                .
-                ,(concat
-                  "* First Section\n"
-                  "Some content in first section.\n"
-                  "** Subsection 1.1\n"
-                  "Content of subsection 1.1.\n"
-                  "** Subsection 1.2\n"
-                  "Content of subsection 1.2."))
-               (mimeType . "text/plain"))))
-          ;; Test getting a nested headline
-          (let ((uri
-                 (format (concat
-                          "org-headline://%s#"
-                          "First%%20Section/Subsection%%201.1")
-                         test-file)))
-            (mcp-server-lib-ert-verify-resource-read
-             uri
-             `((uri . ,uri)
-               (text
-                .
-                ,(concat
-                  "** Subsection 1.1\n" "Content of subsection 1.1."))
-               (mimeType . "text/plain")))))))))
+      (org-mcp-test--with-enabled
+        ;; Test getting a top-level headline
+        (let ((uri
+               (format "org-headline://%s#First%%20Section"
+                       test-file)))
+          (mcp-server-lib-ert-verify-resource-read
+           uri
+           `((uri . ,uri)
+             (text
+              .
+              ,(concat
+                "* First Section\n"
+                "Some content in first section.\n"
+                "** Subsection 1.1\n"
+                "Content of subsection 1.1.\n"
+                "** Subsection 1.2\n"
+                "Content of subsection 1.2."))
+             (mimeType . "text/plain"))))
+        ;; Test getting a nested headline
+        (let ((uri
+               (format (concat
+                        "org-headline://%s#"
+                        "First%%20Section/Subsection%%201.1")
+                       test-file)))
+          (mcp-server-lib-ert-verify-resource-read
+           uri
+           `((uri . ,uri)
+             (text
+              .
+              ,(concat
+                "** Subsection 1.1\n" "Content of subsection 1.1."))
+             (mimeType . "text/plain"))))))))
 
 (ert-deftest org-mcp-test-headline-resource-not-found ()
   "Test headline resource error for non-existent headline."
   (let ((test-content "* Existing Section\nSome content."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          (let ((uri
-                 (format "org-headline://%s#Nonexistent" test-file)))
-            (org-mcp-test--read-resource-expecting-error
-             uri "Cannot find headline: 'Nonexistent'")))))))
+      (org-mcp-test--with-enabled
+        (let ((uri
+               (format "org-headline://%s#Nonexistent" test-file)))
+          (org-mcp-test--read-resource-expecting-error
+           uri "Cannot find headline: 'Nonexistent'"))))))
 
 (ert-deftest org-mcp-test-headline-resource-file-with-hash ()
   "Test headline resource with # in filename."
@@ -1625,17 +1620,16 @@ Content of subsection 2.1."))
   "Test headline resource with # in headline title."
   (let ((test-content org-mcp-test--content-nested-siblings))
     (org-mcp-test--with-temp-org-file file test-content
-      (let ((org-mcp-allowed-files (list file)))
-        (org-mcp-test--with-enabled
-          ;; Test accessing headline with # encoded as %23
-          (let ((uri
-                 (format "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
-                         file)))
-            (mcp-server-lib-ert-verify-resource-read
-             uri
-             `((uri . ,uri)
-               (text . "** Third Child #3")
-               (mimeType . "text/plain")))))))))
+      (org-mcp-test--with-enabled
+        ;; Test accessing headline with # encoded as %23
+        (let ((uri
+               (format "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
+                       file)))
+          (mcp-server-lib-ert-verify-resource-read
+           uri
+           `((uri . ,uri)
+             (text . "** Third Child #3")
+             (mimeType . "text/plain"))))))))
 
 (ert-deftest
     org-mcp-test-headline-resource-file-and-headline-with-hash
@@ -1668,32 +1662,30 @@ Content of subsection 2.1."))
   "Test that path traversal with ../ in org-headline URIs is rejected."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; Test with ../ in the filename part
-        (let ((uri
-               (format "org-headline://../%s#Parent%%20Task"
-                       (file-name-nondirectory test-file))))
-          (org-mcp-test--read-resource-expecting-error
-           uri
-           (format "Path must be absolute: ../%s"
-                   (file-name-nondirectory test-file))))))))
+    (org-mcp-test--with-enabled
+      ;; Test with ../ in the filename part
+      (let ((uri
+             (format "org-headline://../%s#Parent%%20Task"
+                     (file-name-nondirectory test-file))))
+        (org-mcp-test--read-resource-expecting-error
+         uri
+         (format "Path must be absolute: ../%s"
+                 (file-name-nondirectory test-file)))))))
 
 (ert-deftest org-mcp-test-headline-resource-encoded-path-traversal ()
   "Test that URL-encoded path traversal in org-headline URIs is rejected."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; Test with URL-encoded ../ (%2E%2E%2F) in the filename part
-        ;; The encoding is NOT decoded, so %2E%2E%2F remains literal
-        (let ((uri
-               (format "org-headline://%%2E%%2E%%2F%s#Parent%%20Task"
-                       (file-name-nondirectory test-file))))
-          (org-mcp-test--read-resource-expecting-error
-           uri
-           (format "Path must be absolute: %%2E%%2E%%2F%s"
-                   (file-name-nondirectory test-file))))))))
+    (org-mcp-test--with-enabled
+      ;; Test with URL-encoded ../ (%2E%2E%2F) in the filename part
+      ;; The encoding is NOT decoded, so %2E%2E%2F remains literal
+      (let ((uri
+             (format "org-headline://%%2E%%2E%%2F%s#Parent%%20Task"
+                     (file-name-nondirectory test-file))))
+        (org-mcp-test--read-resource-expecting-error
+         uri
+         (format "Path must be absolute: %%2E%%2E%%2F%s"
+                 (file-name-nondirectory test-file)))))))
 
 (ert-deftest org-mcp-test-headline-resource-navigation ()
   "Test that headline navigation respects structure.
@@ -1701,19 +1693,18 @@ This test verifies that `org-mcp--get-headline-content'
 properly checks parent-child relationships and levels."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-wrong-levels
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; Test accessing "Target Headline" under "First Parent"
-        ;; Should get the level-2 headline, NOT the level-3 one
-        (let ((uri
-               (format
-                "org-headline://%s#First%%20Parent/Target%%20Headline"
-                test-file)))
-          ;; This SHOULD throw an error because First Parent has no such child
-          ;; But the bug causes it to return the wrong headline
-          (org-mcp-test--read-resource-expecting-error
-           uri
-           "Cannot find headline: 'First Parent/Target Headline'"))))))
+    (org-mcp-test--with-enabled
+      ;; Test accessing "Target Headline" under "First Parent"
+      ;; Should get the level-2 headline, NOT the level-3 one
+      (let ((uri
+             (format
+              "org-headline://%s#First%%20Parent/Target%%20Headline"
+              test-file)))
+        ;; This SHOULD throw an error because First Parent has no such child
+        ;; But the bug causes it to return the wrong headline
+        (org-mcp-test--read-resource-expecting-error
+         uri
+         "Cannot find headline: 'First Parent/Target Headline'")))))
 
 
 (ert-deftest org-mcp-test-id-resource-returns-content ()
@@ -1766,8 +1757,7 @@ properly checks parent-child relationships and levels."
   "Test successful TODO state update."
   (let ((test-content "* TODO Task One\nTask description."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO(t!)" "IN-PROGRESS(i!)" "|" "DONE(d!)"))))
         (org-mcp-test--with-enabled
           ;; Update TODO to IN-PROGRESS
@@ -1781,8 +1771,7 @@ properly checks parent-child relationships and levels."
   "Test TODO state update fails on state mismatch."
   (let ((test-content "* TODO Task One\nTask description."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         (org-mcp-test--with-enabled
           ;; Try to update with wrong current state
@@ -1809,8 +1798,7 @@ properly checks parent-child relationships and levels."
   "Test that empty string for newState is rejected."
   (let ((test-content "* TODO Task One\nTask description."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         (org-mcp-test--with-enabled
           ;; Try to set empty state
@@ -1825,8 +1813,7 @@ properly checks parent-child relationships and levels."
   "Test TODO state update fails for invalid new state."
   (let ((test-content "* TODO Task One\nTask description."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         (org-mcp-test--with-enabled
           ;; Try to update to invalid state
@@ -1841,8 +1828,7 @@ properly checks parent-child relationships and levels."
   "Test TODO state update works when file is open in another buffer."
   (let ((test-content "* TODO Task One\nTask description."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         ;; Open the file in a buffer
         (let ((buffer (find-file-noselect test-file)))
@@ -1872,8 +1858,7 @@ Task description.
 * TODO Task Two
 Another task description."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         ;; Open the file in a buffer and modify it elsewhere
         (let ((buffer (find-file-noselect test-file)))
@@ -1958,8 +1943,7 @@ Task description.
 * TODO Task Two
 Another task."))
     (org-mcp-test--with-temp-org-file test-file test-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         (org-mcp-test--with-enabled
           ;; Try to update a non-existent headline
@@ -2418,8 +2402,7 @@ This is valid Org-mode syntax and should be allowed."
   "Test adding TODO with parent specified as org-id:// URI."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file))
-          (org-todo-keywords '((sequence "TODO(t!)" "|" "DONE(d!)")))
+    (let ((org-todo-keywords '((sequence "TODO(t!)" "|" "DONE(d!)")))
           (org-tag-alist '("work"))
           (org-id-locations-file nil))
       (org-mcp-test--with-enabled
@@ -2444,8 +2427,7 @@ This is valid Org-mode syntax and should be allowed."
   "Test that mutually exclusive tags are rejected."
   (let ((initial-content "#+TITLE: Test Org File\n\n"))
     (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-id-track-globally nil)
+      (let ((org-id-track-globally nil)
             (org-id-locations-file nil)
             (org-todo-keywords '((sequence "TODO" "|" "DONE")))
             ;; Configure mutex tag groups
@@ -2473,8 +2455,7 @@ This is valid Org-mode syntax and should be allowed."
   "Test that non-conflicting tags from mutex groups are accepted."
   (let ((initial-content "#+TITLE: Test Org File\n\n"))
     (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-id-track-globally nil)
+      (let ((org-id-track-globally nil)
             (org-id-locations-file nil)
             (org-todo-keywords '((sequence "TODO" "|" "DONE")))
             ;; Configure mutex tag groups
@@ -2549,8 +2530,7 @@ This is valid Org-mode syntax and should be allowed."
   "Test renaming a simple TODO headline."
   (let ((initial-content org-mcp-test--content-simple-todo))
     (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-todo-keywords
+      (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         (org-mcp-test--with-enabled
           ;; Rename the headline
@@ -2582,8 +2562,7 @@ This is valid Org-mode syntax and should be allowed."
 (ert-deftest org-mcp-test-rename-headline-title-mismatch ()
   "Test that rename fails when current title doesn't match."
   (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-simple-todo
-    (let ((org-mcp-allowed-files (list test-file))
-          (org-todo-keywords '((sequence "TODO" "|" "DONE"))))
+    (let ((org-todo-keywords '((sequence "TODO" "|" "DONE"))))
       (org-mcp-test--with-enabled
         ;; Try to rename with wrong current title
         (let* ((resource-uri
@@ -2600,8 +2579,7 @@ This is valid Org-mode syntax and should be allowed."
 (ert-deftest org-mcp-test-rename-headline-preserve-tags ()
   "Test that renaming preserves tags."
   (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-todo-with-tags
-    (let ((org-mcp-allowed-files (list test-file))
-          (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+    (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
           (org-tag-alist '("work" "urgent" "personal")))
       (org-mcp-test--with-enabled
         ;; Rename the headline
@@ -2627,21 +2605,20 @@ This is valid Org-mode syntax and should be allowed."
 (ert-deftest org-mcp-test-rename-headline-no-todo ()
   "Test renaming a regular headline without TODO state."
   (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; Rename the headline
-        (let* ((resource-uri
-                (format "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
-                        test-file))
-               (result
-                (org-mcp-test--call-rename-headline
-                 resource-uri "First Child 50% Complete" "Updated Child")))
-          ;; Check result
-          (should (equal (alist-get 'success result) t))
-          ;; Verify file content
-          (org-mcp-test--verify-file-matches
-           test-file
-           org-mcp-test--pattern-renamed-headline-no-todo))))))
+    (org-mcp-test--with-enabled
+      ;; Rename the headline
+      (let* ((resource-uri
+              (format "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
+                      test-file))
+             (result
+              (org-mcp-test--call-rename-headline
+               resource-uri "First Child 50% Complete" "Updated Child")))
+        ;; Check result
+        (should (equal (alist-get 'success result) t))
+        ;; Verify file content
+        (org-mcp-test--verify-file-matches
+         test-file
+         org-mcp-test--pattern-renamed-headline-no-todo)))))
 
 (ert-deftest org-mcp-test-rename-headline-nested-path-navigation ()
   "Test correct headline path navigation in nested structures.
@@ -2650,34 +2627,32 @@ paths and only matches headlines at the appropriate hierarchy level."
   (let ((initial-content org-mcp-test--content-wrong-levels))
     (org-mcp-test--with-temp-org-file
      test-file initial-content
-     (let ((org-mcp-allowed-files (list test-file)))
-       (org-mcp-test--with-enabled
-        ;; Try to rename "First Parent/Target Headline"
-        ;; But there's no Target Headline under First Parent!
-        ;; The function should fail, but it might incorrectly
-        ;; find Third Parent's Target Headline
-        (let* ((resource-uri
-                (format "org-headline://%s#First%%20Parent/Target%%20Headline"
-                        test-file)))
-          ;; This should throw an error because First Parent has no Target Headline
-          (let* ((request
-                   (mcp-server-lib-create-tools-call-request
-                    "org-rename-headline" 1
-                    `((uri . ,resource-uri)
-                      (current_title . "Target Headline")
-                      (new_title . "Renamed Target Headline"))))
-                 (response
-                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-            (should-error
-             (mcp-server-lib-ert-process-tool-response response)
-             :type 'mcp-server-lib-tool-error))))))))
+     (org-mcp-test--with-enabled
+      ;; Try to rename "First Parent/Target Headline"
+      ;; But there's no Target Headline under First Parent!
+      ;; The function should fail, but it might incorrectly
+      ;; find Third Parent's Target Headline
+      (let* ((resource-uri
+              (format "org-headline://%s#First%%20Parent/Target%%20Headline"
+                      test-file)))
+        ;; This should throw an error because First Parent has no Target Headline
+        (let* ((request
+                 (mcp-server-lib-create-tools-call-request
+                  "org-rename-headline" 1
+                  `((uri . ,resource-uri)
+                    (current_title . "Target Headline")
+                    (new_title . "Renamed Target Headline"))))
+               (response
+                (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
+          (should-error
+           (mcp-server-lib-ert-process-tool-response response)
+           :type 'mcp-server-lib-tool-error)))))))
 
 (ert-deftest org-mcp-test-rename-headline-by-id ()
   "Test renaming a headline accessed by org-id URI."
   (let ((initial-content org-mcp-test--content-nested-siblings))
     (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-id-track-globally t)
+      (let ((org-id-track-globally t)
             (org-id-locations-file
              (make-temp-file "org-id-locations")))
         ;; Manually add the ID to org-id locations
@@ -2714,8 +2689,7 @@ paths and only matches headlines at the appropriate hierarchy level."
   "Test error when ID doesn't exist."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file))
-          (org-id-track-globally nil)
+    (let ((org-id-track-globally nil)
           (org-id-locations-file nil))
       (org-mcp-test--with-enabled
         ;; Try to rename non-existent ID
@@ -2737,32 +2711,31 @@ paths and only matches headlines at the appropriate hierarchy level."
 Slashes must be properly URL-encoded to avoid path confusion."
   (org-mcp-test--with-temp-org-file
       test-file org-mcp-test--content-slash-not-nested-before
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; The slash should be encoded as %2F in the URI
-        (let* ((resource-uri
-                (format
-                 "org-headline://%s#Parent%%2FChild"
-                 test-file))
-               (result
-                (org-mcp-test--call-rename-headline
-                 resource-uri "Parent/Child" "Parent/Child Renamed")))
-          ;; Check result
-          (should (equal (alist-get 'success result) t))
-          (should
-           (equal
-            (alist-get 'previous_title result)
-            "Parent/Child"))
-          (should
-           (equal
-            (alist-get 'new_title result) "Parent/Child Renamed"))
-          ;; Should return an org-id:// URI
-          (should
-           (string-match "^org-id://" (alist-get 'uri result)))
-          ;; Verify file content
-          (org-mcp-test--verify-file-matches
-           test-file
-           org-mcp-test--pattern-renamed-slash-headline))))))
+    (org-mcp-test--with-enabled
+      ;; The slash should be encoded as %2F in the URI
+      (let* ((resource-uri
+              (format
+               "org-headline://%s#Parent%%2FChild"
+               test-file))
+             (result
+              (org-mcp-test--call-rename-headline
+               resource-uri "Parent/Child" "Parent/Child Renamed")))
+        ;; Check result
+        (should (equal (alist-get 'success result) t))
+        (should
+         (equal
+          (alist-get 'previous_title result)
+          "Parent/Child"))
+        (should
+         (equal
+          (alist-get 'new_title result) "Parent/Child Renamed"))
+        ;; Should return an org-id:// URI
+        (should
+         (string-match "^org-id://" (alist-get 'uri result)))
+        ;; Verify file content
+        (org-mcp-test--verify-file-matches
+         test-file
+         org-mcp-test--pattern-renamed-slash-headline)))))
 
 (ert-deftest org-mcp-test-rename-headline-slash-not-nested ()
   "Test that headline with slash is not treated as nested path.
@@ -2770,52 +2743,50 @@ Verifies that 'Parent/Child' is treated as a single headline,
 not as Child under Parent."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-slash-not-nested-before
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; Try to rename the "Parent/Child" headline
-        (let* ((resource-uri
-                ;; Slash encoded as %2F to indicate single headline
-                (format "org-headline://%s#Parent%%2FChild"
-                        test-file))
-               (result
-                (org-mcp-test--call-rename-headline
-                 resource-uri "Parent/Child" "Parent-Child Renamed")))
-          ;; Should succeed
-          (should (equal (alist-get 'success result) t))
-          ;; Verify file content
-          (org-mcp-test--verify-file-matches
-           test-file
-           org-mcp-test--regex-slash-not-nested-after))))))
+    (org-mcp-test--with-enabled
+      ;; Try to rename the "Parent/Child" headline
+      (let* ((resource-uri
+              ;; Slash encoded as %2F to indicate single headline
+              (format "org-headline://%s#Parent%%2FChild"
+                      test-file))
+             (result
+              (org-mcp-test--call-rename-headline
+               resource-uri "Parent/Child" "Parent-Child Renamed")))
+        ;; Should succeed
+        (should (equal (alist-get 'success result) t))
+        ;; Verify file content
+        (org-mcp-test--verify-file-matches
+         test-file
+         org-mcp-test--regex-slash-not-nested-after)))))
 
 (ert-deftest org-mcp-test-rename-headline-with-percent ()
   "Test renaming a headline containing a percent sign.
 Percent signs must be properly URL-encoded to avoid double-encoding issues."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; The percent should be encoded as %25 in the URI
-        (let* ((resource-uri
-                (format "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
-                        test-file))
-               (result
-                (org-mcp-test--call-rename-headline
-                 resource-uri
-                 "First Child 50% Complete"
-                 "First Child 75% Complete")))
-          ;; Check result
-          (should (equal (alist-get 'success result) t))
-          (should
-           (equal (alist-get 'previous_title result) "First Child 50% Complete"))
-          (should
-           (equal (alist-get 'new_title result) "First Child 75% Complete"))
-          ;; Should return an org-id:// URI
-          (should
-           (string-match "^org-id://" (alist-get 'uri result)))
-          ;; Verify file content
-          (org-mcp-test--verify-file-matches
-           test-file
-           org-mcp-test--regex-percent-after))))))
+    (org-mcp-test--with-enabled
+      ;; The percent should be encoded as %25 in the URI
+      (let* ((resource-uri
+              (format "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
+                      test-file))
+             (result
+              (org-mcp-test--call-rename-headline
+               resource-uri
+               "First Child 50% Complete"
+               "First Child 75% Complete")))
+        ;; Check result
+        (should (equal (alist-get 'success result) t))
+        (should
+         (equal (alist-get 'previous_title result) "First Child 50% Complete"))
+        (should
+         (equal (alist-get 'new_title result) "First Child 75% Complete"))
+        ;; Should return an org-id:// URI
+        (should
+         (string-match "^org-id://" (alist-get 'uri result)))
+        ;; Verify file content
+        (org-mcp-test--verify-file-matches
+         test-file
+         org-mcp-test--regex-percent-after)))))
 
 (ert-deftest org-mcp-test-rename-headline-reject-empty-string ()
   "Test that renaming to an empty string is rejected."
@@ -2843,27 +2814,25 @@ More content."
 This test documents the first-match behavior when duplicate headlines exist."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-duplicate-headlines-before
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; Use headline:// URI with ambiguous path
-        (let ((resource-uri
-               (format "org-headline://%s#Project%%20Review"
-                       test-file)))
-          ;; Should succeed - renames first match
-          (org-mcp--tool-rename-headline
-           resource-uri "Project Review" "Q1 Review"))
+    (org-mcp-test--with-enabled
+      ;; Use headline:// URI with ambiguous path
+      (let ((resource-uri
+             (format "org-headline://%s#Project%%20Review"
+                     test-file)))
+        ;; Should succeed - renames first match
+        (org-mcp--tool-rename-headline
+         resource-uri "Project Review" "Q1 Review"))
 
-        ;; Verify only first occurrence was renamed
-        (org-mcp-test--verify-file-matches
-         test-file
-         org-mcp-test--regex-duplicate-first-renamed)))))
+      ;; Verify only first occurrence was renamed
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--regex-duplicate-first-renamed))))
 
 (ert-deftest org-mcp-test-rename-headline-creates-id ()
   "Test that renaming a headline creates an Org ID and returns it."
   (org-mcp-test--with-temp-org-file
       test-file org-mcp-test--content-nested-siblings
-      (let ((org-mcp-allowed-files (list test-file))
-            (org-id-track-globally t)
+      (let ((org-id-track-globally t)
             (org-id-locations-file (make-temp-file "test-org-id")))
         (org-mcp-test--with-enabled
          ;; Rename headline using path-based URI
@@ -2906,44 +2875,42 @@ correctly restricts search to the parent's subtree."
   (let ((initial-content
          org-mcp-test--content-hierarchy-before))
     (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-mcp-allowed-files (list test-file)))
-        (org-mcp-test--with-enabled
-          (let* ((resource-uri
-                (format "org-headline://%s#Second%%20Section/Target"
-                        test-file))
-               (result
-                (org-mcp-test--call-rename-headline
-                 resource-uri "Target" "Renamed Target")))
-          ;; Should succeed and rename the correct Target
-          (should (equal (alist-get 'success result) t))
-          (with-temp-buffer
-            (insert-file-contents test-file)
-              (let ((content (buffer-string)))
-                (should
-                 (string-match-p
-                  org-mcp-test--regex-hierarchy-second-target-renamed
-                  content))))))))))
+      (org-mcp-test--with-enabled
+        (let* ((resource-uri
+              (format "org-headline://%s#Second%%20Section/Target"
+                      test-file))
+             (result
+              (org-mcp-test--call-rename-headline
+               resource-uri "Target" "Renamed Target")))
+        ;; Should succeed and rename the correct Target
+        (should (equal (alist-get 'success result) t))
+        (with-temp-buffer
+          (insert-file-contents test-file)
+            (let ((content (buffer-string)))
+              (should
+               (string-match-p
+                org-mcp-test--regex-hierarchy-second-target-renamed
+                content)))))))))
 
 (ert-deftest org-mcp-test-rename-headline-with-todo-keyword ()
   "Test that headlines with TODO keywords can be renamed.
 The navigation function should find headlines even when they have TODO keywords."
   (org-mcp-test--with-temp-org-file
       test-file org-mcp-test--content-todo-keywords-before
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        ;; Try to rename using the headline title without TODO keyword
-        (let ((resource-uri
-               (format
-                "org-headline://%s#Project%%20Management/Review%%20Documents"
-                test-file)))
-          ;; This should work - finding "Review Documents" even though
-          ;; the actual headline is "TODO Review Documents"
-          (org-mcp--tool-rename-headline
-           resource-uri "Review Documents" "Q1 Planning Review"))
+    (org-mcp-test--with-enabled
+      ;; Try to rename using the headline title without TODO keyword
+      (let ((resource-uri
+             (format
+              "org-headline://%s#Project%%20Management/Review%%20Documents"
+              test-file)))
+        ;; This should work - finding "Review Documents" even though
+        ;; the actual headline is "TODO Review Documents"
+        (org-mcp--tool-rename-headline
+         resource-uri "Review Documents" "Q1 Planning Review"))
 
-        ;; Verify the headline was renamed correctly
-        (org-mcp-test--verify-file-matches
-         test-file org-mcp-test--regex-todo-keywords-after)))))
+      ;; Verify the headline was renamed correctly
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--regex-todo-keywords-after))))
 
 ;;; org-edit-body tests
 
@@ -3092,19 +3059,18 @@ content here."
   "Test org-edit-body tool can add content to empty body."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        (let* ((resource-uri
-                (format "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
-                        test-file))
-               (result
-                (org-mcp-test--call-edit-body
-                 resource-uri "" "New content added."
-                 nil)))
-          (org-mcp-test--check-edit-body-result
-           result
-           test-file
-           org-mcp-test--pattern-edit-body-empty))))))
+    (org-mcp-test--with-enabled
+      (let* ((resource-uri
+              (format "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
+                      test-file))
+             (result
+              (org-mcp-test--call-edit-body
+               resource-uri "" "New content added."
+               nil)))
+        (org-mcp-test--check-edit-body-result
+         result
+         test-file
+         org-mcp-test--pattern-edit-body-empty)))))
 
 (ert-deftest org-mcp-test-edit-body-empty-old-non-empty-body ()
   "Test error when oldBody is empty but body has content."
@@ -3138,18 +3104,17 @@ content here."
   "Test org-edit-body preserves nested headlines."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        (let ((result
-               (org-mcp-test--call-edit-body
-                (format "org-headline://%s#Parent%%20Task" test-file)
-                "Some parent content."
-                "Updated parent content"
-                nil)))
-          (org-mcp-test--check-edit-body-result
-           result
-           test-file
-           org-mcp-test--pattern-edit-body-nested-headlines))))))
+    (org-mcp-test--with-enabled
+      (let ((result
+             (org-mcp-test--call-edit-body
+              (format "org-headline://%s#Parent%%20Task" test-file)
+              "Some parent content."
+              "Updated parent content"
+              nil)))
+        (org-mcp-test--check-edit-body-result
+         result
+         test-file
+         org-mcp-test--pattern-edit-body-nested-headlines)))))
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-in-middle ()
   "Test org-edit-body rejects newBody with headline marker in middle."
@@ -3186,17 +3151,16 @@ content here."
 When editing a level 2 node, level 1 headlines should be rejected."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        (org-mcp-test--assert-error-and-unchanged
-         (org-mcp--tool-edit-body
-          (format "org-headline://%s#Parent%%20Task/Second%%20Child"
-                  test-file)
-          "Second child content."
-          "New text
+    (org-mcp-test--with-enabled
+      (org-mcp-test--assert-error-and-unchanged
+       (org-mcp--tool-edit-body
+        (format "org-headline://%s#Parent%%20Task/Second%%20Child"
+                test-file)
+        "Second child content."
+        "New text
 * Top level heading"
-          nil)
-         test-file org-mcp-test--content-nested-siblings)))))
+        nil)
+       test-file org-mcp-test--content-nested-siblings))))
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-at-start ()
   "Test org-edit-body rejects newBody with headline at beginning."
@@ -3260,58 +3224,53 @@ Some quote
   "Test org-read-file tool returns same content as file resource."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        (let ((result-text (org-mcp-test--call-read-file test-file)))
-          (should (string= result-text org-mcp-test--content-nested-siblings)))))))
+    (org-mcp-test--with-enabled
+      (let ((result-text (org-mcp-test--call-read-file test-file)))
+        (should (string= result-text org-mcp-test--content-nested-siblings))))))
 
 (ert-deftest org-mcp-test-tool-read-outline ()
   "Test org-read-outline tool returns valid JSON outline structure."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        (let* ((result (org-mcp-test--call-read-outline test-file))
-               (headings (alist-get 'headings result)))
-          (should (= (length headings) 1))
-          (should (string= (alist-get 'title (aref headings 0)) "Parent Task")))))))
+    (org-mcp-test--with-enabled
+      (let* ((result (org-mcp-test--call-read-outline test-file))
+             (headings (alist-get 'headings result)))
+        (should (= (length headings) 1))
+        (should (string= (alist-get 'title (aref headings 0)) "Parent Task"))))))
 
 (ert-deftest org-mcp-test-tool-read-headline-empty-path ()
   "Test org-read-headline with empty headline_path signals validation error."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        (should-error
-         (org-mcp-test--call-read-headline-expecting-error test-file "")
-         :type 'mcp-server-lib-tool-error)))))
+    (org-mcp-test--with-enabled
+      (should-error
+       (org-mcp-test--call-read-headline-expecting-error test-file "")
+       :type 'mcp-server-lib-tool-error))))
 
 (ert-deftest org-mcp-test-tool-read-headline-single-level ()
   "Test org-read-headline with single-level path."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-slash-not-nested-before
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        (let ((result-text
-               (org-mcp-test--call-read-headline test-file "Parent%2FChild")))
-          (should
-           (string-match-p
-            org-mcp-test--pattern-tool-read-headline-single
-            result-text)))))))
+    (org-mcp-test--with-enabled
+      (let ((result-text
+             (org-mcp-test--call-read-headline test-file "Parent%2FChild")))
+        (should
+         (string-match-p
+          org-mcp-test--pattern-tool-read-headline-single
+          result-text))))))
 
 (ert-deftest org-mcp-test-tool-read-headline-nested ()
   "Test org-read-headline with nested path."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
-    (let ((org-mcp-allowed-files (list test-file)))
-      (org-mcp-test--with-enabled
-        (let ((result-text
-               (org-mcp-test--call-read-headline
-                test-file "Parent%20Task/First%20Child%2050%25%20Complete")))
-          (should
-           (string-match-p
-            org-mcp-test--pattern-tool-read-headline-nested
-            result-text)))))))
+    (org-mcp-test--with-enabled
+      (let ((result-text
+             (org-mcp-test--call-read-headline
+              test-file "Parent%20Task/First%20Child%2050%25%20Complete")))
+        (should
+         (string-match-p
+          org-mcp-test--pattern-tool-read-headline-nested
+          result-text))))))
 
 (ert-deftest org-mcp-test-tool-read-by-id ()
   "Test org-read-by-id tool returns headline content by ID."
