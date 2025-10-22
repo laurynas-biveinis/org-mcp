@@ -383,21 +383,21 @@ This is already done"
 (defconst org-mcp-test--expected-timestamp-id-done-regex
   (concat
    "\\`\\* DONE Task with timestamp ID"
-   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+   "\\(?:\n:PROPERTIES:\n:ID:[ \t]+[A-Fa-f0-9-]+\n:END:\\)?"
    "\\(?:.\\|\n\\)*\\'")
   "Regex matching complete buffer after updating timestamp ID task to DONE.")
 
 (defconst org-mcp-test--expected-task-one-in-progress-regex
   (concat
    "\\`\\* IN-PROGRESS Task One"
-   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+   "\\(?:\n:PROPERTIES:\n:ID:[ \t]+[A-Fa-f0-9-]+\n:END:\\)?"
    "\\(?:.\\|\n\\)*\\'")
   "Regex matching complete buffer with Task One in IN-PROGRESS state.")
 
 (defconst org-mcp-test--expected-task-with-id-in-progress-regex
   (concat
    "\\`\\* IN-PROGRESS Task with ID"
-   "\\(?:\n:PROPERTIES:\n:ID: +[A-Fa-f0-9-]+\n:END:\\)?"
+   "\\(?:\n:PROPERTIES:\n:ID:[ \t]+[A-Fa-f0-9-]+\n:END:\\)?"
    "\\(?:.\\|\n\\)*\\'")
   "Regex matching complete buffer with Task with ID in IN-PROGRESS state.")
 
@@ -494,7 +494,7 @@ Some content."
   (concat
    "^\\* TODO Updated Task\n"
    " *:PROPERTIES:\n"
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
    "First line of body\\.$")
   "Pattern for renamed simple TODO with generated ID.")
@@ -503,7 +503,7 @@ Some content."
   (concat
    "^\\* TODO Renamed Task[ \t]+:work:urgent:\n"
    " *:PROPERTIES:\n"
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
    "Task description\\.$")
   "Pattern for renamed TODO task preserving tags.")
@@ -512,7 +512,7 @@ Some content."
   (concat
    "^\\* Updated Headline\n"
    " *:PROPERTIES:\n"
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
    "Some content\\.$")
   "Pattern for renamed headline without TODO state.")
@@ -521,7 +521,7 @@ Some content."
   (concat
    "\\`\\* Renamed Headline\n"
    ":PROPERTIES:\n"
-   ":ID: +[A-Fa-f0-9-]+\n"
+   ":ID:[ \t]+[A-Fa-f0-9-]+\n"
    ":END:\n"
    "Content here\\.\\'")
   "Pattern for headline renamed with ID creation.")
@@ -530,7 +530,7 @@ Some content."
   (concat
    "^\\* Project A/B Experiments\n"
    " *:PROPERTIES:\n"
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
    "This is a headline with a slash in it\\.\n"
    "\\* Other Task\n"
@@ -544,7 +544,7 @@ Some content."
    "Content here\\.\n"
    "\\* Parent-Child Renamed\n"
    " *:PROPERTIES:\n"
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
    "This is a single headline with a slash, not nested under Parent\\.\\'")
   "Regex for slash-not-nested test after renaming Parent/Child.")
@@ -552,7 +552,7 @@ Some content."
 (defconst org-mcp-test--regex-percent-after
   (concat "\\`\\* 75% Complete\n"
           ":PROPERTIES:\n"
-          ":ID: +[A-Fa-f0-9-]+\n"
+          ":ID:[ \t]+[A-Fa-f0-9-]+\n"
           ":END:\n"
           "This task is half done\\.\n"
           "\\* Use %20 for spaces\n"
@@ -564,7 +564,7 @@ Some content."
    "\\`\\* Team Updates\n"
    "\\*\\* Q1 Review\n"
    " *:PROPERTIES:\n"
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
    "First review content\\.\n"
    "\\* Development Tasks\n"
@@ -585,7 +585,7 @@ Some content."
    "More content\\.\n"
    "\\*\\* Renamed Target\n"
    " *:PROPERTIES:\n"
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
    "This Target is under Second Section, not First Section\\.\\'")
   "Regex for hierarchy test after renaming second Target.")
@@ -595,7 +595,7 @@ Some content."
    "\\`\\* Project Management\n"
    "\\*\\* TODO Q1 Planning Review\n"
    " *:PROPERTIES:\n"
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
    "This task needs to be renamed\n"
    "\\*\\* DONE Review Code\n"
@@ -652,7 +652,7 @@ Some content."
    "Updated parent content\\.\n" ; No ID when using org-headline://
    "\\*\\* Another Task\n"
    "\\(?: *:PROPERTIES:\n" ; Child may get an ID
-   " *:ID: +[A-Fa-f0-9-]+\n" " *:END:\n\\)?" "More content\\.\n" "?\\'")
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n" " *:END:\n\\)?" "More content\\.\n" "?\\'")
   "Pattern for nested headlines edit-body test result.")
 
 
@@ -660,14 +660,14 @@ Some content."
   (concat
    "\\* Another TaskNew content added\\.\n"
    " *:PROPERTIES:\n"
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:")
   "Pattern for edit-body test with empty body adding content.")
 
 (defconst org-mcp-test--pattern-edit-body-empty-with-props
   (format (concat
            " *:PROPERTIES:\n"
-           " *:ID: +[A-Fa-f0-9-]+\n"
+           " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
            " *:END:\n"
            " *:PROPERTIES:\n"
            " *:ID: +%s\n"
@@ -686,7 +686,7 @@ Some content."
    "some text\n"
    "\\*\\* Subheading content\n"
    "\\(?: *:PROPERTIES:\n" ; Subheading gets ID
-   " *:ID: +[A-Fa-f0-9-]+\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n\\)?"
    "Second line of content\\.\n"
    "Third line of content\\.")
