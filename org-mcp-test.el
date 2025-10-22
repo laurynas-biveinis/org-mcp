@@ -724,6 +724,45 @@ Second child content.
          (mcp-server-lib-ert-call-tool "org-get-allowed-files" nil)))
     (json-read-from-string result)))
 
+(defun org-mcp-test--call-rename-headline (uri current-title new-title)
+  "Call org-rename-headline tool via JSON-RPC and return the result.
+URI is the headline URI, CURRENT-TITLE is the expected current title,
+NEW-TITLE is the new title to set."
+  (let* ((params
+          `((uri . ,uri)
+            (current_title . ,current-title)
+            (new_title . ,new-title)))
+         (result-text
+          (mcp-server-lib-ert-call-tool "org-rename-headline" params)))
+    (json-read-from-string result-text)))
+
+(defun org-mcp-test--call-read-file (file)
+  "Call org-read-file tool via JSON-RPC and return the result.
+FILE is the file path to read."
+  (let ((params `((file . ,file))))
+    (mcp-server-lib-ert-call-tool "org-read-file" params)))
+
+(defun org-mcp-test--call-read-outline (file)
+  "Call org-read-outline tool via JSON-RPC and return the result.
+FILE is the file path to read the outline from."
+  (let* ((params `((file . ,file)))
+         (result-json
+          (mcp-server-lib-ert-call-tool "org-read-outline" params)))
+    (json-parse-string result-json :object-type 'alist)))
+
+(defun org-mcp-test--call-read-headline (file headline-path)
+  "Call org-read-headline tool via JSON-RPC and return the result.
+FILE is the file path, HEADLINE-PATH is the slash-separated path to the headline."
+  (let ((params `((file . ,file)
+                  (headline_path . ,headline-path))))
+    (mcp-server-lib-ert-call-tool "org-read-headline" params)))
+
+(defun org-mcp-test--call-read-by-id (uuid)
+  "Call org-read-by-id tool via JSON-RPC and return the result.
+UUID is the ID property of the headline to read."
+  (let ((params `((uuid . ,uuid))))
+    (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
+
 ;; Test helper macros
 
 (defmacro org-mcp-test--with-enabled (&rest body)
@@ -2509,14 +2548,9 @@ This is valid Org-mode syntax and should be allowed."
           (let* ((resource-uri
                   (format "org-headline://%s#Original%%20Task"
                           test-file))
-                 (params
-                  `((uri . ,resource-uri)
-                    (current_title . "Original Task")
-                    (new_title . "Updated Task")))
-                 (result-text
-                  (mcp-server-lib-ert-call-tool
-                   "org-rename-headline" params))
-                 (result (json-read-from-string result-text)))
+                 (result
+                  (org-mcp-test--call-rename-headline
+                   resource-uri "Original Task" "Updated Task")))
             ;; Check result structure
             (should (= (length result) 4))
             (should (equal (alist-get 'success result) t))
@@ -2565,14 +2599,9 @@ This is valid Org-mode syntax and should be allowed."
         (let* ((resource-uri
                 (format "org-headline://%s#Task%%20with%%20Tags"
                         test-file))
-               (params
-                `((uri . ,resource-uri)
-                  (current_title . "Task with Tags")
-                  (new_title . "Renamed Task")))
-               (result-text
-                (mcp-server-lib-ert-call-tool
-                 "org-rename-headline" params))
-               (result (json-read-from-string result-text)))
+               (result
+                (org-mcp-test--call-rename-headline
+                 resource-uri "Task with Tags" "Renamed Task")))
           ;; Check result
           (should (equal (alist-get 'success result) t))
           (should
@@ -2595,14 +2624,9 @@ This is valid Org-mode syntax and should be allowed."
         (let* ((resource-uri
                 (format "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
                         test-file))
-               (params
-                `((uri . ,resource-uri)
-                  (current_title . "First Child 50% Complete")
-                  (new_title . "Updated Child")))
-               (result-text
-                (mcp-server-lib-ert-call-tool
-                 "org-rename-headline" params))
-               (result (json-read-from-string result-text)))
+               (result
+                (org-mcp-test--call-rename-headline
+                 resource-uri "First Child 50% Complete" "Updated Child")))
           ;; Check result
           (should (equal (alist-get 'success result) t))
           ;; Verify file content
@@ -2651,14 +2675,11 @@ paths and only matches headlines at the appropriate hierarchy level."
         (org-id-update-id-locations (list test-file))
         (org-mcp-test--with-enabled
           ;; Rename using ID-based URI
-          (let* ((params
-                  `((uri . ,org-mcp-test--content-with-id-uri)
-                    (current_title . "Second Child")
-                    (new_title . "Renamed Second Child")))
-                 (result-text
-                  (mcp-server-lib-ert-call-tool
-                   "org-rename-headline" params))
-                 (result (json-read-from-string result-text)))
+          (let* ((result
+                  (org-mcp-test--call-rename-headline
+                   org-mcp-test--content-with-id-uri
+                   "Second Child"
+                   "Renamed Second Child")))
             ;; Check result
             (should (equal (alist-get 'success result) t))
             (should
@@ -2714,14 +2735,9 @@ Slashes must be properly URL-encoded to avoid path confusion."
                 (format
                  "org-headline://%s#Parent%%2FChild"
                  test-file))
-               (params
-                `((uri . ,resource-uri)
-                  (current_title . "Parent/Child")
-                  (new_title . "Parent/Child Renamed")))
-               (result-text
-                (mcp-server-lib-ert-call-tool
-                 "org-rename-headline" params))
-               (result (json-read-from-string result-text)))
+               (result
+                (org-mcp-test--call-rename-headline
+                 resource-uri "Parent/Child" "Parent/Child Renamed")))
           ;; Check result
           (should (equal (alist-get 'success result) t))
           (should
@@ -2752,14 +2768,9 @@ not as Child under Parent."
                 ;; Slash encoded as %2F to indicate single headline
                 (format "org-headline://%s#Parent%%2FChild"
                         test-file))
-               (params
-                `((uri . ,resource-uri)
-                  (current_title . "Parent/Child")
-                  (new_title . "Parent-Child Renamed")))
-               (result-text
-                (mcp-server-lib-ert-call-tool
-                 "org-rename-headline" params))
-               (result (json-read-from-string result-text)))
+               (result
+                (org-mcp-test--call-rename-headline
+                 resource-uri "Parent/Child" "Parent-Child Renamed")))
           ;; Should succeed
           (should (equal (alist-get 'success result) t))
           ;; Verify file content
@@ -2778,14 +2789,11 @@ Percent signs must be properly URL-encoded to avoid double-encoding issues."
         (let* ((resource-uri
                 (format "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
                         test-file))
-               (params
-                `((uri . ,resource-uri)
-                  (current_title . "First Child 50% Complete")
-                  (new_title . "First Child 75% Complete")))
-               (result-text
-                (mcp-server-lib-ert-call-tool
-                 "org-rename-headline" params))
-               (result (json-read-from-string result-text)))
+               (result
+                (org-mcp-test--call-rename-headline
+                 resource-uri
+                 "First Child 50% Complete"
+                 "First Child 75% Complete")))
           ;; Check result
           (should (equal (alist-get 'success result) t))
           (should
@@ -2894,14 +2902,9 @@ correctly restricts search to the parent's subtree."
           (let* ((resource-uri
                 (format "org-headline://%s#Second%%20Section/Target"
                         test-file))
-               (params
-                `((uri . ,resource-uri)
-                  (current_title . "Target")
-                  (new_title . "Renamed Target")))
-               (result-text
-                (mcp-server-lib-ert-call-tool
-                 "org-rename-headline" params))
-               (result (json-read-from-string result-text)))
+               (result
+                (org-mcp-test--call-rename-headline
+                 resource-uri "Target" "Renamed Target")))
           ;; Should succeed and rename the correct Target
           (should (equal (alist-get 'success result) t))
           (with-temp-buffer
@@ -3275,9 +3278,7 @@ Some quote
       org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
-        (let* ((params `((file . ,test-file)))
-               (result-text
-                (mcp-server-lib-ert-call-tool "org-read-file" params)))
+        (let ((result-text (org-mcp-test--call-read-file test-file)))
           (should (string= result-text org-mcp-test--content-nested-siblings)))))))
 
 (ert-deftest org-mcp-test-tool-read-outline ()
@@ -3286,10 +3287,7 @@ Some quote
       org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
-        (let* ((params `((file . ,test-file)))
-               (result-json
-                (mcp-server-lib-ert-call-tool "org-read-outline" params))
-               (result (json-parse-string result-json :object-type 'alist))
+        (let* ((result (org-mcp-test--call-read-outline test-file))
                (headings (alist-get 'headings result)))
           (should (= (length headings) 1))
           (should (string= (alist-get 'title (aref headings 0)) "Parent Task")))))))
@@ -3310,10 +3308,8 @@ Some quote
       org-mcp-test--content-slash-not-nested-before
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
-        (let* ((params `((file . ,test-file)
-                         (headline_path . "Parent%2FChild")))
-               (result-text
-                (mcp-server-lib-ert-call-tool "org-read-headline" params)))
+        (let ((result-text
+               (org-mcp-test--call-read-headline test-file "Parent%2FChild")))
           (should
            (string-match-p
             org-mcp-test--pattern-tool-read-headline-single
@@ -3325,10 +3321,9 @@ Some quote
       org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
-        (let* ((params `((file . ,test-file)
-                         (headline_path . "Parent%20Task/First%20Child%2050%25%20Complete")))
-               (result-text
-                (mcp-server-lib-ert-call-tool "org-read-headline" params)))
+        (let ((result-text
+               (org-mcp-test--call-read-headline
+                test-file "Parent%20Task/First%20Child%2050%25%20Complete")))
           (should
            (string-match-p
             org-mcp-test--pattern-tool-read-headline-nested
@@ -3340,9 +3335,8 @@ Some quote
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
-        (let* ((params `((uuid . ,org-mcp-test--content-with-id-id)))
-               (result-text
-                (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
+        (let ((result-text
+               (org-mcp-test--call-read-by-id org-mcp-test--content-with-id-id)))
           (should
            (string-match-p
             org-mcp-test--pattern-tool-read-by-id
