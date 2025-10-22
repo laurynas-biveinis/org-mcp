@@ -21,8 +21,17 @@
 (defconst org-mcp-test--content-empty ""
   "Empty org file content.")
 
+(defconst org-mcp-test--content-with-id-id
+  "550e8400-e29b-41d4-a716-446655440000"
+  "ID value for org-mcp-test--content-with-id.")
+
+(defconst org-mcp-test--content-with-id-uri
+  (format "org-id://%s" org-mcp-test--content-with-id-id)
+  "URI for org-mcp-test--content-with-id.")
+
 (defconst org-mcp-test--content-nested-siblings
-  "* Parent Task
+  (format
+   "* Parent Task
 :PROPERTIES:
 :ID:       nested-siblings-parent-id-002
 :END:
@@ -32,11 +41,12 @@ First child content.
 It spans multiple lines.
 ** Second Child
 :PROPERTIES:
-:ID:       nested-siblings-second-child-id-001
+:ID:       %s
 :END:
 Second child content.
 ** Third Child
 Third child content."
+   org-mcp-test--content-with-id-id)
   "Parent with multiple child tasks.")
 
 (defconst org-mcp-test--level2-parent-level3-sibling-id
@@ -62,22 +72,6 @@ Second line of body.
 Third line of body."
   "Simple TODO task with three-line body.")
 
-(defconst org-mcp-test--content-with-id-id
-  "550e8400-e29b-41d4-a716-446655440000"
-  "ID value for org-mcp-test--content-with-id.")
-
-(defconst org-mcp-test--content-with-id
-  (format
-   "* Task with ID
-:PROPERTIES:
-:ID:       %s
-:END:
-First line of content.
-Second line of content.
-Third line of content."
-   org-mcp-test--content-with-id-id)
-  "Task with an Org ID property and multiline content.")
-
 (defconst org-mcp-test--content-with-id-todo
   (format
    "* TODO Task with ID
@@ -89,10 +83,6 @@ Second line of content.
 Third line of content."
    org-mcp-test--content-with-id-id)
   "Task with an Org ID property, TODO state, and multiline content.")
-
-(defconst org-mcp-test--content-with-id-uri
-  (format "org-id://%s" org-mcp-test--content-with-id-id)
-  "URI for org-mcp-test--content-with-id.")
 
 (defconst org-mcp-test--content-slash-in-headline
   "* Project A/B Testing
@@ -336,18 +326,26 @@ This is already done"
           " *:END:\n\\'")
   "Expected pattern after adding TODO after level 3 sibling.")
 
-(defconst org-mcp-test--expected-regex-renamed-task-with-id
+(defconst org-mcp-test--expected-regex-renamed-second-child
   (format
    (concat
-    "\\`\\* Renamed Task with ID\n"
+    "\\`\\* Parent Task\n"
+    ":PROPERTIES:\n"
+    ":ID: +nested-siblings-parent-id-002\n"
+    ":END:\n"
+    "Some parent content\\.\n"
+    "\\*\\* First Child\n"
+    "First child content\\.\n"
+    "It spans multiple lines\\.\n"
+    "\\*\\* Renamed Second Child\n"
     ":PROPERTIES:\n"
     ":ID: +%s\n"
     ":END:\n"
-    "First line of content\\.\n"
-    "Second line of content\\.\n"
-    "Third line of content\\.\\'")
+    "Second child content\\.\n"
+    "\\*\\* Third Child\n"
+    "Third child content\\.\\'")
    org-mcp-test--content-with-id-id)
-  "Regex matching complete buffer after renaming Task with ID.")
+  "Regex matching complete buffer after renaming Second Child.")
 
 (defconst org-mcp-test--expected-regex-todo-to-in-progress-with-id
   (format
@@ -424,20 +422,22 @@ Some content."
   "Pattern for TODO added after org headers.")
 
 (defconst org-mcp-test--regex-child-under-parent
-  (concat
-   "^\\* Parent Task\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
-   "Some parent content\\.\n"
-   "\\*\\* First Child\n"
-   "First child content\\.\n"
-   "It spans multiple lines\\.\n"
-   "\\*\\* Second Child\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-second-child-id-001\n *:END:\n\\)?"
-   "Second child content\\.\n"
-   "\\*\\* Third Child\n"
-   "Third child content\\.\n"
-   "\\*\\* TODO Child Task +.*:work:.*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
+  (format
+   (concat
+    "^\\* Parent Task\n"
+    "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+    "Some parent content\\.\n"
+    "\\*\\* First Child\n"
+    "First child content\\.\n"
+    "It spans multiple lines\\.\n"
+    "\\*\\* Second Child\n"
+    "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
+    "Second child content\\.\n"
+    "\\*\\* Third Child\n"
+    "Third child content\\.\n"
+    "\\*\\* TODO Child Task +.*:work:.*\n"
+    "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
+   org-mcp-test--content-with-id-id)
   "Pattern for child TODO (level 2) added under parent (level 1) with existing child (level 2).")
 
 (defconst org-mcp-test--regex-second-child-same-level
@@ -500,41 +500,45 @@ Some content."
   "Pattern for renamed TODO task preserving tags.")
 
 (defconst org-mcp-test--pattern-renamed-headline-no-todo
-  (concat
-   "\\`\\* Parent Task\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
-   "Some parent content\\.\n"
-   "\\*\\* Updated Child\n"
-   " *:PROPERTIES:\n"
-   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
-   " *:END:\n"
-   "First child content\\.\n"
-   "It spans multiple lines\\.\n"
-   "\\*\\* Second Child\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-second-child-id-001\n *:END:\n\\)?"
-   "Second child content\\.\n"
-   "\\*\\* Third Child\n"
-   "Third child content\\.\n?"
-   "\\'")
+  (format
+   (concat
+    "\\`\\* Parent Task\n"
+    "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+    "Some parent content\\.\n"
+    "\\*\\* Updated Child\n"
+    " *:PROPERTIES:\n"
+    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
+    " *:END:\n"
+    "First child content\\.\n"
+    "It spans multiple lines\\.\n"
+    "\\*\\* Second Child\n"
+    "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
+    "Second child content\\.\n"
+    "\\*\\* Third Child\n"
+    "Third child content\\.\n?"
+    "\\'")
+   org-mcp-test--content-with-id-id)
   "Pattern for renamed headline without TODO state.")
 
 (defconst org-mcp-test--pattern-renamed-headline-with-id
-  (concat
-   "\\`\\* Parent Task\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
-   "Some parent content\\.\n"
-   "\\*\\* First Child\n"
-   "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
-   "First child content\\.\n"
-   "It spans multiple lines\\.\n"
-   "\\*\\* Second Child\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-second-child-id-001\n *:END:\n\\)?"
-   "Second child content\\.\n"
-   "\\*\\* Renamed Child\n"
-   " *:PROPERTIES:\n"
-   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
-   " *:END:\n"
-   "Third child content\\.\\'")
+  (format
+   (concat
+    "\\`\\* Parent Task\n"
+    "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+    "Some parent content\\.\n"
+    "\\*\\* First Child\n"
+    "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
+    "First child content\\.\n"
+    "It spans multiple lines\\.\n"
+    "\\*\\* Second Child\n"
+    "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
+    "Second child content\\.\n"
+    "\\*\\* Renamed Child\n"
+    " *:PROPERTIES:\n"
+    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
+    " *:END:\n"
+    "Third child content\\.\\'")
+   org-mcp-test--content-with-id-id)
   "Pattern for headline renamed with ID creation.")
 
 (defconst org-mcp-test--pattern-renamed-slash-headline
@@ -617,13 +621,21 @@ Some content."
 
 (defconst org-mcp-test--pattern-edit-body-single-line
   (format (concat
-           "\\`\\* Task with ID\n"
+           "\\`\\* Parent Task\n"
+           ":PROPERTIES:\n"
+           ":ID: +nested-siblings-parent-id-002\n"
+           ":END:\n"
+           "Some parent content\\.\n"
+           "\\*\\* First Child\n"
+           "First child content\\.\n"
+           "It spans multiple lines\\.\n"
+           "\\*\\* Second Child\n"
            ":PROPERTIES:\n"
            ":ID: +%s\n"
            ":END:\n"
-           "Updated first line\\.\n"
-           "Second line of content\\.\n"
-           "Third line of content\\.\n"
+           "Updated second child content\\.\n"
+           "\\*\\* Third Child\n"
+           "Third child content\\.\n"
            "?\\'")
           org-mcp-test--content-with-id-id)
   "Pattern for single-line edit-body test result.")
@@ -658,21 +670,23 @@ Some content."
   "Pattern for replace-all edit-body test result.")
 
 (defconst org-mcp-test--pattern-edit-body-nested-headlines
-  (concat
-   "\\`\\* Parent Task\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
-   "Updated parent content\n"
-   "\\*\\* First Child\n"
-   "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
-   "First child content\\.\n"
-   "It spans multiple lines\\.\n"
-   "\\*\\* Second Child\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-second-child-id-001\n *:END:\n\\)?"
-   "Second child content\\.\n"
-   "\\*\\* Third Child\n"
-   "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
-   "Third child content\\.\n"
-   "?\\'")
+  (format
+   (concat
+    "\\`\\* Parent Task\n"
+    "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+    "Updated parent content\n"
+    "\\*\\* First Child\n"
+    "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
+    "First child content\\.\n"
+    "It spans multiple lines\\.\n"
+    "\\*\\* Second Child\n"
+    "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
+    "Second child content\\.\n"
+    "\\*\\* Third Child\n"
+    "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
+    "Third child content\\.\n"
+    "?\\'")
+   org-mcp-test--content-with-id-id)
   "Pattern for nested headlines edit-body test result.")
 
 
@@ -697,19 +711,27 @@ Some content."
 
 (defconst org-mcp-test--pattern-edit-body-accept-lower-level
   (concat
-   "\\* Task with ID\n"
+   "\\* Parent Task\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +nested-siblings-parent-id-002\n"
+   " *:END:\n"
+   "Some parent content\\.\n"
+   "\\*\\* First Child\n"
+   "First child content\\.\n"
+   "It spans multiple lines\\.\n"
+   "\\*\\* Second Child\n"
    " *:PROPERTIES:\n"
    " *:ID: +"
    org-mcp-test--content-with-id-id
    "\n"
    " *:END:\n"
    "some text\n"
-   "\\*\\* Subheading content\n"
+   "\\*\\*\\* Subheading content\n"
    "\\(?: *:PROPERTIES:\n" ; Subheading gets ID
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n\\)?"
-   "Second line of content\\.\n"
-   "Third line of content\\.")
+   "\\*\\* Third Child\n"
+   "Third child content\\.")
   "Pattern for edit-body accepting lower-level headlines.")
 
 ;; Expected patterns for tool tests
@@ -732,13 +754,11 @@ Some content."
 (defconst org-mcp-test--pattern-tool-read-by-id
   (format
    (concat
-    "\\`\\* Task with ID\n"
+    "\\`\\*\\* Second Child\n"
     ":PROPERTIES:\n"
     ":ID: +%s\n"
     ":END:\n"
-    "First line of content\\.\n"
-    "Second line of content\\.\n"
-    "Third line of content\\.\n"
+    "Second child content\\.\n"
     "?\\'")
    org-mcp-test--content-with-id-id)
   "Pattern for org-read-by-id tool result.")
@@ -2706,7 +2726,7 @@ paths and only matches headlines at the appropriate hierarchy level."
 
 (ert-deftest org-mcp-test-rename-headline-by-id ()
   "Test renaming a headline accessed by org-id URI."
-  (let ((initial-content org-mcp-test--content-with-id))
+  (let ((initial-content org-mcp-test--content-nested-siblings))
     (org-mcp-test--with-temp-org-file test-file initial-content
       (let ((org-mcp-allowed-files (list test-file))
             (org-id-track-globally t)
@@ -2718,8 +2738,8 @@ paths and only matches headlines at the appropriate hierarchy level."
           ;; Rename using ID-based URI
           (let* ((params
                   `((uri . ,org-mcp-test--content-with-id-uri)
-                    (current_title . "Task with ID")
-                    (new_title . "Renamed Task with ID")))
+                    (current_title . "Second Child")
+                    (new_title . "Renamed Second Child")))
                  (result-text
                   (mcp-server-lib-ert-call-tool
                    "org-rename-headline" params))
@@ -2727,10 +2747,10 @@ paths and only matches headlines at the appropriate hierarchy level."
             ;; Check result
             (should (equal (alist-get 'success result) t))
             (should
-             (equal (alist-get 'previous_title result) "Task with ID"))
+             (equal (alist-get 'previous_title result) "Second Child"))
             (should
              (equal
-              (alist-get 'new_title result) "Renamed Task with ID"))
+              (alist-get 'new_title result) "Renamed Second Child"))
             ;; URI should remain ID-based (not converted to path-based)
             (should
              (equal
@@ -2742,7 +2762,7 @@ paths and only matches headlines at the appropriate hierarchy level."
               (let ((content (buffer-string)))
                 (should
                  (string-match
-                  org-mcp-test--expected-regex-renamed-task-with-id
+                  org-mcp-test--expected-regex-renamed-second-child
                   content))))))))))
 
 (ert-deftest org-mcp-test-rename-headline-id-not-found ()
@@ -3058,15 +3078,15 @@ EXPECTED-ID if provided, check the returned URI has this exact ID."
 (ert-deftest org-mcp-test-edit-body-single-line ()
   "Test org-edit-body tool for single-line replacement."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-with-id
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
         (let ((result
                (org-mcp-test--call-edit-body
                 org-mcp-test--content-with-id-uri
-                "First line of content."
-                "Updated first line."
+                "Second child content."
+                "Updated second child content."
                 nil)))
           (org-mcp-test--check-edit-body-result
            result
@@ -3138,7 +3158,7 @@ content here."
 (ert-deftest org-mcp-test-edit-body-not-found ()
   "Test org-edit-body tool error when text is not found."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-with-id
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
@@ -3148,7 +3168,7 @@ content here."
           "nonexistent text"
           "replacement"
           nil)
-         test-file org-mcp-test--content-with-id)))))
+         test-file org-mcp-test--content-nested-siblings)))))
 
 (ert-deftest org-mcp-test-edit-body-empty ()
   "Test org-edit-body tool can add content to empty body."
@@ -3171,7 +3191,7 @@ content here."
 (ert-deftest org-mcp-test-edit-body-empty-old-non-empty-body ()
   "Test error when oldBody is empty but body has content."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-with-id
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
@@ -3180,7 +3200,7 @@ content here."
           org-mcp-test--content-with-id-uri
           "" ; Empty oldBody
           "replacement" nil)
-         test-file org-mcp-test--content-with-id)))))
+         test-file org-mcp-test--content-nested-siblings)))))
 
 (ert-deftest org-mcp-test-edit-body-empty-with-properties ()
   "Test adding content to empty body with properties drawer."
@@ -3220,31 +3240,31 @@ content here."
 (ert-deftest org-mcp-test-edit-body-reject-headline-in-middle ()
   "Test org-edit-body rejects newBody with headline marker in middle."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-with-id
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
         (org-mcp-test--assert-error-and-unchanged
          (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri "First line of content."
+          org-mcp-test--content-with-id-uri "Second child content."
           "replacement text
 * This would become a headline"
           nil)
-         test-file org-mcp-test--content-with-id)))))
+         test-file org-mcp-test--content-nested-siblings)))))
 
 (ert-deftest org-mcp-test-edit-body-accept-lower-level-headline ()
   "Test org-edit-body accepts newBody with lower-level headline."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-with-id
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
         (let ((result
                (org-mcp-test--call-edit-body
                 org-mcp-test--content-with-id-uri
-                "First line of content."
+                "Second child content."
                 "some text
-** Subheading content"
+*** Subheading content"
                 nil)))
           (org-mcp-test--check-edit-body-result
            result
@@ -3271,66 +3291,66 @@ When editing a level 2 node, level 1 headlines should be rejected."
 (ert-deftest org-mcp-test-edit-body-reject-headline-at-start ()
   "Test org-edit-body rejects newBody with headline at beginning."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-with-id
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
         (org-mcp-test--assert-error-and-unchanged
          (org-mcp--tool-edit-body
           org-mcp-test--content-with-id-uri
-          "First line of content."
+          "Second child content."
           "* Heading at start"
           nil)
-         test-file org-mcp-test--content-with-id)))))
+         test-file org-mcp-test--content-nested-siblings)))))
 
 (ert-deftest org-mcp-test-edit-body-reject-unbalanced-begin-block ()
   "Test org-edit-body rejects newBody with unbalanced BEGIN block."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-with-id
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
         (org-mcp-test--assert-error-and-unchanged
          (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri "First line of content."
+          org-mcp-test--content-with-id-uri "Second child content."
           "Some text
 #+BEGIN_EXAMPLE
 Code without END_EXAMPLE"
           nil)
-         test-file org-mcp-test--content-with-id)))))
+         test-file org-mcp-test--content-nested-siblings)))))
 
 (ert-deftest org-mcp-test-edit-body-reject-orphaned-end-block ()
   "Test org-edit-body rejects newBody with orphaned END block."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-with-id
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
         (org-mcp-test--assert-error-and-unchanged
          (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri "First line of content."
+          org-mcp-test--content-with-id-uri "Second child content."
           "Some text
 #+END_SRC
 Without BEGIN_SRC"
           nil)
-         test-file org-mcp-test--content-with-id)))))
+         test-file org-mcp-test--content-nested-siblings)))))
 
 (ert-deftest org-mcp-test-edit-body-reject-mismatched-blocks ()
   "Test org-edit-body rejects newBody with mismatched blocks."
   (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-with-id
+      org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
         (org-mcp-test--assert-error-and-unchanged
          (org-mcp--tool-edit-body
-          org-mcp-test--content-with-id-uri "First line of content."
+          org-mcp-test--content-with-id-uri "Second child content."
           "Text here
 #+BEGIN_QUOTE
 Some quote
 #+END_EXAMPLE"
           nil)
-         test-file org-mcp-test--content-with-id)))))
+         test-file org-mcp-test--content-nested-siblings)))))
 
 ;;; Resource template workaround tool tests
 
@@ -3401,7 +3421,7 @@ Some quote
 
 (ert-deftest org-mcp-test-tool-read-by-id ()
   "Test org-read-by-id tool returns headline content by ID."
-  (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-with-id
+  (org-mcp-test--with-temp-org-file test-file org-mcp-test--content-nested-siblings
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-id-setup
           `((,org-mcp-test--content-with-id-id . ,test-file))
