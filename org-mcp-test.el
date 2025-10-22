@@ -50,7 +50,7 @@ It spans multiple lines.
 :ID:       %s
 :END:
 Second child content.
-** Third Child"
+** Third Child #3"
    org-mcp-test--content-nested-siblings-parent-id
    org-mcp-test--content-with-id-id)
   "Parent with multiple child tasks and doc file header.")
@@ -145,13 +145,6 @@ This should NOT be found via First Parent/Target Headline path.
 This is actually a child of Third Parent, not First Parent!"
    org-mcp-test--other-child-id)
   "Test content with same headline names at different levels.")
-
-(defconst org-mcp-test--content-headlines-with-hash
-  "* Task #1
-First task
-* Task #2
-Second task"
-  "Headlines containing # character in titles.")
 
 (defconst org-mcp-test--parent-with-one-child-parent-project-id
   "parent-project-test-id-001"
@@ -261,7 +254,7 @@ It spans multiple lines.
 :ID:       %s
 :END:
 Second child content.
-** Third Child"
+** Third Child #3"
    org-mcp-test--content-with-id-id)
   "Expected content when extracting Parent Task from nested-siblings.")
 
@@ -297,7 +290,7 @@ Second child content.
     ":ID: +%s\n"
     ":END:\n"
     "Second child content\\.\n"
-    "\\*\\* Third Child\\'")
+    "\\*\\* Third Child #3\\'")
    org-mcp-test--content-with-id-id)
   "Regex matching complete buffer after renaming Second Child.")
 
@@ -359,7 +352,7 @@ Second child content.
    ":ID: +" org-mcp-test--content-with-id-id "\n"
    ":END:\n"
    "Second child content\\.\n"
-   "\\*\\* Third Child\\'")
+   "\\*\\* Third Child #3\\'")
   "Regex matching complete buffer after adding top-level TODO with headers.")
 
 (defconst org-mcp-test--regex-todo-after-headers
@@ -390,7 +383,7 @@ Second child content.
     "\\*\\* Second Child\n"
     "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
     "Second child content\\.\n"
-    "\\*\\* Third Child\n"
+    "\\*\\* Third Child #3\n"
     "\\*\\* TODO Child Task +.*:work:.*\n"
     "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
    org-mcp-test--content-with-id-id)
@@ -436,7 +429,7 @@ Second child content.
    ":ID: +" org-mcp-test--content-with-id-id "\n"
    ":END:\n"
    "Second child content\\.\n"
-   "\\*\\* Third Child\\'")
+   "\\*\\* Third Child #3\\'")
   "Pattern for TODO added after specific sibling.")
 
 (defconst org-mcp-test--regex-todo-without-tags
@@ -460,7 +453,7 @@ Second child content.
    " *:ID: +[^\n]+\n"
    " *:END:\n\\)?"
    "Second child content\\.\n"
-   "\\*\\* Third Child\n"
+   "\\*\\* Third Child #3\n"
    "\\*\\* TODO Child via ID +:work:\n"
    "\\(?: *:PROPERTIES:\n"
    " *:ID: +[^\n]+\n"
@@ -502,7 +495,7 @@ Second child content.
     "\\*\\* Second Child\n"
     "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
     "Second child content\\.\n"
-    "\\*\\* Third Child\n?"
+    "\\*\\* Third Child #3\n?"
     "\\'")
    org-mcp-test--content-with-id-id)
   "Pattern for renamed headline without TODO state.")
@@ -624,7 +617,7 @@ Second child content.
            ":ID: +%s\n"
            ":END:\n"
            "Updated second child content\\.\n"
-           "\\*\\* Third Child\n"
+           "\\*\\* Third Child #3\n"
            "?\\'")
           org-mcp-test--content-with-id-id)
   "Pattern for single-line edit-body test result.")
@@ -673,7 +666,7 @@ Second child content.
     "\\*\\* Second Child\n"
     "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
     "Second child content\\.\n"
-    "\\*\\* Third Child\n?"
+    "\\*\\* Third Child #3\n?"
     "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
     "\\'")
    org-mcp-test--content-with-id-id)
@@ -682,7 +675,7 @@ Second child content.
 
 (defconst org-mcp-test--pattern-edit-body-empty
   (concat
-   "\\*\\* Third ChildNew content added\\.\n"
+   "\\*\\* Third Child #3New content added\\.\n"
    " *:PROPERTIES:\n"
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:")
@@ -720,7 +713,7 @@ Second child content.
    "\\(?: *:PROPERTIES:\n" ; Subheading gets ID
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n\\)?"
-   "\\*\\* Third Child")
+   "\\*\\* Third Child #3")
   "Pattern for edit-body accepting lower-level headlines.")
 
 ;; Expected patterns for tool tests
@@ -1610,16 +1603,18 @@ Content of subsection 2.1."))
 
 (ert-deftest org-mcp-test-headline-resource-headline-with-hash ()
   "Test headline resource with # in headline title."
-  (let ((test-content org-mcp-test--content-headlines-with-hash))
+  (let ((test-content org-mcp-test--content-nested-siblings))
     (org-mcp-test--with-temp-org-file file test-content
       (let ((org-mcp-allowed-files (list file)))
         (org-mcp-test--with-enabled
           ;; Test accessing headline with # encoded as %23
-          (let ((uri (format "org-headline://%s#Task%%20%%231" file)))
+          (let ((uri
+                 (format "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
+                         file)))
             (mcp-server-lib-ert-verify-resource-read
              uri
              `((uri . ,uri)
-               (text . "* Task #1\nFirst task")
+               (text . "** Third Child #3")
                (mimeType . "text/plain")))))))))
 
 (ert-deftest
@@ -1627,18 +1622,18 @@ Content of subsection 2.1."))
     ()
   "Test headline resource with # in both filename and headline."
   (org-mcp-test--with-temp-org-file file
-      org-mcp-test--content-headlines-with-hash
+      org-mcp-test--content-nested-siblings
     "org-mcp-test-file#"
     (org-mcp-test--with-enabled
       ;; Test with both file and headline containing #
       (let* ((encoded-path (replace-regexp-in-string "#" "%23" file))
              (uri
-              (format "org-headline://%s#Task%%20%%231"
+              (format "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
                       encoded-path)))
         (mcp-server-lib-ert-verify-resource-read
          uri
          `((uri . ,uri)
-           (text . "* Task #1\nFirst task")
+           (text . "** Third Child #3")
            (mimeType . "text/plain")))))))
 
 (ert-deftest org-mcp-test-headline-resource-txt-extension ()
@@ -2902,11 +2897,11 @@ This test documents the first-match behavior when duplicate headlines exist."
          ;; Rename headline using path-based URI
          (let* ((resource-uri
                  (format
-                  "org-headline://%s#Parent%%20Task/Third%%20Child"
+                  "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
                   test-file))
                 (params
                  `((uri . ,resource-uri)
-                   (current_title . "Third Child")
+                   (current_title . "Third Child #3")
                    (new_title . "Renamed Child")))
                 (request
                  (mcp-server-lib-create-tools-call-request
@@ -2921,7 +2916,7 @@ This test documents the first-match behavior when duplicate headlines exist."
            (should
             (equal
              (alist-get 'previous_title result)
-             "Third Child"))
+             "Third Child #3"))
            (should
             (equal (alist-get 'new_title result) "Renamed Child"))
            ;; The returned URI should now be an org-id:// URI
@@ -3142,7 +3137,7 @@ content here."
     (let ((org-mcp-allowed-files (list test-file)))
       (org-mcp-test--with-enabled
         (let* ((resource-uri
-                (format "org-headline://%s#Parent%%20Task/Third%%20Child"
+                (format "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
                         test-file))
                (result
                 (org-mcp-test--call-edit-body
