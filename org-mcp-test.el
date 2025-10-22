@@ -859,8 +859,10 @@ EXPECTED-TYPE is the sequence type."
   (should (equal (alist-get 'isFinal sem) expected-final))
   (should (equal (alist-get 'sequenceType sem) expected-type)))
 
-(defmacro org-mcp-test--with-todo-config (keywords &rest body)
-  "Run BODY with `org-todo-keywords' set to KEYWORDS."
+(defmacro org-mcp-test--with-get-todo-config-result (keywords &rest body)
+  "Call get-todo-config tool with KEYWORDS and run BODY with result bindings.
+Sets `org-todo-keywords' to KEYWORDS, calls the get-todo-config MCP tool,
+and binds `sequences' and `semantics' from the result for use in BODY."
   (declare (indent 1) (debug t))
   `(let ((org-todo-keywords ,keywords))
      (org-mcp-test--with-enabled
@@ -1069,7 +1071,7 @@ unchanged after."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-empty ()
   "Test org-get-todo-config with empty `org-todo-keywords'."
-  (org-mcp-test--with-todo-config nil
+  (org-mcp-test--with-get-todo-config-result nil
     (should (assoc 'sequences result))
     (should (assoc 'semantics result))
     (should (equal sequences []))
@@ -1077,7 +1079,7 @@ unchanged after."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-default ()
   "Test org-get-todo-config with default `org-todo-keywords'."
-  (org-mcp-test--with-todo-config '((sequence "TODO(t!)" "DONE(d!)"))
+  (org-mcp-test--with-get-todo-config-result '((sequence "TODO(t!)" "DONE(d!)"))
     (should (= (length sequences) 1))
     (org-mcp-test--check-todo-config-sequence
      (aref sequences 0) "sequence" ["TODO(t!)" "|" "DONE(d!)"])
@@ -1089,7 +1091,7 @@ unchanged after."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-single-keyword ()
   "Test org-get-todo-config with single keyword."
-  (org-mcp-test--with-todo-config '((sequence "DONE"))
+  (org-mcp-test--with-get-todo-config-result '((sequence "DONE"))
     (should (= (length sequences) 1))
     (org-mcp-test--check-todo-config-sequence
      (aref sequences 0) "sequence" ["|" "DONE"])
@@ -1099,7 +1101,7 @@ unchanged after."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-explicit-bar ()
   "Test org-get-todo-config with explicit | and multiple states."
-  (org-mcp-test--with-todo-config '((sequence
+  (org-mcp-test--with-get-todo-config-result '((sequence
                                 "TODO" "NEXT" "|" "DONE" "CANCELLED"))
     (should (= (length sequences) 1))
     (org-mcp-test--check-todo-config-sequence
@@ -1118,7 +1120,7 @@ unchanged after."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-type ()
   "Test org-get-todo-config with type keywords."
-  (org-mcp-test--with-todo-config '((type "Fred" "Sara" "Lucy" "|" "DONE"))
+  (org-mcp-test--with-get-todo-config-result '((type "Fred" "Sara" "Lucy" "|" "DONE"))
     (should (= (length sequences) 1))
     (org-mcp-test--check-todo-config-sequence
      (aref sequences 0) "type" ["Fred" "Sara" "Lucy" "|" "DONE"])
@@ -1134,7 +1136,7 @@ unchanged after."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-multiple-sequences ()
   "Test org-get-todo-config with multiple sequences."
-  (org-mcp-test--with-todo-config '((sequence "TODO" "|" "DONE")
+  (org-mcp-test--with-get-todo-config-result '((sequence "TODO" "|" "DONE")
                                (type "BUG" "FEATURE" "|" "FIXED"))
     (should (= (length sequences) 2))
     ;; First sequence
@@ -1158,7 +1160,7 @@ unchanged after."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-no-done-states ()
   "Test org-get-todo-config with no done states."
-  (org-mcp-test--with-todo-config '((sequence "TODO" "NEXT" "|"))
+  (org-mcp-test--with-get-todo-config-result '((sequence "TODO" "NEXT" "|"))
     (should (= (length sequences) 1))
     (org-mcp-test--check-todo-config-sequence
      (aref sequences 0) "sequence" ["TODO" "NEXT" "|"])
@@ -1170,7 +1172,7 @@ unchanged after."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-type-no-separator ()
   "Test org-get-todo-config with type keywords and no separator."
-  (org-mcp-test--with-todo-config '((type "BUG" "FEATURE" "ENHANCEMENT"))
+  (org-mcp-test--with-get-todo-config-result '((type "BUG" "FEATURE" "ENHANCEMENT"))
     (should (= (length sequences) 1))
     (org-mcp-test--check-todo-config-sequence
      (aref sequences 0) "type" ["BUG" "FEATURE" "|" "ENHANCEMENT"])
