@@ -815,6 +815,12 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
 
 ;; Test helper macros
 
+(defun org-mcp-test--verify-file-matches (test-file expected-pattern)
+  "Verify TEST-FILE content matches EXPECTED-PATTERN regexp."
+  (with-temp-buffer
+    (insert-file-contents test-file)
+    (should (string-match-p expected-pattern (buffer-string)))))
+
 (defmacro org-mcp-test--with-enabled (&rest body)
   "Run BODY with org-mcp enabled, ensuring cleanup."
   (declare (indent defun) (debug t))
@@ -2911,12 +2917,6 @@ REPLACE-ALL if true, replace all occurrences (default: nil)."
   (with-temp-buffer
     (insert-file-contents test-file)
     (should (string= (buffer-string) expected-content))))
-
-(defun org-mcp-test--verify-file-matches (test-file expected-pattern)
-  "Verify TEST-FILE content matches EXPECTED-PATTERN regexp."
-  (with-temp-buffer
-    (insert-file-contents test-file)
-    (should (string-match-p expected-pattern (buffer-string)))))
 
 (defmacro org-mcp-test--assert-error-and-unchanged
     (error-form test-file expected-content)
