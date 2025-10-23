@@ -956,6 +956,24 @@ AFTERURI is optional URI of sibling to insert after."
     ;; If we get here, the tool succeeded when we expected failure
     (error "Expected error but got success: %s" result)))
 
+(defun org-mcp-test--check-add-todo-result
+    (result
+     expected-title basename test-file &optional expected-pattern)
+  "Check that add-todo RESULT has the correct structure and file content.
+RESULT is the return value from `org-add-todo' tool.
+EXPECTED-TITLE is the title that should be in the result.
+BASENAME is the expected file basename.
+TEST-FILE is the path to the file to check.
+EXPECTED-PATTERN if provided, is a regexp that the file content should match."
+  ;; Check result structure
+  (should (= (length result) 4))
+  (should (equal (alist-get 'success result) t))
+  (should (string-prefix-p "org-id://" (alist-get 'uri result)))
+  (should (equal (alist-get 'file result) basename))
+  (should (equal (alist-get 'title result) expected-title))
+  (when expected-pattern
+    (org-mcp-test--verify-file-matches test-file expected-pattern)))
+
 (defun org-mcp-test--call-update-todo-state-expecting-error
     (resource-uri current-state new-state)
   "Call org-update-todo-state tool via JSON-RPC expecting an error.
@@ -1024,24 +1042,6 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
     (should (string-prefix-p "org-id://" (alist-get 'uri result)))
     (org-mcp-test--verify-file-matches test-file expected-content-regex)
     result))
-
-(defun org-mcp-test--check-add-todo-result
-    (result
-     expected-title basename test-file &optional expected-pattern)
-  "Check that add-todo RESULT has the correct structure and file content.
-RESULT is the return value from `org-add-todo' tool.
-EXPECTED-TITLE is the title that should be in the result.
-BASENAME is the expected file basename.
-TEST-FILE is the path to the file to check.
-EXPECTED-PATTERN if provided, is a regexp that the file content should match."
-  ;; Check result structure
-  (should (= (length result) 4))
-  (should (equal (alist-get 'success result) t))
-  (should (string-prefix-p "org-id://" (alist-get 'uri result)))
-  (should (equal (alist-get 'file result) basename))
-  (should (equal (alist-get 'title result) expected-title))
-  (when expected-pattern
-    (org-mcp-test--verify-file-matches test-file expected-pattern)))
 
 (defun org-mcp-test--assert-error-and-file (test-file error-form)
   "Assert that ERROR-FORM throws an error and TEST-FILE remains unchanged.
