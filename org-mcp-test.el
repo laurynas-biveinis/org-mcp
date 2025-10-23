@@ -718,18 +718,6 @@ Second child content.
 
 ;;; Helper functions for calling MCP tools
 
-(defun org-mcp-test--call-get-todo-config ()
-  "Call org-get-todo-config tool via JSON-RPC and return the result."
-  (let ((result
-         (mcp-server-lib-ert-call-tool "org-get-todo-config" nil)))
-    (json-read-from-string result)))
-
-(defun org-mcp-test--call-get-tag-config ()
-  "Call org-get-tag-config tool via JSON-RPC and return the result."
-  (let ((result
-         (mcp-server-lib-ert-call-tool "org-get-tag-config" nil)))
-    (json-read-from-string result)))
-
 (defun org-mcp-test--call-get-allowed-files ()
   "Call org-get-allowed-files tool via JSON-RPC and return the result."
   (let ((result
@@ -896,7 +884,13 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
      (mapcar (lambda (id) (cons id ,file-var)) ,ids)
      ,@body)))
 
-;; Helper functions for testing get-todo-config MCP tool result
+;; Helper functions for testing org-get-todo-config MCP tool
+
+(defun org-mcp-test--call-get-todo-config ()
+  "Call org-get-todo-config tool via JSON-RPC and return the result."
+  (let ((result
+         (mcp-server-lib-ert-call-tool "org-get-todo-config" nil)))
+    (json-read-from-string result)))
 
 (defun org-mcp-test--check-todo-config-sequence
     (seq expected-type expected-keywords)
@@ -928,6 +922,30 @@ and binds `sequences' and `semantics' from the result for use in BODY."
         (let ((sequences (cdr (assoc 'sequences result)))
               (semantics (cdr (assoc 'semantics result))))
           ,@body)))))
+
+;; Helper functions for testing org-get-tag-config MCP tool
+
+(defmacro org-mcp-test--get-tag-config-and-check
+    (expected-alist expected-persistent expected-inheritance expected-exclude)
+  "Call org-get-tag-config tool and check result against expected values.
+EXPECTED-ALIST is the expected value for org-tag-alist (string).
+EXPECTED-PERSISTENT is the expected value for org-tag-persistent-alist (string).
+EXPECTED-INHERITANCE is the expected value for org-use-tag-inheritance (string).
+EXPECTED-EXCLUDE is the expected value for
+org-tags-exclude-from-inheritance (string)."
+  (declare (indent defun) (debug t))
+  `(org-mcp-test--with-enabled
+     (let ((result
+            (json-read-from-string
+             (mcp-server-lib-ert-call-tool "org-get-tag-config" nil))))
+       (should (= (length result) 4))
+       (should (equal (alist-get 'org-tag-alist result) ,expected-alist))
+       (should (equal (alist-get 'org-tag-persistent-alist result)
+                      ,expected-persistent))
+       (should (equal (alist-get 'org-use-tag-inheritance result)
+                      ,expected-inheritance))
+       (should (equal (alist-get 'org-tags-exclude-from-inheritance result)
+                      ,expected-exclude)))))
 
 ;; Helper functions for testing org-add-todo MCP tool
 
@@ -1207,20 +1225,7 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
   (let ((org-tag-alist nil)
         (org-tag-persistent-alist nil)
         (org-use-tag-inheritance t))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-tag-config)))
-        (should (= (length result) 4))
-        (should
-         (equal (alist-get 'org-use-tag-inheritance result) "t"))
-        (should
-         (equal
-          (alist-get
-           'org-tags-exclude-from-inheritance result)
-          "nil"))
-        (should (equal (alist-get 'org-tag-alist result) "nil"))
-        (should
-         (equal
-          (alist-get 'org-tag-persistent-alist result) "nil"))))))
+    (org-mcp-test--get-tag-config-and-check "nil" "nil" "t" "nil")))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-simple ()
   "Test org-get-tag-config with simple tags."
@@ -1228,16 +1233,8 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
         (org-tag-persistent-alist nil)
         (org-use-tag-inheritance t)
         (org-tags-exclude-from-inheritance nil))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-tag-config)))
-        (should
-         (equal
-          (alist-get 'org-tag-alist result)
-          "(\"work\" \"personal\" \"urgent\")"))
-        (should
-         (equal (alist-get 'org-tag-persistent-alist result) "nil"))
-        (should
-         (equal (alist-get 'org-use-tag-inheritance result) "t"))))))
+    (org-mcp-test--get-tag-config-and-check
+     "(\"work\" \"personal\" \"urgent\")" "nil" "t" "nil")))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-with-keys ()
   "Test org-get-tag-config with fast selection keys."
@@ -1245,14 +1242,11 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
          '(("work" . ?w) ("personal" . ?p) "urgent" ("@home" . ?h)))
         (org-tag-persistent-alist nil)
         (org-use-tag-inheritance t))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-tag-config)))
-        (should
-         (equal
-          (alist-get 'org-tag-alist result)
-          (concat
-           "((\"work\" . 119) (\"personal\" . 112) "
-           "\"urgent\" (\"@home\" . 104))")))))))
+    (org-mcp-test--get-tag-config-and-check
+     "((\"work\" . 119) (\"personal\" . 112) \"urgent\" (\"@home\" . 104))"
+     "nil"
+     "t"
+     "nil")))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-with-groups ()
   "Test org-get-tag-config with tag groups."
@@ -1270,37 +1264,21 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
            ("proj_b")
            (:endgrouptag)))
         (org-tag-persistent-alist nil))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-tag-config)))
-        ;; Just check that the literal string is returned correctly
-        (should (stringp (alist-get 'org-tag-alist result)))
-        (should
-         (string-match-p
-          ":startgroup" (alist-get 'org-tag-alist result)))
-        (should
-         (string-match-p
-          ":endgroup" (alist-get 'org-tag-alist result)))
-        (should
-         (string-match-p
-          ":startgrouptag" (alist-get 'org-tag-alist result)))
-        (should
-         (string-match-p
-          ":endgrouptag" (alist-get 'org-tag-alist result)))))))
+    (org-mcp-test--get-tag-config-and-check
+     "((:startgroup) (\"@office\" . 111) (\"@home\" . 104) (\"@errand\" . 101) (:endgroup) \"laptop\" (:startgrouptag) (\"project\") (:grouptags) (\"proj_a\") (\"proj_b\") (:endgrouptag))"
+     "nil"
+     "t"
+     "nil")))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-persistent ()
   "Test org-get-tag-config with persistent tags."
   (let ((org-tag-alist '(("work" . ?w)))
         (org-tag-persistent-alist '(("important" . ?i) "recurring"))
         (org-tags-exclude-from-inheritance nil))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-tag-config)))
-        (should
-         (equal
-          (alist-get 'org-tag-alist result) "((\"work\" . 119))"))
-        (should
-         (equal
-          (alist-get 'org-tag-persistent-alist result)
-          "((\"important\" . 105) \"recurring\")"))))))
+    (org-mcp-test--get-tag-config-and-check
+     "((\"work\" . 119))" "((\"important\" . 105) \"recurring\")"
+     "t"
+     "nil")))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-inheritance-enabled ()
   "Test org-get-tag-config with inheritance enabled."
@@ -1308,10 +1286,8 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
         (org-tags-exclude-from-inheritance nil)
         (org-tag-persistent-alist nil)
         (org-use-tag-inheritance t))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-tag-config)))
-        (should
-         (equal (alist-get 'org-use-tag-inheritance result) "t"))))))
+    (org-mcp-test--get-tag-config-and-check
+     "(\"work\" \"personal\")" "nil" "t" "nil")))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-inheritance-disabled ()
   "Test org-get-tag-config with inheritance disabled."
@@ -1319,11 +1295,8 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
         (org-tags-exclude-from-inheritance nil)
         (org-tag-persistent-alist nil)
         (org-use-tag-inheritance nil))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-tag-config)))
-        (should
-         (equal
-          (alist-get 'org-use-tag-inheritance result) "nil"))))))
+    (org-mcp-test--get-tag-config-and-check
+     "(\"work\" \"personal\")" "nil" "nil" "nil")))
 
 (ert-deftest org-mcp-test-tool-get-tag-config-inheritance-selective ()
   "Test org-get-tag-config with selective inheritance (list)."
@@ -1331,12 +1304,9 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
         (org-tags-exclude-from-inheritance nil)
         (org-tag-persistent-alist nil)
         (org-use-tag-inheritance '("work")))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-tag-config)))
-        (should
-         (equal
-          (alist-get 'org-use-tag-inheritance result)
-          "(\"work\")"))))))
+    (org-mcp-test--get-tag-config-and-check
+     "(\"work\" \"personal\")" "nil" "(\"work\")"
+     "nil")))
 
 (ert-deftest org-mcp-test-tool-get-allowed-files-empty ()
   "Test org-get-allowed-files with empty configuration."
