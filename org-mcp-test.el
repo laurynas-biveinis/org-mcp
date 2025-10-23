@@ -2412,11 +2412,10 @@ This is valid Org-mode syntax and should be allowed."
                    nil
                    parent-uri
                    nil)))
-            ;; Should succeed
-            (should (assoc 'success result))
-            (should (equal (alist-get 'success result) t))
-            ;; Verify tags were added correctly
-            (org-mcp-test--verify-file-matches
+            (org-mcp-test--check-add-todo-result
+             result
+             "Test Task"
+             (file-name-nondirectory test-file)
              test-file
              org-mcp-test--regex-add-todo-with-mutex-tags)))))))
 
