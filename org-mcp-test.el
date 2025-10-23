@@ -718,12 +718,6 @@ Second child content.
 
 ;;; Helper functions for calling MCP tools
 
-(defun org-mcp-test--call-get-allowed-files ()
-  "Call org-get-allowed-files tool via JSON-RPC and return the result."
-  (let ((result
-         (mcp-server-lib-ert-call-tool "org-get-allowed-files" nil)))
-    (json-read-from-string result)))
-
 (defun org-mcp-test--call-rename-headline (uri current-title new-title)
   "Call org-rename-headline tool via JSON-RPC and return the result.
 URI is the headline URI, CURRENT-TITLE is the expected current title,
@@ -935,17 +929,35 @@ EXPECTED-EXCLUDE is the expected value for
 org-tags-exclude-from-inheritance (string)."
   (declare (indent defun) (debug t))
   `(org-mcp-test--with-enabled
-     (let ((result
-            (json-read-from-string
-             (mcp-server-lib-ert-call-tool "org-get-tag-config" nil))))
-       (should (= (length result) 4))
-       (should (equal (alist-get 'org-tag-alist result) ,expected-alist))
-       (should (equal (alist-get 'org-tag-persistent-alist result)
-                      ,expected-persistent))
-       (should (equal (alist-get 'org-use-tag-inheritance result)
-                      ,expected-inheritance))
-       (should (equal (alist-get 'org-tags-exclude-from-inheritance result)
-                      ,expected-exclude)))))
+    (let ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool "org-get-tag-config" nil))))
+      (should (= (length result) 4))
+      (should (equal (alist-get 'org-tag-alist result) ,expected-alist))
+      (should (equal (alist-get 'org-tag-persistent-alist result)
+                     ,expected-persistent))
+      (should (equal (alist-get 'org-use-tag-inheritance result)
+                     ,expected-inheritance))
+      (should (equal (alist-get 'org-tags-exclude-from-inheritance result)
+                     ,expected-exclude)))))
+
+;; Helper functions for testing org-get-allowed-files MCP tool
+
+(defun org-mcp-test--get-allowed-files-and-check (allowed-files expected-files)
+  "Call org-get-allowed-files tool and verify the result.
+ALLOWED-FILES is the value to bind to org-mcp-allowed-files.
+EXPECTED-FILES is a list of expected file paths."
+  (let ((org-mcp-allowed-files allowed-files))
+    (org-mcp-test--with-enabled
+     (let* ((result-text
+             (mcp-server-lib-ert-call-tool "org-get-allowed-files" nil))
+            (result (json-read-from-string result-text)))
+       (should (= (length result) 1))
+       (let ((files (cdr (assoc 'files result))))
+         (should (vectorp files))
+         (should (= (length files) (length expected-files)))
+         (dotimes (i (length expected-files))
+           (should (string= (aref files i) (nth i expected-files)))))))))
 
 ;; Helper functions for testing org-add-todo MCP tool
 
@@ -959,21 +971,22 @@ TAGS is a list of tag strings or nil.
 BODY is the body text or nil.
 PARENTURI is the URI of the parent item.
 AFTERURI is optional URI of sibling to insert after."
-  (org-mcp-test--assert-error-and-file test-file
-    (let* ((params
-            `((title . ,title)
-              (todo_state . ,todoState)
-              (tags . ,tags)
-              (body . ,body)
-              (parent_uri . ,parentUri)
-              (after_uri . ,afterUri)))
-           (request
-             (mcp-server-lib-create-tools-call-request
-              "org-add-todo" nil params))
-           (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-           (result (mcp-server-lib-ert-process-tool-response response)))
-      ;; If we get here, the tool succeeded when we expected failure
-      (error "Expected error but got success: %s" result))))
+  (org-mcp-test--assert-error-and-file
+   test-file
+   (let* ((params
+           `((title . ,title)
+             (todo_state . ,todoState)
+             (tags . ,tags)
+             (body . ,body)
+             (parent_uri . ,parentUri)
+             (after_uri . ,afterUri)))
+          (request
+            (mcp-server-lib-create-tools-call-request
+             "org-add-todo" nil params))
+          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+          (result (mcp-server-lib-ert-process-tool-response response)))
+     ;; If we get here, the tool succeeded when we expected failure
+     (error "Expected error but got success: %s" result))))
 
 (defun org-mcp-test--add-todo-and-check
     (title todoState tags body parentUri afterUri
@@ -1310,40 +1323,23 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
 
 (ert-deftest org-mcp-test-tool-get-allowed-files-empty ()
   "Test org-get-allowed-files with empty configuration."
-  (let ((org-mcp-allowed-files nil))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-allowed-files)))
-        (should (= (length result) 1))
-        (let ((files (cdr (assoc 'files result))))
-          (should (vectorp files))
-          (should (= (length files) 0)))))))
+  (org-mcp-test--get-allowed-files-and-check nil nil))
 
 (ert-deftest org-mcp-test-tool-get-allowed-files-single ()
   "Test org-get-allowed-files with single file."
-  (let ((org-mcp-allowed-files '("/home/user/tasks.org")))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-allowed-files)))
-        (should (= (length result) 1))
-        (let ((files (cdr (assoc 'files result))))
-          (should (vectorp files))
-          (should (= (length files) 1))
-          (should (string= (aref files 0) "/home/user/tasks.org")))))))
+  (org-mcp-test--get-allowed-files-and-check
+   '("/home/user/tasks.org")
+   '("/home/user/tasks.org")))
 
 (ert-deftest org-mcp-test-tool-get-allowed-files-multiple ()
   "Test org-get-allowed-files with multiple files."
-  (let ((org-mcp-allowed-files
-         '("/home/user/tasks.org"
-           "/home/user/projects.org"
-           "/home/user/notes.org")))
-    (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-allowed-files)))
-        (should (= (length result) 1))
-        (let ((files (cdr (assoc 'files result))))
-          (should (vectorp files))
-          (should (= (length files) 3))
-          (should (string= (aref files 0) "/home/user/tasks.org"))
-          (should (string= (aref files 1) "/home/user/projects.org"))
-          (should (string= (aref files 2) "/home/user/notes.org")))))))
+  (org-mcp-test--get-allowed-files-and-check
+   '("/home/user/tasks.org"
+     "/home/user/projects.org"
+     "/home/user/notes.org")
+   '("/home/user/tasks.org"
+     "/home/user/projects.org"
+     "/home/user/notes.org")))
 
 (defmacro org-mcp-test--with-add-todo-setup
     (file-var initial-content &rest body)
