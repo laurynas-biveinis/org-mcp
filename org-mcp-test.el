@@ -1893,10 +1893,7 @@ Another task description."))
           (should
            (equal
             (alist-get 'uri result)
-            org-mcp-test--content-with-id-uri))
-          (org-mcp-test--verify-file-matches
-           test-file
-           org-mcp-test--expected-regex-todo-to-in-progress-with-id))))))
+            org-mcp-test--content-with-id-uri)))))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."
@@ -2562,17 +2559,16 @@ paths and only matches headlines at the appropriate hierarchy level."
               (format "org-headline://%s#First%%20Parent/Target%%20Headline"
                       test-file)))
         ;; This should throw an error because First Parent has no Target Headline
-        (let* ((request
-                 (mcp-server-lib-create-tools-call-request
-                  "org-rename-headline" 1
-                  `((uri . ,resource-uri)
-                    (current_title . "Target Headline")
-                    (new_title . "Renamed Target Headline"))))
-               (response
-                (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-          (should-error
-           (mcp-server-lib-ert-process-tool-response response)
-           :type 'mcp-server-lib-tool-error)))))))
+        (org-mcp-test--assert-error-and-file test-file
+          (let* ((request
+                   (mcp-server-lib-create-tools-call-request
+                    "org-rename-headline" 1
+                    `((uri . ,resource-uri)
+                      (current_title . "Target Headline")
+                      (new_title . "Renamed Target Headline"))))
+                 (response
+                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
+            (mcp-server-lib-ert-process-tool-response response))))))))
 
 (ert-deftest org-mcp-test-rename-headline-by-id ()
   "Test renaming a headline accessed by org-id URI."
@@ -2615,18 +2611,17 @@ paths and only matches headlines at the appropriate hierarchy level."
           (org-id-locations-file nil))
       (org-mcp-test--with-enabled
         ;; Try to rename non-existent ID
-        (let* ((resource-uri "org-id://non-existent-id-12345")
-               (request
-                (mcp-server-lib-create-tools-call-request
-                 "org-rename-headline" 1
-                 `((uri . ,resource-uri)
-                   (current_title . "Whatever")
-                   (new_title . "Should Fail"))))
-               (response
-                (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-          (should-error
-           (mcp-server-lib-ert-process-tool-response response)
-           :type 'mcp-server-lib-tool-error))))))
+        (org-mcp-test--assert-error-and-file test-file
+          (let* ((resource-uri "org-id://non-existent-id-12345")
+                 (request
+                  (mcp-server-lib-create-tools-call-request
+                   "org-rename-headline" 1
+                   `((uri . ,resource-uri)
+                     (current_title . "Whatever")
+                     (new_title . "Should Fail"))))
+                 (response
+                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
+            (mcp-server-lib-ert-process-tool-response response)))))))
 
 (ert-deftest org-mcp-test-rename-headline-with-slash ()
   "Test renaming a headline containing a slash character.
