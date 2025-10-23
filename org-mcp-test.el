@@ -968,7 +968,7 @@ EXPECTED-PATTERN is a regexp that the file content should match."
   ;; Check result structure
   (should (= (length result) 4))
   (should (equal (alist-get 'success result) t))
-  (should (string-prefix-p "org-id://" (alist-get 'uri result)))
+  (should (string-match-p "\\`org-id://.+" (alist-get 'uri result)))
   (should (equal (alist-get 'file result) basename))
   (should (equal (alist-get 'title result) expected-title))
   (org-mcp-test--verify-file-matches test-file expected-pattern))
