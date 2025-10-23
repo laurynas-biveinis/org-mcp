@@ -803,24 +803,23 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
 
 ;; Test helper macros
 
+(defun org-mcp-test--read-file (file)
+  "Read and return the contents of FILE as a string."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (buffer-string)))
+
 (defun org-mcp-test--verify-file-eq (test-file expected-content)
   "Verify TEST-FILE containing exactly EXPECTED-CONTENT."
-  (with-temp-buffer
-    (insert-file-contents test-file)
-    (should (string= (buffer-string) expected-content))))
+  (should (string= (org-mcp-test--read-file test-file) expected-content)))
 
 (defun org-mcp-test--verify-file-matches (test-file expected-pattern)
   "Verify TEST-FILE content matches EXPECTED-PATTERN regexp."
-  (with-temp-buffer
-    (insert-file-contents test-file)
-    (should (string-match-p expected-pattern (buffer-string)))))
+  (should (string-match-p expected-pattern (org-mcp-test--read-file test-file))))
 
 (defun org-mcp-test--assert-error-and-file (test-file error-form)
   "Assert that ERROR-FORM throws an error and TEST-FILE remains unchanged."
-  (let ((original-content
-         (with-temp-buffer
-           (insert-file-contents test-file)
-           (buffer-string))))
+  (let ((original-content (org-mcp-test--read-file test-file)))
     (should-error (eval error-form) :type 'mcp-server-lib-tool-error)
     (org-mcp-test--verify-file-eq test-file original-content)))
 
@@ -1450,9 +1449,7 @@ NEW-TITLE is the invalid new title that should be rejected."
          (mcp-server-lib-ert-process-tool-response response)
          :type 'mcp-server-lib-tool-error))
       ;; Verify that file wasn't changed
-      (with-temp-buffer
-        (insert-file-contents test-file)
-        (should (string= (buffer-string) initial-content))))))
+      (should (string= (org-mcp-test--read-file test-file) initial-content)))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
@@ -1906,13 +1903,11 @@ Another task description."))
            (equal
             (alist-get 'uri result)
             org-mcp-test--content-with-id-uri))
-          (with-temp-buffer
-            (insert-file-contents test-file)
-            (let ((content (buffer-string)))
-              (should
-               (string-match
-                org-mcp-test--expected-regex-todo-to-in-progress-with-id
-                content)))))))))
+          (let ((content (org-mcp-test--read-file test-file)))
+            (should
+             (string-match
+              org-mcp-test--expected-regex-todo-to-in-progress-with-id
+              content))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."
@@ -2445,15 +2440,13 @@ This is valid Org-mode syntax and should be allowed."
             (should (assoc 'success result))
             (should (equal (alist-get 'success result) t))
             ;; Verify tags were added correctly
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              (let ((content (buffer-string)))
-                ;; Check task was added
-                (should (string-match-p "\\* TODO Test Task" content))
-                ;; Check all tags are present (order doesn't matter)
-                (should (string-match-p ":work:" content))
-                (should (string-match-p ":@office:" content))
-                (should (string-match-p ":project:" content))))))))))
+            (let ((content (org-mcp-test--read-file test-file)))
+              ;; Check task was added
+              (should (string-match-p "\\* TODO Test Task" content))
+              ;; Check all tags are present (order doesn't matter)
+              (should (string-match-p ":work:" content))
+              (should (string-match-p ":@office:" content))
+              (should (string-match-p ":project:" content)))))))))
 
 (ert-deftest org-mcp-test-add-todo-nil-tags ()
   "Test that adding TODO with nil tags creates headline without tags."
@@ -2517,12 +2510,10 @@ This is valid Org-mode syntax and should be allowed."
             (should
              (string-match "^org-id://" (alist-get 'uri result)))
             ;; Verify file content
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              (should
-               (string-match-p
-                org-mcp-test--pattern-renamed-simple-todo
-                (buffer-string))))))))))
+            (should
+             (string-match-p
+              org-mcp-test--pattern-renamed-simple-todo
+              (org-mcp-test--read-file test-file)))))))))
 
 (ert-deftest org-mcp-test-rename-headline-title-mismatch ()
   "Test that rename fails when current title doesn't match."
@@ -2642,13 +2633,11 @@ paths and only matches headlines at the appropriate hierarchy level."
               (alist-get 'uri result)
               org-mcp-test--content-with-id-uri))
             ;; Verify file content
-            (with-temp-buffer
-              (insert-file-contents test-file)
-              (let ((content (buffer-string)))
-                (should
-                 (string-match
-                  org-mcp-test--expected-regex-renamed-second-child
-                  content))))))))))
+            (let ((content (org-mcp-test--read-file test-file)))
+              (should
+               (string-match
+                org-mcp-test--expected-regex-renamed-second-child
+                content)))))))))
 
 (ert-deftest org-mcp-test-rename-headline-id-not-found ()
   "Test error when ID doesn't exist."
@@ -2849,13 +2838,11 @@ correctly restricts search to the parent's subtree."
                resource-uri "Target" "Renamed Target")))
         ;; Should succeed and rename the correct Target
         (should (equal (alist-get 'success result) t))
-        (with-temp-buffer
-          (insert-file-contents test-file)
-            (let ((content (buffer-string)))
-              (should
-               (string-match-p
-                org-mcp-test--regex-hierarchy-second-target-renamed
-                content)))))))))
+        (let ((content (org-mcp-test--read-file test-file)))
+          (should
+           (string-match-p
+            org-mcp-test--regex-hierarchy-second-target-renamed
+            content))))))))
 
 (ert-deftest org-mcp-test-rename-headline-with-todo-keyword ()
   "Test that headlines with TODO keywords can be renamed.
