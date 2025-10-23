@@ -958,21 +958,20 @@ AFTERURI is optional URI of sibling to insert after."
 
 (defun org-mcp-test--check-add-todo-result
     (result
-     expected-title basename test-file &optional expected-pattern)
+     expected-title basename test-file expected-pattern)
   "Check that add-todo RESULT has the correct structure and file content.
 RESULT is the return value from `org-add-todo' tool.
 EXPECTED-TITLE is the title that should be in the result.
 BASENAME is the expected file basename.
 TEST-FILE is the path to the file to check.
-EXPECTED-PATTERN if provided, is a regexp that the file content should match."
+EXPECTED-PATTERN is a regexp that the file content should match."
   ;; Check result structure
   (should (= (length result) 4))
   (should (equal (alist-get 'success result) t))
   (should (string-prefix-p "org-id://" (alist-get 'uri result)))
   (should (equal (alist-get 'file result) basename))
   (should (equal (alist-get 'title result) expected-title))
-  (when expected-pattern
-    (org-mcp-test--verify-file-matches test-file expected-pattern)))
+  (org-mcp-test--verify-file-matches test-file expected-pattern))
 
 (defun org-mcp-test--call-update-todo-state-expecting-error
     (resource-uri current-state new-state)
@@ -1973,14 +1972,8 @@ Another task."))
          result
          "New Top Task"
          (file-name-nondirectory test-file)
-         test-file)
-        ;; Verify complete buffer content
-        (with-temp-buffer
-          (insert-file-contents test-file)
-          (should
-           (string-match-p
-            org-mcp-test--expected-regex-top-level-with-header
-            (buffer-string))))))))
+         test-file
+         org-mcp-test--expected-regex-top-level-with-header)))))
 
 (ert-deftest org-mcp-test-add-todo-invalid-state ()
   "Test that adding TODO with invalid state throws error."
