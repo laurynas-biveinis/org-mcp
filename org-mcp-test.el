@@ -932,28 +932,30 @@ and binds `sequences' and `semantics' from the result for use in BODY."
 ;; Helper functions for testing org-add-todo MCP tool
 
 (defun org-mcp-test--call-add-todo-expecting-error
-    (title todoState tags body parentUri &optional afterUri)
-  "Call org-add-todo MCP tool expecting an error.
+    (test-file title todoState tags body parentUri &optional afterUri)
+  "Call org-add-todo MCP tool expecting an error and verify file unchanged.
+TEST-FILE is the test file path to verify remains unchanged.
 TITLE is the headline text.
 TODOSTATE is the TODO state.
 TAGS is a list of tag strings or nil.
 BODY is the body text or nil.
 PARENTURI is the URI of the parent item.
 AFTERURI is optional URI of sibling to insert after."
-  (let* ((params
-          `((title . ,title)
-            (todo_state . ,todoState)
-            (tags . ,tags)
-            (body . ,body)
-            (parent_uri . ,parentUri)
-            (after_uri . ,afterUri)))
-         (request
-           (mcp-server-lib-create-tools-call-request
-            "org-add-todo" nil params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-         (result (mcp-server-lib-ert-process-tool-response response)))
-    ;; If we get here, the tool succeeded when we expected failure
-    (error "Expected error but got success: %s" result)))
+  (org-mcp-test--assert-error-and-file test-file
+    (let* ((params
+            `((title . ,title)
+              (todo_state . ,todoState)
+              (tags . ,tags)
+              (body . ,body)
+              (parent_uri . ,parentUri)
+              (after_uri . ,afterUri)))
+           (request
+             (mcp-server-lib-create-tools-call-request
+              "org-add-todo" nil params))
+           (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+           (result (mcp-server-lib-ert-process-tool-response response)))
+      ;; If we get here, the tool succeeded when we expected failure
+      (error "Expected error but got success: %s" result))))
 
 (defun org-mcp-test--add-todo-and-check
     (title todoState tags body parentUri afterUri
@@ -1394,9 +1396,8 @@ BODY-WITH-HEADLINE is the body containing invalid headline."
   (org-mcp-test--with-add-todo-setup test-file initial-content
     (let ((parent-uri
            (format "org-headline://%s#%s" test-file parent-headline)))
-      (org-mcp-test--assert-error-and-file test-file
-        (org-mcp-test--call-add-todo-expecting-error
-         "Test Task" "TODO" '("work") body-with-headline parent-uri)))))
+      (org-mcp-test--call-add-todo-expecting-error
+       test-file "Test Task" "TODO" '("work") body-with-headline parent-uri))))
 
 (ert-deftest org-mcp-test-file-resource-template-in-list ()
   "Test that file template appears in resources/templates/list."
@@ -1423,9 +1424,8 @@ Tests that the given title is rejected when creating a TODO."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s#" test-file)))
-      (org-mcp-test--assert-error-and-file test-file
-        (org-mcp-test--call-add-todo-expecting-error
-         invalid-title "TODO" nil nil parent-uri)))))
+      (org-mcp-test--call-add-todo-expecting-error
+       test-file invalid-title "TODO" nil nil parent-uri))))
 
 (defun org-mcp-test--assert-rename-headline-rejected
     (initial-content headline-title new-title)
@@ -1951,13 +1951,13 @@ Another task."))
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s#" test-file)))
-      (org-mcp-test--assert-error-and-file test-file
-        (org-mcp-test--call-add-todo-expecting-error
-         "New Task"
-         "INVALID-STATE" ; Not in org-todo-keywords
-         '("work")
-         nil
-         parent-uri)))))
+      (org-mcp-test--call-add-todo-expecting-error
+       test-file
+       "New Task"
+       "INVALID-STATE" ; Not in org-todo-keywords
+       '("work")
+       nil
+       parent-uri))))
 
 (ert-deftest org-mcp-test-add-todo-empty-title ()
   "Test that adding TODO with empty title throws error."
@@ -1987,9 +1987,8 @@ Another task."))
       org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       ;; Should reject tags not in org-tag-alist
-      (org-mcp-test--assert-error-and-file test-file
-        (org-mcp-test--call-add-todo-expecting-error
-         "Task" "TODO" '("invalid") nil parent-uri)))))
+      (org-mcp-test--call-add-todo-expecting-error
+       test-file "Task" "TODO" '("invalid") nil parent-uri))))
 
 (ert-deftest org-mcp-test-add-todo-tag-accept-valid-with-alist ()
   "Test that tags in `org-tag-alist' are accepted."
@@ -2044,15 +2043,12 @@ Another task."))
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s#" test-file)))
         ;; Should reject tags with special characters
-        (org-mcp-test--assert-error-and-file test-file
-          (org-mcp-test--call-add-todo-expecting-error
-           "Task" "TODO" '("invalid-tag!") nil parent-uri))
-        (org-mcp-test--assert-error-and-file test-file
-          (org-mcp-test--call-add-todo-expecting-error
-           "Task" "TODO" '("tag-with-dash") nil parent-uri))
-        (org-mcp-test--assert-error-and-file test-file
-          (org-mcp-test--call-add-todo-expecting-error
-           "Task" "TODO" '("tag#hash") nil parent-uri))))))
+        (org-mcp-test--call-add-todo-expecting-error
+         test-file "Task" "TODO" '("invalid-tag!") nil parent-uri)
+        (org-mcp-test--call-add-todo-expecting-error
+         test-file "Task" "TODO" '("tag-with-dash") nil parent-uri)
+        (org-mcp-test--call-add-todo-expecting-error
+         test-file "Task" "TODO" '("tag#hash") nil parent-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-child-under-parent ()
   "Test adding a child TODO under an existing parent."
@@ -2208,13 +2204,13 @@ rejected in TODO body content."
          (body-with-unbalanced-block
           "Here's an example:\n#+BEGIN_EXAMPLE\nsome code\nMore text after block"))
       ;; Should reject unbalanced blocks
-      (org-mcp-test--assert-error-and-file test-file
-        (org-mcp-test--call-add-todo-expecting-error
-         "Task with unbalanced block"
-         "TODO"
-         '("work")
-         body-with-unbalanced-block
-         parent-uri)))))
+      (org-mcp-test--call-add-todo-expecting-error
+       test-file
+       "Task with unbalanced block"
+       "TODO"
+       '("work")
+       body-with-unbalanced-block
+       parent-uri))))
 
 (ert-deftest org-mcp-test-add-todo-body-with-unbalanced-end-block ()
   "Test that adding TODO with body containing unbalanced END block is rejected.
@@ -2225,13 +2221,13 @@ An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
           (body-with-unbalanced-end
            "Some text before\n#+END_EXAMPLE\nMore text after"))
       ;; Should reject unbalanced END blocks
-      (org-mcp-test--assert-error-and-file test-file
-        (org-mcp-test--call-add-todo-expecting-error
-         "Task with unbalanced END block"
-         "TODO"
-         '("work")
-         body-with-unbalanced-end
-         parent-uri)))))
+      (org-mcp-test--call-add-todo-expecting-error
+       test-file
+       "Task with unbalanced END block"
+       "TODO"
+       '("work")
+       body-with-unbalanced-end
+       parent-uri))))
 
 (ert-deftest org-mcp-test-add-todo-body-with-literal-block-end ()
   "Test that TODO body with END_SRC inside EXAMPLE block is accepted.
@@ -2318,10 +2314,9 @@ This is valid Org-mode syntax and should be allowed."
              (after-uri
               (format "org-id://%s" org-mcp-test--other-child-id)))
         ;; Error: Other Child is not a child of First Parent
-        (org-mcp-test--assert-error-and-file test-file
-          (org-mcp-test--call-add-todo-expecting-error
-           "New Task" "TODO" '("work") nil parent-uri
-           after-uri))))))
+        (org-mcp-test--call-add-todo-expecting-error
+         test-file "New Task" "TODO" '("work") nil parent-uri
+         after-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
@@ -2364,14 +2359,14 @@ This is valid Org-mode syntax and should be allowed."
         (org-mcp-test--with-enabled
           ;; Try to add TODO with conflicting tags - should error
           (let ((parent-uri (format "org-headline://%s#" test-file)))
-            (org-mcp-test--assert-error-and-file test-file
-              (org-mcp-test--call-add-todo-expecting-error
-               "Test Task"
-               "TODO"
-               ["work" "@office" "@home"] ; conflicting tags
-               nil
-               parent-uri
-               nil))))))))
+            (org-mcp-test--call-add-todo-expecting-error
+             test-file
+             "Test Task"
+             "TODO"
+             ["work" "@office" "@home"] ; conflicting tags
+             nil
+             parent-uri
+             nil)))))))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-valid ()
   "Test that non-conflicting tags from mutex groups are accepted."
