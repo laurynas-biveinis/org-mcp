@@ -829,11 +829,12 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
   "Verify TEST-FILE content matches EXPECTED-PATTERN regexp."
   (should (string-match-p expected-pattern (org-mcp-test--read-file test-file))))
 
-(defun org-mcp-test--assert-error-and-file (test-file error-form)
+(defmacro org-mcp-test--assert-error-and-file (test-file error-form)
   "Assert that ERROR-FORM throws an error and TEST-FILE remains unchanged."
-  (let ((original-content (org-mcp-test--read-file test-file)))
-    (should-error (eval error-form) :type 'mcp-server-lib-tool-error)
-    (org-mcp-test--verify-file-eq test-file original-content)))
+  (declare (indent 1) (debug t))
+  `(let ((original-content (org-mcp-test--read-file ,test-file)))
+     (should-error ,error-form :type 'mcp-server-lib-tool-error)
+     (org-mcp-test--verify-file-eq ,test-file original-content)))
 
 (defmacro org-mcp-test--with-enabled (&rest body)
   "Run BODY with org-mcp enabled, ensuring cleanup."
@@ -1401,10 +1402,9 @@ BODY-WITH-HEADLINE is the body containing invalid headline."
   (org-mcp-test--with-add-todo-setup test-file initial-content
     (let ((parent-uri
            (format "org-headline://%s#%s" test-file parent-headline)))
-      (org-mcp-test--assert-error-and-file
-       test-file
-       `(org-mcp-test--call-add-todo-expecting-error
-         "Test Task" "TODO" '("work") ,body-with-headline ,parent-uri)))))
+      (org-mcp-test--assert-error-and-file test-file
+        (org-mcp-test--call-add-todo-expecting-error
+         "Test Task" "TODO" '("work") body-with-headline parent-uri)))))
 
 (ert-deftest org-mcp-test-file-resource-template-in-list ()
   "Test that file template appears in resources/templates/list."
@@ -1431,10 +1431,9 @@ Tests that the given title is rejected when creating a TODO."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s#" test-file)))
-      (org-mcp-test--assert-error-and-file
-       test-file
-       `(org-mcp-test--call-add-todo-expecting-error
-         ,invalid-title "TODO" nil nil ,parent-uri)))))
+      (org-mcp-test--assert-error-and-file test-file
+        (org-mcp-test--call-add-todo-expecting-error
+         invalid-title "TODO" nil nil parent-uri)))))
 
 (defun org-mcp-test--assert-rename-headline-rejected
     (initial-content headline-title new-title)
@@ -1448,10 +1447,9 @@ NEW-TITLE is the invalid new title that should be rejected."
              (format "org-headline://%s#%s"
                      test-file
                      (url-hexify-string headline-title))))
-        (org-mcp-test--assert-error-and-file
-         test-file
-         `(org-mcp-test--call-rename-headline-expecting-error
-           ,resource-uri ,headline-title ,new-title))))))
+        (org-mcp-test--assert-error-and-file test-file
+          (org-mcp-test--call-rename-headline-expecting-error
+           resource-uri headline-title new-title))))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
@@ -1767,10 +1765,9 @@ properly checks parent-child relationships and levels."
           ;; Try to update with wrong current state
           (let ((resource-uri
                  (format "org-headline://%s#Task%%20One" test-file)))
-            (org-mcp-test--assert-error-and-file
-             test-file
-             `(org-mcp-test--call-update-todo-state-expecting-error
-               ,resource-uri "IN-PROGRESS" "DONE"))))))))
+            (org-mcp-test--assert-error-and-file test-file
+              (org-mcp-test--call-update-todo-state-expecting-error
+               resource-uri "IN-PROGRESS" "DONE"))))))))
 
 (ert-deftest org-mcp-test-update-todo-with-timestamp-id ()
   "Test updating TODO state using timestamp-format ID (not UUID)."
@@ -1794,10 +1791,9 @@ properly checks parent-child relationships and levels."
           ;; Try to set empty state
           (let ((resource-uri
                  (format "org-headline://%s#Task%%20One" test-file)))
-            (org-mcp-test--assert-error-and-file
-             test-file
-             `(org-mcp-test--call-update-todo-state-expecting-error
-               ,resource-uri "TODO" ""))))))))
+            (org-mcp-test--assert-error-and-file test-file
+              (org-mcp-test--call-update-todo-state-expecting-error
+               resource-uri "TODO" ""))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-invalid ()
   "Test TODO state update fails for invalid new state."
@@ -1809,10 +1805,9 @@ properly checks parent-child relationships and levels."
           ;; Try to update to invalid state
           (let ((resource-uri
                  (format "org-headline://%s#Task%%20One" test-file)))
-            (org-mcp-test--assert-error-and-file
-             test-file
-             `(org-mcp-test--call-update-todo-state-expecting-error
-               ,resource-uri "TODO" "INVALID-STATE"))))))))
+            (org-mcp-test--assert-error-and-file test-file
+              (org-mcp-test--call-update-todo-state-expecting-error
+               resource-uri "TODO" "INVALID-STATE"))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-with-open-buffer ()
   "Test TODO state update works when file is open in another buffer."
@@ -1866,10 +1861,9 @@ Another task description."))
                   (let ((resource-uri
                          (format "org-headline://%s#Task%%20One"
                                  test-file)))
-                    (org-mcp-test--assert-error-and-file
-                     test-file
-                     `(org-mcp-test--call-update-todo-state-expecting-error
-                       ,resource-uri "TODO" "IN-PROGRESS"))
+                    (org-mcp-test--assert-error-and-file test-file
+                      (org-mcp-test--call-update-todo-state-expecting-error
+                       resource-uri "TODO" "IN-PROGRESS"))
                     ;; Verify buffer still has unsaved changes
                     (with-current-buffer buffer
                       (should (buffer-modified-p))))))
@@ -1884,10 +1878,9 @@ Another task description."))
       (org-mcp-test--with-id-setup test-file test-content '()
         ;; Try to update a non-existent ID
         (let ((resource-uri "org-id://nonexistent-uuid-12345"))
-          (org-mcp-test--assert-error-and-file
-           test-file
-           `(org-mcp-test--call-update-todo-state-expecting-error
-             ,resource-uri "TODO" "IN-PROGRESS")))))))
+          (org-mcp-test--assert-error-and-file test-file
+            (org-mcp-test--call-update-todo-state-expecting-error
+             resource-uri "TODO" "IN-PROGRESS")))))))
 
 (ert-deftest org-mcp-test-update-todo-state-by-id ()
   "Test updating TODO state using org-id:// URI."
@@ -1924,10 +1917,9 @@ Another task."))
           (let ((resource-uri
                  (format "org-headline://%s#Nonexistent%%20Task"
                          test-file)))
-            (org-mcp-test--assert-error-and-file
-             test-file
-             `(org-mcp-test--call-update-todo-state-expecting-error
-               ,resource-uri "TODO" "IN-PROGRESS"))))))))
+            (org-mcp-test--assert-error-and-file test-file
+              (org-mcp-test--call-update-todo-state-expecting-error
+               resource-uri "TODO" "IN-PROGRESS"))))))))
 
 (ert-deftest org-mcp-test-add-todo-top-level ()
   "Test adding a top-level TODO item."
@@ -1975,14 +1967,13 @@ Another task."))
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s#" test-file)))
-      (org-mcp-test--assert-error-and-file
-       test-file
-       `(org-mcp-test--call-add-todo-expecting-error
+      (org-mcp-test--assert-error-and-file test-file
+        (org-mcp-test--call-add-todo-expecting-error
          "New Task"
          "INVALID-STATE" ; Not in org-todo-keywords
          '("work")
          nil
-         ,parent-uri)))))
+         parent-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-empty-title ()
   "Test that adding TODO with empty title throws error."
@@ -2012,10 +2003,9 @@ Another task."))
       org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       ;; Should reject tags not in org-tag-alist
-      (org-mcp-test--assert-error-and-file
-       test-file
-       `(org-mcp-test--call-add-todo-expecting-error
-         "Task" "TODO" '("invalid") nil ,parent-uri)))))
+      (org-mcp-test--assert-error-and-file test-file
+        (org-mcp-test--call-add-todo-expecting-error
+         "Task" "TODO" '("invalid") nil parent-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-tag-accept-valid-with-alist ()
   "Test that tags in `org-tag-alist' are accepted."
@@ -2073,18 +2063,15 @@ Another task."))
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s#" test-file)))
         ;; Should reject tags with special characters
-        (org-mcp-test--assert-error-and-file
-         test-file
-         `(org-mcp-test--call-add-todo-expecting-error
-           "Task" "TODO" '("invalid-tag!") nil ,parent-uri))
-        (org-mcp-test--assert-error-and-file
-         test-file
-         `(org-mcp-test--call-add-todo-expecting-error
-           "Task" "TODO" '("tag-with-dash") nil ,parent-uri))
-        (org-mcp-test--assert-error-and-file
-         test-file
-         `(org-mcp-test--call-add-todo-expecting-error
-           "Task" "TODO" '("tag#hash") nil ,parent-uri))))))
+        (org-mcp-test--assert-error-and-file test-file
+          (org-mcp-test--call-add-todo-expecting-error
+           "Task" "TODO" '("invalid-tag!") nil parent-uri))
+        (org-mcp-test--assert-error-and-file test-file
+          (org-mcp-test--call-add-todo-expecting-error
+           "Task" "TODO" '("tag-with-dash") nil parent-uri))
+        (org-mcp-test--assert-error-and-file test-file
+          (org-mcp-test--call-add-todo-expecting-error
+           "Task" "TODO" '("tag#hash") nil parent-uri))))))
 
 (ert-deftest org-mcp-test-add-todo-child-under-parent ()
   "Test adding a child TODO under an existing parent."
@@ -2239,14 +2226,13 @@ rejected in TODO body content."
          (body-with-unbalanced-block
           "Here's an example:\n#+BEGIN_EXAMPLE\nsome code\nMore text after block"))
       ;; Should reject unbalanced blocks
-      (org-mcp-test--assert-error-and-file
-       test-file
-       `(org-mcp-test--call-add-todo-expecting-error
+      (org-mcp-test--assert-error-and-file test-file
+        (org-mcp-test--call-add-todo-expecting-error
          "Task with unbalanced block"
          "TODO"
          '("work")
-         ,body-with-unbalanced-block
-         ,parent-uri)))))
+         body-with-unbalanced-block
+         parent-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-body-with-unbalanced-end-block ()
   "Test that adding TODO with body containing unbalanced END block is rejected.
@@ -2257,14 +2243,13 @@ An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
           (body-with-unbalanced-end
            "Some text before\n#+END_EXAMPLE\nMore text after"))
       ;; Should reject unbalanced END blocks
-      (org-mcp-test--assert-error-and-file
-       test-file
-       `(org-mcp-test--call-add-todo-expecting-error
+      (org-mcp-test--assert-error-and-file test-file
+        (org-mcp-test--call-add-todo-expecting-error
          "Task with unbalanced END block"
          "TODO"
          '("work")
-         ,body-with-unbalanced-end
-         ,parent-uri)))))
+         body-with-unbalanced-end
+         parent-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-body-with-literal-block-end ()
   "Test that TODO body with END_SRC inside EXAMPLE block is accepted.
@@ -2353,11 +2338,10 @@ This is valid Org-mode syntax and should be allowed."
              (after-uri
               (format "org-id://%s" org-mcp-test--other-child-id)))
         ;; Error: Other Child is not a child of First Parent
-        (org-mcp-test--assert-error-and-file
-         test-file
-         `(org-mcp-test--call-add-todo-expecting-error
-           "New Task" "TODO" '("work") nil ,parent-uri
-           ,after-uri))))))
+        (org-mcp-test--assert-error-and-file test-file
+          (org-mcp-test--call-add-todo-expecting-error
+           "New Task" "TODO" '("work") nil parent-uri
+           after-uri))))))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
@@ -2401,14 +2385,13 @@ This is valid Org-mode syntax and should be allowed."
         (org-mcp-test--with-enabled
           ;; Try to add TODO with conflicting tags - should error
           (let ((parent-uri (format "org-headline://%s#" test-file)))
-            (org-mcp-test--assert-error-and-file
-             test-file
-             `(org-mcp-test--call-add-todo-expecting-error
+            (org-mcp-test--assert-error-and-file test-file
+              (org-mcp-test--call-add-todo-expecting-error
                "Test Task"
                "TODO"
                ["work" "@office" "@home"] ; conflicting tags
                nil
-               ,parent-uri
+               parent-uri
                nil))))))))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-valid ()
@@ -2929,9 +2912,8 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-with-id-repeated-text
       `("test-id")
-    (org-mcp-test--assert-error-and-file
-     test-file
-     '(org-mcp--tool-edit-body
+    (org-mcp-test--assert-error-and-file test-file
+      (org-mcp--tool-edit-body
        "org-id://test-id" "occurrence of pattern" "REPLACED" nil))))
 
 (ert-deftest org-mcp-test-edit-body-replace-all ()
@@ -2955,9 +2937,8 @@ content here."
       org-mcp-test--content-with-id-repeated-text
       `("test-id")
     ;; Should error because multiple occurrences exist
-    (org-mcp-test--assert-error-and-file
-     test-file
-     '(org-mcp-test--call-edit-body "org-id://test-id"
+    (org-mcp-test--assert-error-and-file test-file
+      (org-mcp-test--call-edit-body "org-id://test-id"
                                     "occurrence of pattern"
                                     "REPLACED"
                                     :false))))
@@ -2967,9 +2948,8 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-file
-     test-file
-     '(org-mcp--tool-edit-body
+    (org-mcp-test--assert-error-and-file test-file
+      (org-mcp--tool-edit-body
        org-mcp-test--content-with-id-uri
        "nonexistent text"
        "replacement"
@@ -2997,9 +2977,8 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-file
-     test-file
-     '(org-mcp--tool-edit-body
+    (org-mcp-test--assert-error-and-file test-file
+      (org-mcp--tool-edit-body
        org-mcp-test--content-with-id-uri
        "" ; Empty oldBody
        "replacement" nil))))
@@ -3041,9 +3020,8 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-file
-     test-file
-     '(org-mcp--tool-edit-body
+    (org-mcp-test--assert-error-and-file test-file
+      (org-mcp--tool-edit-body
        org-mcp-test--content-with-id-uri "Second child content."
        "replacement text
 * This would become a headline"
@@ -3072,11 +3050,10 @@ When editing a level 2 node, level 1 headlines should be rejected."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
     (org-mcp-test--with-enabled
-      (org-mcp-test--assert-error-and-file
-       test-file
-       `(org-mcp--tool-edit-body
-         ,(format "org-headline://%s#Parent%%20Task/Second%%20Child"
-                  test-file)
+      (org-mcp-test--assert-error-and-file test-file
+        (org-mcp--tool-edit-body
+         (format "org-headline://%s#Parent%%20Task/Second%%20Child"
+                 test-file)
          "Second child content."
          "New text
 * Top level heading"
@@ -3087,9 +3064,8 @@ When editing a level 2 node, level 1 headlines should be rejected."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-file
-     test-file
-     '(org-mcp--tool-edit-body
+    (org-mcp-test--assert-error-and-file test-file
+      (org-mcp--tool-edit-body
        org-mcp-test--content-with-id-uri
        "Second child content."
        "* Heading at start"
@@ -3100,9 +3076,8 @@ When editing a level 2 node, level 1 headlines should be rejected."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-file
-     test-file
-     '(org-mcp--tool-edit-body
+    (org-mcp-test--assert-error-and-file test-file
+      (org-mcp--tool-edit-body
        org-mcp-test--content-with-id-uri "Second child content."
        "Some text
 #+BEGIN_EXAMPLE
@@ -3114,9 +3089,8 @@ Code without END_EXAMPLE"
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-file
-     test-file
-     '(org-mcp--tool-edit-body
+    (org-mcp-test--assert-error-and-file test-file
+      (org-mcp--tool-edit-body
        org-mcp-test--content-with-id-uri "Second child content."
        "Some text
 #+END_SRC
@@ -3128,9 +3102,8 @@ Without BEGIN_SRC"
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-file
-     test-file
-     '(org-mcp--tool-edit-body
+    (org-mcp-test--assert-error-and-file test-file
+      (org-mcp--tool-edit-body
        org-mcp-test--content-with-id-uri "Second child content."
        "Text here
 #+BEGIN_QUOTE
