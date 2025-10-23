@@ -903,7 +903,6 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
               (uri
                (format "org-headline://%s#Parent%%20Task"
                        test-file)))
-          ;; Try to access headline in file
           (org-mcp-test--verify-resource-read
            uri
            org-mcp-test--expected-parent-task-from-nested-siblings))
@@ -914,8 +913,8 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
   "Call org-add-todo tool via JSON-RPC and return the result.
 TITLE is the headline text.
 TODOSTATE is the TODO state.
-TAGS is a single tag string or list of tag strings.
-BODY is optional body text.
+TAGS is a list of tag strings or nil.
+BODY is the body text or nil.
 PARENTURI is the URI of the parent item.
 AFTERURI is optional URI of sibling to insert after."
   (let* ((params
@@ -930,6 +929,30 @@ AFTERURI is optional URI of sibling to insert after."
            "org-add-todo" 1 params))
          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
     (mcp-server-lib-ert-process-tool-response response)))
+
+(defun org-mcp-test--call-add-todo-expecting-error
+    (title todoState tags body parentUri &optional afterUri)
+  "Call org-add-todo tool via JSON-RPC expecting an error.
+TITLE is the headline text.
+TODOSTATE is the TODO state.
+TAGS is a list of tag strings or nil.
+BODY is the body text or nil.
+PARENTURI is the URI of the parent item.
+AFTERURI is optional URI of sibling to insert after."
+  (let* ((params
+          `((title . ,title)
+            (todo_state . ,todoState)
+            (tags . ,tags)
+            (body . ,body)
+            (parent_uri . ,parentUri)
+            (after_uri . ,afterUri)))
+         (request
+          (mcp-server-lib-create-tools-call-request
+           "org-add-todo" 1 params))
+         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+         (result (mcp-server-lib-ert-process-tool-response response)))
+    ;; If we get here, the tool succeeded when we expected failure
+    (error "Expected error but got success: %s" result)))
 
 (defun org-mcp-test--call-update-todo-state-expecting-error
     (resource-uri current-state new-state)
@@ -975,30 +998,6 @@ NEW-TITLE is the new title to set."
          (request
           (mcp-server-lib-create-tools-call-request
            "org-rename-headline" 1 params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-         (result (mcp-server-lib-ert-process-tool-response response)))
-    ;; If we get here, the tool succeeded when we expected failure
-    (error "Expected error but got success: %s" result)))
-
-(defun org-mcp-test--call-add-todo-expecting-error
-    (title todoState tags body parentUri &optional afterUri)
-  "Call org-add-todo tool via JSON-RPC expecting an error.
-TITLE is the headline text.
-TODOSTATE is the TODO state.
-TAGS is a single tag string or list of tag strings.
-BODY is optional body text.
-PARENTURI is the URI of the parent item.
-AFTERURI is optional URI of sibling to insert after."
-  (let* ((params
-          `((title . ,title)
-            (todo_state . ,todoState)
-            (tags . ,tags)
-            (body . ,body)
-            (parent_uri . ,parentUri)
-            (after_uri . ,afterUri)))
-         (request
-          (mcp-server-lib-create-tools-call-request
-           "org-add-todo" 1 params))
          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
          (result (mcp-server-lib-ert-process-tool-response response)))
     ;; If we get here, the tool succeeded when we expected failure
