@@ -803,11 +803,26 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
 
 ;; Test helper macros
 
+(defun org-mcp-test--verify-file-eq (test-file expected-content)
+  "Verify TEST-FILE containing exactly EXPECTED-CONTENT."
+  (with-temp-buffer
+    (insert-file-contents test-file)
+    (should (string= (buffer-string) expected-content))))
+
 (defun org-mcp-test--verify-file-matches (test-file expected-pattern)
   "Verify TEST-FILE content matches EXPECTED-PATTERN regexp."
   (with-temp-buffer
     (insert-file-contents test-file)
     (should (string-match-p expected-pattern (buffer-string)))))
+
+(defun org-mcp-test--assert-error-and-file (test-file error-form)
+  "Assert that ERROR-FORM throws an error and TEST-FILE remains unchanged."
+  (let ((original-content
+         (with-temp-buffer
+           (insert-file-contents test-file)
+           (buffer-string))))
+    (should-error (eval error-form) :type 'mcp-server-lib-tool-error)
+    (org-mcp-test--verify-file-eq test-file original-content)))
 
 (defmacro org-mcp-test--with-enabled (&rest body)
   "Run BODY with org-mcp enabled, ensuring cleanup."
@@ -1050,18 +1065,6 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
     (should (string-prefix-p "org-id://" (alist-get 'uri result)))
     (org-mcp-test--verify-file-matches test-file expected-content-regex)
     result))
-
-(defun org-mcp-test--assert-error-and-file (test-file error-form)
-  "Assert that ERROR-FORM throws an error and TEST-FILE remains unchanged.
-ERROR-FORM should be a form that is expected to signal an error.
-The file content is saved before the error test and verified to be
-unchanged after."
-  (let ((original-content
-         (with-temp-buffer
-           (insert-file-contents test-file)
-           (buffer-string))))
-    (should-error (eval error-form) :type 'mcp-server-lib-tool-error)
-    (org-mcp-test--verify-file-eq test-file original-content)))
 
 (defun org-mcp-test--read-resource-expecting-error
     (uri expected-error-message)
@@ -2889,16 +2892,10 @@ REPLACE-ALL if true, replace all occurrences (default: nil)."
             (new_body . ,new-body)
             (replace_all . ,replace-all)))
          (request
-          (mcp-server-lib-create-tools-call-request
-           "org-edit-body" 1 params))
+           (mcp-server-lib-create-tools-call-request
+            "org-edit-body" 1 params))
          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
     (mcp-server-lib-ert-process-tool-response response)))
-
-(defun org-mcp-test--verify-file-eq (test-file expected-content)
-  "Verify TEST-FILE containing exactly EXPECTED-CONTENT."
-  (with-temp-buffer
-    (insert-file-contents test-file)
-    (should (string= (buffer-string) expected-content))))
 
 (defmacro org-mcp-test--assert-error-and-unchanged
     (error-form test-file expected-content)
