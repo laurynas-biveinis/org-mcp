@@ -1004,21 +1004,23 @@ NEW-STATE is the new TODO state to set."
     (json-read-from-string result-text)))
 
 (defun org-mcp-test--call-update-todo-state-expecting-error
-    (resource-uri current-state new-state)
-  "Call org-update-todo-state tool via JSON-RPC expecting an error.
+    (test-file resource-uri current-state new-state)
+  "Call org-update-todo-state tool expecting an error and verify file unchanged.
+TEST-FILE is the test file path to verify remains unchanged.
 RESOURCE-URI is the URI to update.
 CURRENT-STATE is the current TODO state.
 NEW-STATE is the new TODO state to set."
-  (let* ((request
-          (mcp-server-lib-create-tools-call-request
-           "org-update-todo-state" 1
-           `((uri . ,resource-uri)
-             (current_state . ,current-state)
-             (new_state . ,new-state))))
-         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-         (result (mcp-server-lib-ert-process-tool-response response)))
-    ;; If we get here, the tool succeeded when we expected failure
-    (error "Expected error but got success: %s" result)))
+  (org-mcp-test--assert-error-and-file test-file
+    (let* ((request
+            (mcp-server-lib-create-tools-call-request
+             "org-update-todo-state" 1
+             `((uri . ,resource-uri)
+               (current_state . ,current-state)
+               (new_state . ,new-state))))
+           (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+           (result (mcp-server-lib-ert-process-tool-response response)))
+      ;; If we get here, the tool succeeded when we expected failure
+      (error "Expected error but got success: %s" result))))
 
 (defun org-mcp-test--call-read-headline-expecting-error (file headline-path)
   "Call org-read-headline tool via JSON-RPC expecting an error.
@@ -1757,9 +1759,8 @@ properly checks parent-child relationships and levels."
           ;; Try to update with wrong current state
           (let ((resource-uri
                  (format "org-headline://%s#Task%%20One" test-file)))
-            (org-mcp-test--assert-error-and-file test-file
-              (org-mcp-test--call-update-todo-state-expecting-error
-               resource-uri "IN-PROGRESS" "DONE"))))))))
+            (org-mcp-test--call-update-todo-state-expecting-error
+             test-file resource-uri "IN-PROGRESS" "DONE")))))))
 
 (ert-deftest org-mcp-test-update-todo-with-timestamp-id ()
   "Test updating TODO state using timestamp-format ID (not UUID)."
@@ -1783,9 +1784,8 @@ properly checks parent-child relationships and levels."
           ;; Try to set empty state
           (let ((resource-uri
                  (format "org-headline://%s#Task%%20One" test-file)))
-            (org-mcp-test--assert-error-and-file test-file
-              (org-mcp-test--call-update-todo-state-expecting-error
-               resource-uri "TODO" ""))))))))
+            (org-mcp-test--call-update-todo-state-expecting-error
+             test-file resource-uri "TODO" "")))))))
 
 (ert-deftest org-mcp-test-update-todo-state-invalid ()
   "Test TODO state update fails for invalid new state."
@@ -1797,9 +1797,8 @@ properly checks parent-child relationships and levels."
           ;; Try to update to invalid state
           (let ((resource-uri
                  (format "org-headline://%s#Task%%20One" test-file)))
-            (org-mcp-test--assert-error-and-file test-file
-              (org-mcp-test--call-update-todo-state-expecting-error
-               resource-uri "TODO" "INVALID-STATE"))))))))
+            (org-mcp-test--call-update-todo-state-expecting-error
+             test-file resource-uri "TODO" "INVALID-STATE")))))))
 
 (ert-deftest org-mcp-test-update-todo-state-with-open-buffer ()
   "Test TODO state update works when file is open in another buffer."
@@ -1853,9 +1852,8 @@ Another task description."))
                   (let ((resource-uri
                          (format "org-headline://%s#Task%%20One"
                                  test-file)))
-                    (org-mcp-test--assert-error-and-file test-file
-                      (org-mcp-test--call-update-todo-state-expecting-error
-                       resource-uri "TODO" "IN-PROGRESS"))
+                    (org-mcp-test--call-update-todo-state-expecting-error
+                     test-file resource-uri "TODO" "IN-PROGRESS")
                     ;; Verify buffer still has unsaved changes
                     (with-current-buffer buffer
                       (should (buffer-modified-p))))))
@@ -1870,9 +1868,8 @@ Another task description."))
       (org-mcp-test--with-id-setup test-file test-content '()
         ;; Try to update a non-existent ID
         (let ((resource-uri "org-id://nonexistent-uuid-12345"))
-          (org-mcp-test--assert-error-and-file test-file
-            (org-mcp-test--call-update-todo-state-expecting-error
-             resource-uri "TODO" "IN-PROGRESS")))))))
+          (org-mcp-test--call-update-todo-state-expecting-error
+           test-file resource-uri "TODO" "IN-PROGRESS"))))))
 
 (ert-deftest org-mcp-test-update-todo-state-by-id ()
   "Test updating TODO state using org-id:// URI."
@@ -1906,9 +1903,8 @@ Another task."))
           (let ((resource-uri
                  (format "org-headline://%s#Nonexistent%%20Task"
                          test-file)))
-            (org-mcp-test--assert-error-and-file test-file
-              (org-mcp-test--call-update-todo-state-expecting-error
-               resource-uri "TODO" "IN-PROGRESS"))))))))
+            (org-mcp-test--call-update-todo-state-expecting-error
+             test-file resource-uri "TODO" "IN-PROGRESS")))))))
 
 (ert-deftest org-mcp-test-add-todo-top-level ()
   "Test adding a top-level TODO item."
