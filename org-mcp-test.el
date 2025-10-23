@@ -931,25 +931,6 @@ and binds `sequences' and `semantics' from the result for use in BODY."
 
 ;; Helper functions for testing org-add-todo MCP tool
 
-(defun org-mcp-test--call-add-todo
-    (title todoState tags body parentUri &optional afterUri)
-  "Call org-add-todo MCP tool.
-TITLE is the headline text.
-TODOSTATE is the TODO state.
-TAGS is a list of tag strings or nil.
-BODY is the body text or nil.
-PARENTURI is the URI of the parent item.
-AFTERURI is optional URI of sibling to insert after."
-  (let* ((params
-          `((title . ,title)
-            (todo_state . ,todoState)
-            (tags . ,tags)
-            (body . ,body)
-            (parent_uri . ,parentUri)
-            (after_uri . ,afterUri)))
-         (result-text (mcp-server-lib-ert-call-tool "org-add-todo" params)))
-    (json-read-from-string result-text)))
-
 (defun org-mcp-test--call-add-todo-expecting-error
     (title todoState tags body parentUri &optional afterUri)
   "Call org-add-todo MCP tool expecting an error.
@@ -974,22 +955,37 @@ AFTERURI is optional URI of sibling to insert after."
     ;; If we get here, the tool succeeded when we expected failure
     (error "Expected error but got success: %s" result)))
 
-(defun org-mcp-test--check-add-todo-result
-    (result
-     expected-title basename test-file expected-pattern)
-  "Check that add-todo RESULT has the correct structure and file content.
-RESULT is the return value from `org-add-todo' tool.
-EXPECTED-TITLE is the title that should be in the result.
+(defun org-mcp-test--add-todo-and-check
+    (title todoState tags body parentUri afterUri
+           basename test-file expected-pattern)
+  "Add TODO item and verify the result.
+TITLE is the headline text.
+TODOSTATE is the TODO state.
+TAGS is a list of tag strings or nil.
+BODY is the body text or nil.
+PARENTURI is the URI of the parent item.
+AFTERURI is optional URI of sibling to insert after.
 BASENAME is the expected file basename.
 TEST-FILE is the path to the file to check.
-EXPECTED-PATTERN is a regexp that the file content should match."
-  ;; Check result structure
-  (should (= (length result) 4))
-  (should (equal (alist-get 'success result) t))
-  (should (string-match-p "\\`org-id://.+" (alist-get 'uri result)))
-  (should (equal (alist-get 'file result) basename))
-  (should (equal (alist-get 'title result) expected-title))
-  (org-mcp-test--verify-file-matches test-file expected-pattern))
+EXPECTED-PATTERN is a regexp that the file content should match.
+Returns the result from `org-add-todo' tool."
+  (let* ((params
+          `((title . ,title)
+            (todo_state . ,todoState)
+            (tags . ,tags)
+            (body . ,body)
+            (parent_uri . ,parentUri)
+            (after_uri . ,afterUri)))
+         (result-text (mcp-server-lib-ert-call-tool "org-add-todo" params))
+         (result (json-read-from-string result-text)))
+    ;; Check result structure
+    (should (= (length result) 4))
+    (should (equal (alist-get 'success result) t))
+    (should (string-match-p "\\`org-id://.+" (alist-get 'uri result)))
+    (should (equal (alist-get 'file result) basename))
+    (should (equal (alist-get 'title result) title))
+    (org-mcp-test--verify-file-matches test-file expected-pattern)
+    result))
 
 ;; Helper functions for testing org-update-todo-state MCP tool
 
@@ -1918,17 +1914,16 @@ Another task."))
   "Test adding a top-level TODO item."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let* ((parent-uri (format "org-headline://%s#" test-file))
-           (result
-            (org-mcp-test--call-add-todo
-             "New Task"
-             "TODO"
-             '("work" "urgent")
-             nil ; no body
-             parent-uri
-             nil))) ; no afterUri
-      (org-mcp-test--check-add-todo-result
-       result "New Task" (file-name-nondirectory test-file) test-file
+    (let ((parent-uri (format "org-headline://%s#" test-file)))
+      (org-mcp-test--add-todo-and-check
+       "New Task"
+       "TODO"
+       '("work" "urgent")
+       nil ; no body
+       parent-uri
+       nil ; no afterUri
+       (file-name-nondirectory test-file)
+       test-file
        (concat
         "^\\* TODO New Task +:.*work.*urgent.*:\n"
         "\\(?: *:PROPERTIES:\n"
@@ -1939,18 +1934,14 @@ Another task."))
   "Test adding top-level TODO after header comments."
   (let ((initial-content org-mcp-test--content-nested-siblings))
     (org-mcp-test--with-add-todo-setup test-file initial-content
-      (let* ((parent-uri (format "org-headline://%s#" test-file))
-             (result
-              (org-mcp-test--call-add-todo
-               "New Top Task"
-               "TODO"
-               '("urgent")
-               nil ; no body
-               parent-uri
-               nil))) ; no afterUri
-        (org-mcp-test--check-add-todo-result
-         result
+      (let ((parent-uri (format "org-headline://%s#" test-file)))
+        (org-mcp-test--add-todo-and-check
          "New Top Task"
+         "TODO"
+         '("urgent")
+         nil ; no body
+         parent-uri
+         nil ; no afterUri
          (file-name-nondirectory test-file)
          test-file
          org-mcp-test--expected-regex-top-level-with-header)))))
@@ -2006,21 +1997,20 @@ Another task."))
       org-mcp-test--content-empty
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       ;; Should accept tags in org-tag-alist (work, personal, urgent)
-      (let ((result
-             (org-mcp-test--call-add-todo
-              "ValidTask" "TODO" '("work") nil parent-uri
-              nil)))
-        ;; Check result structure - should have exactly 4 fields
-        (org-mcp-test--check-add-todo-result
-         result
-         "ValidTask"
-         (file-name-nondirectory test-file)
-         test-file
-         (concat
-          "^\\* TODO ValidTask +:work:\n"
-          "\\(?: *:PROPERTIES:\n"
-          " *:ID: +[^\n]+\n"
-          " *:END:\n\\)?$"))))))
+      (org-mcp-test--add-todo-and-check
+       "ValidTask"
+       "TODO"
+       '("work")
+       nil
+       parent-uri
+       nil
+       (file-name-nondirectory test-file)
+       test-file
+       (concat
+        "^\\* TODO ValidTask +:work:\n"
+        "\\(?: *:PROPERTIES:\n"
+        " *:ID: +[^\n]+\n"
+        " *:END:\n\\)?$")))))
 
 (ert-deftest org-mcp-test-add-todo-tag-validation-without-alist ()
   "Test valid tag names are accepted when `org-tag-alist' is empty."
@@ -2030,23 +2020,21 @@ Another task."))
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s#" test-file)))
         ;; Should accept valid tag names (alphanumeric, _, @)
-        (let ((result
-               (org-mcp-test--call-add-todo
-                "Task1"
-                "TODO"
-                '("validtag" "tag123" "my_tag" "@home")
-                nil
-                parent-uri
-                nil)))
-          ;; Check result structure - should have exactly 4 fields
-          (org-mcp-test--check-add-todo-result
-           result "Task1" (file-name-nondirectory test-file) test-file
-           (concat
-            "^\\* TODO Task1 +:"
-            ".*validtag.*tag123.*my_tag.*@home.*:\n"
-            "\\(?: *:PROPERTIES:\n"
-            " *:ID: +[^\n]+\n"
-            " *:END:\n\\)?$")))))))
+        (org-mcp-test--add-todo-and-check
+         "Task1"
+         "TODO"
+         '("validtag" "tag123" "my_tag" "@home")
+         nil
+         parent-uri
+         nil
+         (file-name-nondirectory test-file)
+         test-file
+         (concat
+          "^\\* TODO Task1 +:"
+          ".*validtag.*tag123.*my_tag.*@home.*:\n"
+          "\\(?: *:PROPERTIES:\n"
+          " *:ID: +[^\n]+\n"
+          " *:END:\n\\)?$"))))))
 
 (ert-deftest org-mcp-test-add-todo-tag-invalid-characters ()
   "Test that tags with invalid characters are rejected."
@@ -2070,17 +2058,15 @@ Another task."))
   "Test adding a child TODO under an existing parent."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-nested-siblings
-    (let* ((parent-uri
-            (format "org-headline://%s#Parent%%20Task" test-file))
-           (result
-            (org-mcp-test--call-add-todo "Child Task" "TODO" '("work")
-                                         nil ; no body
-                                         parent-uri
-                                         nil))) ; no afterUri
-      ;; Check result structure - should have exactly 4 fields
-      (org-mcp-test--check-add-todo-result
-       result
+    (let ((parent-uri
+           (format "org-headline://%s#Parent%%20Task" test-file)))
+      (org-mcp-test--add-todo-and-check
        "Child Task"
+       "TODO"
+       '("work")
+       nil ; no body
+       parent-uri
+       nil ; no afterUri
        (file-name-nondirectory test-file)
        test-file
        org-mcp-test--regex-child-under-parent))))
@@ -2090,17 +2076,15 @@ Another task."))
 Empty string should be treated as nil - append as last child."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-nested-siblings
-    (let* ((parent-uri
-            (format "org-headline://%s#Parent%%20Task" test-file))
-           (result
-            (org-mcp-test--call-add-todo "Child Task" "TODO" '("work")
-                                         nil ; no body
-                                         parent-uri
-                                         ""))) ; empty string after_uri
-      ;; Check result structure - should have exactly 4 fields
-      (org-mcp-test--check-add-todo-result
-       result
+    (let ((parent-uri
+           (format "org-headline://%s#Parent%%20Task" test-file)))
+      (org-mcp-test--add-todo-and-check
        "Child Task"
+       "TODO"
+       '("work")
+       nil ; no body
+       parent-uri
+       "" ; empty string after_uri
        (file-name-nondirectory test-file)
        test-file
        org-mcp-test--regex-child-under-parent))))
@@ -2110,19 +2094,16 @@ Empty string should be treated as nil - append as last child."
 This tests the bug where the second child was created at level 4 instead of level 3."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-level2-parent-level3-children
-    (let* ((parent-uri
-            (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
-                    test-file))
-           (result
-            (org-mcp-test--call-add-todo
-             "Second Child" "TODO" '("work")
-             nil  ; no body
-             parent-uri
-             nil))) ; no after_uri
-      ;; Check result structure
-      (org-mcp-test--check-add-todo-result
-       result
+    (let ((parent-uri
+           (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
+                   test-file)))
+      (org-mcp-test--add-todo-and-check
        "Second Child"
+       "TODO"
+       '("work")
+       nil  ; no body
+       parent-uri
+       nil ; no after_uri
        (file-name-nondirectory test-file)
        test-file
        org-mcp-test--regex-second-child-same-level))))
@@ -2136,21 +2117,19 @@ Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (v
           (org-tag-alist '("internet")))
       (org-mcp-test--with-id-setup test-file initial-content
           `(,org-mcp-test--level2-parent-level3-sibling-id)
-        (let* ((parent-uri
-                (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
-                        test-file))
-               (after-uri (format "org-id://%s"
-                                  org-mcp-test--level2-parent-level3-sibling-id))
-               (result
-                (org-mcp-test--call-add-todo
-                 "Review org-mcp-test.el" "TODO" '("internet")
-                 nil
-                 parent-uri
-                 after-uri)))
+        (let ((parent-uri
+               (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
+                       test-file))
+              (after-uri (format "org-id://%s"
+                                 org-mcp-test--level2-parent-level3-sibling-id)))
           ;; BUG: org-insert-heading creates level 1 (*) instead of level 3 (***)
-          (org-mcp-test--check-add-todo-result
-           result
+          (org-mcp-test--add-todo-and-check
            "Review org-mcp-test.el"
+           "TODO"
+           '("internet")
+           nil
+           parent-uri
+           after-uri
            (file-name-nondirectory test-file)
            test-file
            org-mcp-test--regex-after-sibling-level3))))))
@@ -2159,15 +2138,15 @@ Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (v
   "Test adding TODO with body text."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let* ((parent-uri (format "org-headline://%s#" test-file))
-           (body-text org-mcp-test--body-text-multiline)
-           (result
-            (org-mcp-test--call-add-todo
-             "Task with Body" "TODO" '("work") body-text parent-uri)))
-      ;; Check result structure - should have exactly 4 fields
-      (org-mcp-test--check-add-todo-result
-       result
+    (let ((parent-uri (format "org-headline://%s#" test-file))
+          (body-text org-mcp-test--body-text-multiline))
+      (org-mcp-test--add-todo-and-check
        "Task with Body"
+       "TODO"
+       '("work")
+       body-text
+       parent-uri
+       nil
        (file-name-nondirectory test-file)
        test-file
        org-mcp-test--regex-todo-with-body))))
@@ -2198,15 +2177,25 @@ Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (v
 A single asterisk without space is not a valid Org headline."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let* ((parent-uri (format "org-headline://%s#" test-file))
-           (body-with-asterisk "Some initial text.\n*")
-           (result
-            (org-mcp-test--call-add-todo
-             "Task" "TODO" '("work") body-with-asterisk parent-uri
-             nil)))
+    (let ((parent-uri (format "org-headline://%s#" test-file))
+          (body-with-asterisk "Some initial text.\n*"))
       ;; Should succeed since * without space is not a headline
-      (should result)
-      (should (alist-get 'success result)))))
+      (org-mcp-test--add-todo-and-check
+       "Task"
+       "TODO"
+       '("work")
+       body-with-asterisk
+       parent-uri
+       nil
+       (file-name-nondirectory test-file)
+       test-file
+       (concat
+        "^\\* TODO Task +:work:\n"
+        "\\(?: *:PROPERTIES:\n"
+        " *:ID: +[^\n]+\n"
+        " *:END:\n\\)?"
+        "Some initial text\\.\n"
+        "\\*$")))))
 
 (ert-deftest org-mcp-test-add-todo-body-with-unbalanced-block ()
   "Test that adding TODO with body containing unbalanced block is rejected.
@@ -2250,26 +2239,29 @@ An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
 This is valid Org-mode syntax and should be allowed."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let*
-        ((parent-uri (format "org-headline://%s#" test-file))
-         (body-with-literal-end
-          "Example of source block:\n#+BEGIN_EXAMPLE\n#+END_SRC\n#+END_EXAMPLE\nText after.")
-         (result
-          (org-mcp-test--call-add-todo "Task with literal END_SRC"
-                                       "TODO"
-                                       '("work")
-                                       body-with-literal-end
-                                       parent-uri
-                                       nil)))
+    (let ((parent-uri (format "org-headline://%s#" test-file))
+          (body-with-literal-end
+           "Example of source block:\n#+BEGIN_EXAMPLE\n#+END_SRC\n#+END_EXAMPLE\nText after."))
       ;; Should succeed - #+END_SRC is just literal text inside EXAMPLE block
-      (should result)
-      (should (alist-get 'success result))
-      ;; Verify the content was added correctly
-      (with-current-buffer (find-file-noselect test-file)
-        (goto-char (point-min))
-        (should (search-forward "#+BEGIN_EXAMPLE" nil t))
-        (should (search-forward "#+END_SRC" nil t))
-        (should (search-forward "#+END_EXAMPLE" nil t))))))
+      (org-mcp-test--add-todo-and-check
+       "Task with literal END_SRC"
+       "TODO"
+       '("work")
+       body-with-literal-end
+       parent-uri
+       nil
+       (file-name-nondirectory test-file)
+       test-file
+       (concat
+        "^\\* TODO Task with literal END_SRC +:work:\n"
+        "\\(?: *:PROPERTIES:\n"
+        " *:ID: +[^\n]+\n"
+        " *:END:\n\\)?"
+        "Example of source block:\n"
+        "#\\+BEGIN_EXAMPLE\n"
+        "#\\+END_SRC\n"
+        "#\\+END_EXAMPLE\n"
+        "Text after\\.$")))))
 
 (ert-deftest org-mcp-test-add-todo-after-sibling ()
   "Test adding TODO after a specific sibling."
@@ -2297,22 +2289,17 @@ This is valid Org-mode syntax and should be allowed."
           (org-mcp-test--with-id-tracking
               (list test-file)
               `((,first-id . ,test-file))
-            (let* ((parent-uri
-                    (format "org-headline://%s#Parent%%20Task"
-                            test-file))
-                   (after-uri (format "org-id://%s" first-id))
-                   (result
-                    (org-mcp-test--call-add-todo
-                     "New Task After First"
-                     "TODO"
-                     '("work")
-                     nil
-                     parent-uri
-                     after-uri)))
-              ;; Check result has exactly 4 fields
-              (org-mcp-test--check-add-todo-result
-               result
+            (let ((parent-uri
+                   (format "org-headline://%s#Parent%%20Task"
+                           test-file))
+                  (after-uri (format "org-id://%s" first-id)))
+              (org-mcp-test--add-todo-and-check
                "New Task After First"
+               "TODO"
+               '("work")
+               nil
+               parent-uri
+               after-uri
                (file-name-nondirectory test-file)
                test-file
                org-mcp-test--regex-todo-after-sibling))))))))
@@ -2345,17 +2332,16 @@ This is valid Org-mode syntax and should be allowed."
           (org-id-locations-file nil))
       (org-mcp-test--with-enabled
         ;; Use org-id:// for parent instead of org-headline://
-        (let* ((parent-uri
-                (format "org-id://%s"
-                        org-mcp-test--content-nested-siblings-parent-id))
-               (result
-                (org-mcp-test--call-add-todo
-                 "Child via ID" "TODO" '("work") nil parent-uri
-                 nil)))
-          ;; Check result has exactly 4 fields
-          (org-mcp-test--check-add-todo-result
-           result
+        (let ((parent-uri
+               (format "org-id://%s"
+                       org-mcp-test--content-nested-siblings-parent-id)))
+          (org-mcp-test--add-todo-and-check
            "Child via ID"
+           "TODO"
+           '("work")
+           nil
+           parent-uri
+           nil
            (file-name-nondirectory test-file)
            test-file
            org-mcp-test--pattern-add-todo-parent-id-uri))))))
@@ -2403,18 +2389,14 @@ This is valid Org-mode syntax and should be allowed."
                :endgroup ("project" . ?p))))
         (org-mcp-test--with-enabled
           ;; Add TODO with non-conflicting tags
-          (let* ((parent-uri (format "org-headline://%s#" test-file))
-                 (result
-                  (org-mcp-test--call-add-todo
-                   "Test Task"
-                   "TODO"
-                   ["work" "@office" "project"] ; no conflict
-                   nil
-                   parent-uri
-                   nil)))
-            (org-mcp-test--check-add-todo-result
-             result
+          (let ((parent-uri (format "org-headline://%s#" test-file)))
+            (org-mcp-test--add-todo-and-check
              "Test Task"
+             "TODO"
+             ["work" "@office" "project"] ; no conflict
+             nil
+             parent-uri
+             nil
              (file-name-nondirectory test-file)
              test-file
              org-mcp-test--regex-add-todo-with-mutex-tags)))))))
@@ -2423,16 +2405,14 @@ This is valid Org-mode syntax and should be allowed."
   "Test that adding TODO with nil tags creates headline without tags."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let* ((parent-uri (format "org-headline://%s#" test-file))
-           (result
-            (org-mcp-test--call-add-todo "Task Without Tags" "TODO"
-                                         nil ; nil for tags
-                                         nil ; no body
-                                         parent-uri
-                                         nil))) ; no afterUri
-      (org-mcp-test--check-add-todo-result
-       result
+    (let ((parent-uri (format "org-headline://%s#" test-file)))
+      (org-mcp-test--add-todo-and-check
        "Task Without Tags"
+       "TODO"
+       nil ; nil for tags
+       nil ; no body
+       parent-uri
+       nil ; no afterUri
        (file-name-nondirectory test-file)
        test-file
        org-mcp-test--regex-todo-without-tags))))
@@ -2441,16 +2421,14 @@ This is valid Org-mode syntax and should be allowed."
   "Test that adding TODO with empty list tags creates headline without tags."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
-    (let* ((parent-uri (format "org-headline://%s#" test-file))
-           (result
-            (org-mcp-test--call-add-todo "Task Without Tags" "TODO"
-                                         '() ; empty list for tags
-                                         nil ; no body
-                                         parent-uri
-                                         nil))) ; no afterUri
-      (org-mcp-test--check-add-todo-result
-       result
+    (let ((parent-uri (format "org-headline://%s#" test-file)))
+      (org-mcp-test--add-todo-and-check
        "Task Without Tags"
+       "TODO"
+       '() ; empty list for tags
+       nil ; no body
+       parent-uri
+       nil ; no afterUri
        (file-name-nondirectory test-file)
        test-file
        org-mcp-test--regex-todo-without-tags))))
