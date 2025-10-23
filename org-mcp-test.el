@@ -916,7 +916,7 @@ and binds `sequences' and `semantics' from the result for use in BODY."
 
 (defun org-mcp-test--call-add-todo
     (title todoState tags body parentUri &optional afterUri)
-  "Call org-add-todo tool via JSON-RPC and return the result.
+  "Call org-add-todo MCP tool.
 TITLE is the headline text.
 TODOSTATE is the TODO state.
 TAGS is a list of tag strings or nil.
@@ -938,25 +938,15 @@ AFTERURI is optional URI of sibling to insert after."
 
 (defun org-mcp-test--call-add-todo-expecting-error
     (title todoState tags body parentUri &optional afterUri)
-  "Call org-add-todo tool via JSON-RPC expecting an error.
+  "Call org-add-todo MCP tool expecting an error.
 TITLE is the headline text.
 TODOSTATE is the TODO state.
 TAGS is a list of tag strings or nil.
 BODY is the body text or nil.
 PARENTURI is the URI of the parent item.
 AFTERURI is optional URI of sibling to insert after."
-  (let* ((params
-          `((title . ,title)
-            (todo_state . ,todoState)
-            (tags . ,tags)
-            (body . ,body)
-            (parent_uri . ,parentUri)
-            (after_uri . ,afterUri)))
-         (request
-           (mcp-server-lib-create-tools-call-request
-            "org-add-todo" 1 params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-         (result (mcp-server-lib-ert-process-tool-response response)))
+  (let ((result (org-mcp-test--call-add-todo
+                 title todoState tags body parentUri afterUri)))
     ;; If we get here, the tool succeeded when we expected failure
     (error "Expected error but got success: %s" result)))
 
