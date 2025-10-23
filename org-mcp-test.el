@@ -821,10 +821,6 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
     (insert-file-contents file)
     (buffer-string)))
 
-(defun org-mcp-test--verify-file-eq (test-file expected-content)
-  "Verify TEST-FILE containing exactly EXPECTED-CONTENT."
-  (should (string= (org-mcp-test--read-file test-file) expected-content)))
-
 (defun org-mcp-test--verify-file-matches (test-file expected-pattern)
   "Verify TEST-FILE content matches EXPECTED-PATTERN regexp."
   (should (string-match-p expected-pattern (org-mcp-test--read-file test-file))))
@@ -834,7 +830,7 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
   (declare (indent 1) (debug t))
   `(let ((original-content (org-mcp-test--read-file ,test-file)))
      (should-error ,error-form :type 'mcp-server-lib-tool-error)
-     (org-mcp-test--verify-file-eq ,test-file original-content)))
+     (should (string= (org-mcp-test--read-file ,test-file) original-content))))
 
 (defmacro org-mcp-test--with-enabled (&rest body)
   "Run BODY with org-mcp enabled, ensuring cleanup."
