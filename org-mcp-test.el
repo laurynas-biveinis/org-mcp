@@ -2502,13 +2502,9 @@ This is valid Org-mode syntax and should be allowed."
         (let* ((resource-uri
                 (format "org-headline://%s#Original%%20Task"
                         test-file)))
-          (should-error
-           (org-mcp-test--call-rename-headline-expecting-error
-            resource-uri "Wrong Title" "Updated Task")
-           :type 'mcp-server-lib-tool-error)
-          ;; Verify file was not modified
-          (org-mcp-test--verify-file-eq
-           test-file org-mcp-test--content-simple-todo))))))
+          (org-mcp-test--assert-error-and-file test-file
+            (org-mcp-test--call-rename-headline-expecting-error
+             resource-uri "Wrong Title" "Updated Task")))))))
 
 (ert-deftest org-mcp-test-rename-headline-preserve-tags ()
   "Test that renaming preserves tags."
