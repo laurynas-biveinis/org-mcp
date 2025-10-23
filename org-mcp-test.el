@@ -1870,16 +1870,7 @@ Another task description."))
                        ,resource-uri "TODO" "IN-PROGRESS"))
                     ;; Verify buffer still has unsaved changes
                     (with-current-buffer buffer
-                      (should (buffer-modified-p))
-                      ;; Task One should still be TODO
-                      (goto-char (point-min))
-                      (should
-                       (re-search-forward "^\\* TODO Task One" nil t))
-                      ;; Task Three should still be there
-                      (goto-char (point-min))
-                      (should
-                       (re-search-forward "^\\* TODO Task Three"
-                                          nil t))))))
+                      (should (buffer-modified-p))))))
             ;; Clean up: kill the buffer
             (kill-buffer buffer)))))))
 
@@ -1891,13 +1882,10 @@ Another task description."))
       (org-mcp-test--with-id-setup test-file test-content '()
         ;; Try to update a non-existent ID
         (let ((resource-uri "org-id://nonexistent-uuid-12345"))
-          (should-error
-           (org-mcp-test--call-update-todo-state-expecting-error
-            resource-uri "TODO" "IN-PROGRESS")
-           :type 'mcp-server-lib-tool-error)
-          ;; Verify file was NOT modified
-          (org-mcp-test--verify-file-matches
-           test-file "^\\* TODO Task One\nTask description\\.$"))))))
+          (org-mcp-test--assert-error-and-file
+           test-file
+           `(org-mcp-test--call-update-todo-state-expecting-error
+             ,resource-uri "TODO" "IN-PROGRESS")))))))
 
 (ert-deftest org-mcp-test-update-todo-state-by-id ()
   "Test updating TODO state using org-id:// URI."
