@@ -763,18 +763,6 @@ UUID is the ID property of the headline to read."
   (let ((params `((uuid . ,uuid))))
     (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
 
-(defun org-mcp-test--call-update-todo-state (uri current-state new-state)
-  "Call org-update-todo-state tool via JSON-RPC and return the result.
-URI is the headline URI, CURRENT-STATE is the expected current TODO state,
-NEW-STATE is the new TODO state to set."
-  (let* ((params
-          `((uri . ,uri)
-            (current_state . ,current-state)
-            (new_state . ,new-state)))
-         (result-text
-          (mcp-server-lib-ert-call-tool "org-update-todo-state" params)))
-    (json-read-from-string result-text)))
-
 ;; Helper functions for reading MCP resources
 
 (defun org-mcp-test--build-resource-read-expected-fields (uri expected-text)
@@ -972,6 +960,20 @@ EXPECTED-PATTERN is a regexp that the file content should match."
   (should (equal (alist-get 'file result) basename))
   (should (equal (alist-get 'title result) expected-title))
   (org-mcp-test--verify-file-matches test-file expected-pattern))
+
+;; Helper functions for testing org-update-todo-state MCP tool
+
+(defun org-mcp-test--call-update-todo-state (uri current-state new-state)
+  "Call org-update-todo-state tool via JSON-RPC and return the result.
+URI is the headline URI, CURRENT-STATE is the expected current TODO state,
+NEW-STATE is the new TODO state to set."
+  (let* ((params
+          `((uri . ,uri)
+            (current_state . ,current-state)
+            (new_state . ,new-state)))
+         (result-text
+          (mcp-server-lib-ert-call-tool "org-update-todo-state" params)))
+    (json-read-from-string result-text)))
 
 (defun org-mcp-test--call-update-todo-state-expecting-error
     (resource-uri current-state new-state)
