@@ -924,11 +924,8 @@ AFTERURI is optional URI of sibling to insert after."
             (body . ,body)
             (parent_uri . ,parentUri)
             (after_uri . ,afterUri)))
-         (request
-           (mcp-server-lib-create-tools-call-request
-            "org-add-todo" 1 params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-    (mcp-server-lib-ert-process-tool-response response)))
+         (result-text (mcp-server-lib-ert-call-tool "org-add-todo" params)))
+    (json-read-from-string result-text)))
 
 (defun org-mcp-test--call-add-todo-expecting-error
     (title todoState tags body parentUri &optional afterUri)
@@ -939,8 +936,18 @@ TAGS is a list of tag strings or nil.
 BODY is the body text or nil.
 PARENTURI is the URI of the parent item.
 AFTERURI is optional URI of sibling to insert after."
-  (let ((result (org-mcp-test--call-add-todo
-                 title todoState tags body parentUri afterUri)))
+  (let* ((params
+          `((title . ,title)
+            (todo_state . ,todoState)
+            (tags . ,tags)
+            (body . ,body)
+            (parent_uri . ,parentUri)
+            (after_uri . ,afterUri)))
+         (request
+           (mcp-server-lib-create-tools-call-request
+            "org-add-todo" nil params))
+         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+         (result (mcp-server-lib-ert-process-tool-response response)))
     ;; If we get here, the tool succeeded when we expected failure
     (error "Expected error but got success: %s" result)))
 
@@ -2360,18 +2367,11 @@ This is valid Org-mode syntax and should be allowed."
              (after-uri
               (format "org-id://%s" org-mcp-test--other-child-id)))
         ;; Error: Other Child is not a child of First Parent
-        (should-error
-         (org-mcp-test--call-add-todo
-          "New Task" "TODO" '("work") nil parent-uri
-          after-uri)
-         :type 'mcp-server-lib-tool-error)
-        ;; Verify file was NOT modified
-        (with-temp-buffer
-          (insert-file-contents test-file)
-          (should
-           (string=
-            (buffer-string)
-            org-mcp-test--content-wrong-levels)))))))
+        (org-mcp-test--assert-error-and-file
+         test-file
+         `(org-mcp-test--call-add-todo-expecting-error
+           "New Task" "TODO" '("work") nil ,parent-uri
+           ,after-uri))))))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
@@ -2415,16 +2415,15 @@ This is valid Org-mode syntax and should be allowed."
         (org-mcp-test--with-enabled
           ;; Try to add TODO with conflicting tags - should error
           (let ((parent-uri (format "org-headline://%s#" test-file)))
-            ;; This should throw an error
-            (should-error
-             (org-mcp-test--call-add-todo
-              "Test Task"
-              "TODO"
-              ["work" "@office" "@home"] ; conflicting tags
-              nil
-              parent-uri
-              nil)
-             :type 'mcp-server-lib-tool-error)))))))
+            (org-mcp-test--assert-error-and-file
+             test-file
+             `(org-mcp-test--call-add-todo-expecting-error
+               "Test Task"
+               "TODO"
+               ["work" "@office" "@home"] ; conflicting tags
+               nil
+               ,parent-uri
+               nil))))))))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-valid ()
   "Test that non-conflicting tags from mutex groups are accepted."
