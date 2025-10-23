@@ -1054,7 +1054,7 @@ NEW-TITLE is the new title to set."
     ;; If we get here, the tool succeeded when we expected failure
     (error "Expected error but got success: %s" result)))
 
-(defun org-mcp-test--update-and-verify-todo
+(defun org-mcp-test--update-todo-state-and-check
     (resource-uri old-state new-state test-file expected-content-regex)
   "Update TODO state and verify the result via MCP JSON-RPC.
 RESOURCE-URI is the URI to update.
@@ -1747,7 +1747,7 @@ properly checks parent-child relationships and levels."
           ;; Update TODO to IN-PROGRESS
           (let ((resource-uri
                  (format "org-headline://%s#Task%%20One" test-file)))
-            (org-mcp-test--update-and-verify-todo
+            (org-mcp-test--update-todo-state-and-check
              resource-uri "TODO" "IN-PROGRESS"
              test-file org-mcp-test--expected-task-one-in-progress-regex)))))))
 
@@ -1772,7 +1772,7 @@ properly checks parent-child relationships and levels."
       (org-mcp-test--with-id-setup test-file test-content
           `("20240101T120000")
         (let ((uri "org-id://20240101T120000"))
-          (org-mcp-test--update-and-verify-todo
+          (org-mcp-test--update-todo-state-and-check
            uri "TODO" "DONE"
            test-file
            org-mcp-test--expected-timestamp-id-done-regex))))))
@@ -1819,7 +1819,7 @@ properly checks parent-child relationships and levels."
                 (let ((resource-uri
                        (format "org-headline://%s#Task%%20One"
                                test-file)))
-                  (org-mcp-test--update-and-verify-todo
+                  (org-mcp-test--update-todo-state-and-check
                    resource-uri "TODO" "IN-PROGRESS"
                    test-file org-mcp-test--expected-task-one-in-progress-regex)
                   ;; Verify the buffer was also updated
@@ -1886,7 +1886,7 @@ Another task description."))
       (org-mcp-test--with-id-setup test-file test-content
           `(,org-mcp-test--content-with-id-id)
         (let ((result
-               (org-mcp-test--update-and-verify-todo
+               (org-mcp-test--update-todo-state-and-check
                 org-mcp-test--content-with-id-uri "TODO" "IN-PROGRESS"
                 test-file
                 org-mcp-test--expected-task-with-id-in-progress-regex)))
