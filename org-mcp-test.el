@@ -2875,16 +2875,6 @@ REPLACE-ALL if true, replace all occurrences (default: nil)."
          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
     (mcp-server-lib-ert-process-tool-response response)))
 
-(defmacro org-mcp-test--assert-error-and-unchanged
-    (error-form test-file expected-content)
-  "Assert ERROR-FORM throws an error and TEST-FILE remains unchanged.
-ERROR-FORM should be a form that is expected to signal an error.
-TEST-FILE is the file to verify.
-EXPECTED-CONTENT is the exact content the file should have."
-  `(progn
-     (should-error ,error-form :type 'mcp-server-lib-tool-error)
-     (org-mcp-test--verify-file-eq ,test-file ,expected-content)))
-
 (defun org-mcp-test--check-edit-body-result
     (result test-file expected-pattern &optional expected-id)
   "Check edit-body RESULT structure and file content.
@@ -2939,10 +2929,10 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-with-id-repeated-text
       `("test-id")
-    (org-mcp-test--assert-error-and-unchanged
-     (org-mcp--tool-edit-body
-      "org-id://test-id" "occurrence of pattern" "REPLACED" nil)
-     test-file org-mcp-test--content-with-id-repeated-text)))
+    (org-mcp-test--assert-error-and-file
+     test-file
+     '(org-mcp--tool-edit-body
+       "org-id://test-id" "occurrence of pattern" "REPLACED" nil))))
 
 (ert-deftest org-mcp-test-edit-body-replace-all ()
   "Test org-edit-body tool with replaceAll functionality."
@@ -2965,26 +2955,25 @@ content here."
       org-mcp-test--content-with-id-repeated-text
       `("test-id")
     ;; Should error because multiple occurrences exist
-    (org-mcp-test--assert-error-and-unchanged
-     (org-mcp-test--call-edit-body "org-id://test-id"
-                                   "occurrence of pattern"
-                                   "REPLACED"
-                                   :false) ; :false = JSON false
+    (org-mcp-test--assert-error-and-file
      test-file
-     org-mcp-test--content-with-id-repeated-text)))
+     '(org-mcp-test--call-edit-body "org-id://test-id"
+                                    "occurrence of pattern"
+                                    "REPLACED"
+                                    :false))))
 
 (ert-deftest org-mcp-test-edit-body-not-found ()
   "Test org-edit-body tool error when text is not found."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-unchanged
-     (org-mcp--tool-edit-body
-      org-mcp-test--content-with-id-uri
-      "nonexistent text"
-      "replacement"
-      nil)
-     test-file org-mcp-test--content-nested-siblings)))
+    (org-mcp-test--assert-error-and-file
+     test-file
+     '(org-mcp--tool-edit-body
+       org-mcp-test--content-with-id-uri
+       "nonexistent text"
+       "replacement"
+       nil))))
 
 (ert-deftest org-mcp-test-edit-body-empty ()
   "Test org-edit-body tool can add content to empty body."
@@ -3008,12 +2997,12 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-unchanged
-     (org-mcp--tool-edit-body
-      org-mcp-test--content-with-id-uri
-      "" ; Empty oldBody
-      "replacement" nil)
-     test-file org-mcp-test--content-nested-siblings)))
+    (org-mcp-test--assert-error-and-file
+     test-file
+     '(org-mcp--tool-edit-body
+       org-mcp-test--content-with-id-uri
+       "" ; Empty oldBody
+       "replacement" nil))))
 
 (ert-deftest org-mcp-test-edit-body-empty-with-properties ()
   "Test adding content to empty body with properties drawer."
@@ -3052,13 +3041,13 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-unchanged
-     (org-mcp--tool-edit-body
-      org-mcp-test--content-with-id-uri "Second child content."
-      "replacement text
+    (org-mcp-test--assert-error-and-file
+     test-file
+     '(org-mcp--tool-edit-body
+       org-mcp-test--content-with-id-uri "Second child content."
+       "replacement text
 * This would become a headline"
-      nil)
-     test-file org-mcp-test--content-nested-siblings)))
+       nil))))
 
 (ert-deftest org-mcp-test-edit-body-accept-lower-level-headline ()
   "Test org-edit-body accepts newBody with lower-level headline."
@@ -3083,71 +3072,71 @@ When editing a level 2 node, level 1 headlines should be rejected."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
     (org-mcp-test--with-enabled
-      (org-mcp-test--assert-error-and-unchanged
-       (org-mcp--tool-edit-body
-        (format "org-headline://%s#Parent%%20Task/Second%%20Child"
-                test-file)
-        "Second child content."
-        "New text
+      (org-mcp-test--assert-error-and-file
+       test-file
+       `(org-mcp--tool-edit-body
+         ,(format "org-headline://%s#Parent%%20Task/Second%%20Child"
+                  test-file)
+         "Second child content."
+         "New text
 * Top level heading"
-        nil)
-       test-file org-mcp-test--content-nested-siblings))))
+         nil)))))
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-at-start ()
   "Test org-edit-body rejects newBody with headline at beginning."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-unchanged
-     (org-mcp--tool-edit-body
-      org-mcp-test--content-with-id-uri
-      "Second child content."
-      "* Heading at start"
-      nil)
-     test-file org-mcp-test--content-nested-siblings)))
+    (org-mcp-test--assert-error-and-file
+     test-file
+     '(org-mcp--tool-edit-body
+       org-mcp-test--content-with-id-uri
+       "Second child content."
+       "* Heading at start"
+       nil))))
 
 (ert-deftest org-mcp-test-edit-body-reject-unbalanced-begin-block ()
   "Test org-edit-body rejects newBody with unbalanced BEGIN block."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-unchanged
-     (org-mcp--tool-edit-body
-      org-mcp-test--content-with-id-uri "Second child content."
-      "Some text
+    (org-mcp-test--assert-error-and-file
+     test-file
+     '(org-mcp--tool-edit-body
+       org-mcp-test--content-with-id-uri "Second child content."
+       "Some text
 #+BEGIN_EXAMPLE
 Code without END_EXAMPLE"
-      nil)
-     test-file org-mcp-test--content-nested-siblings)))
+       nil))))
 
 (ert-deftest org-mcp-test-edit-body-reject-orphaned-end-block ()
   "Test org-edit-body rejects newBody with orphaned END block."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-unchanged
-     (org-mcp--tool-edit-body
-      org-mcp-test--content-with-id-uri "Second child content."
-      "Some text
+    (org-mcp-test--assert-error-and-file
+     test-file
+     '(org-mcp--tool-edit-body
+       org-mcp-test--content-with-id-uri "Second child content."
+       "Some text
 #+END_SRC
 Without BEGIN_SRC"
-      nil)
-     test-file org-mcp-test--content-nested-siblings)))
+       nil))))
 
 (ert-deftest org-mcp-test-edit-body-reject-mismatched-blocks ()
   "Test org-edit-body rejects newBody with mismatched blocks."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--assert-error-and-unchanged
-     (org-mcp--tool-edit-body
-      org-mcp-test--content-with-id-uri "Second child content."
-      "Text here
+    (org-mcp-test--assert-error-and-file
+     test-file
+     '(org-mcp--tool-edit-body
+       org-mcp-test--content-with-id-uri "Second child content."
+       "Text here
 #+BEGIN_QUOTE
 Some quote
 #+END_EXAMPLE"
-      nil)
-     test-file org-mcp-test--content-nested-siblings)))
+       nil))))
 
 ;;; Resource template workaround tool tests
 
