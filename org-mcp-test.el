@@ -1432,24 +1432,14 @@ HEADLINE-TITLE is the current headline to rename.
 NEW-TITLE is the invalid new title that should be rejected."
   (org-mcp-test--with-temp-org-file test-file initial-content
     (org-mcp-test--with-enabled
-      ;; Try to rename - should fail
-      (let* ((resource-uri
-              (format "org-headline://%s#%s"
-                      test-file
-                      (url-hexify-string headline-title)))
-             (request
-              (mcp-server-lib-create-tools-call-request
-               "org-rename-headline" 1
-               `((uri . ,resource-uri)
-                 (current_title . ,headline-title)
-                 (new_title . ,new-title))))
-             (response
-              (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-        (should-error
-         (mcp-server-lib-ert-process-tool-response response)
-         :type 'mcp-server-lib-tool-error))
-      ;; Verify that file wasn't changed
-      (should (string= (org-mcp-test--read-file test-file) initial-content)))))
+      (let ((resource-uri
+             (format "org-headline://%s#%s"
+                     test-file
+                     (url-hexify-string headline-title))))
+        (org-mcp-test--assert-error-and-file
+         test-file
+         `(org-mcp-test--call-rename-headline-expecting-error
+           ,resource-uri ,headline-title ,new-title))))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
