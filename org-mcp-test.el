@@ -775,6 +775,8 @@ NEW-STATE is the new TODO state to set."
           (mcp-server-lib-ert-call-tool "org-update-todo-state" params)))
     (json-read-from-string result-text)))
 
+;; Helper functions for reading MCP resources
+
 (defun org-mcp-test--build-resource-read-expected-fields (uri expected-text)
   "Build expected fields alist for resource read verification.
 URI is the resource URI.
@@ -790,10 +792,26 @@ URI is the resource URI to read.
 EXPECTED-TEXT is the expected text content.
 The helper automatically checks that URI and mimeType match expected values."
   (org-mcp-test--with-enabled
-    (mcp-server-lib-ert-verify-resource-read
-     uri
-     (org-mcp-test--build-resource-read-expected-fields
-      uri expected-text))))
+   (mcp-server-lib-ert-verify-resource-read
+    uri
+    (org-mcp-test--build-resource-read-expected-fields
+     uri expected-text))))
+
+(defun org-mcp-test--test-headline-resource-with-extension (extension)
+  "Test headline resource with file having EXTENSION.
+EXTENSION can be a string like \".txt\" or nil for no extension."
+  (let ((test-file
+         (make-temp-file
+          "org-mcp-test" nil extension org-mcp-test--content-nested-siblings)))
+    (unwind-protect
+        (let ((org-mcp-allowed-files (list test-file))
+              (uri
+               (format "org-headline://%s#Parent%%20Task"
+                       test-file)))
+          (org-mcp-test--verify-resource-read
+           uri
+           org-mcp-test--expected-parent-task-from-nested-siblings))
+      (delete-file test-file))))
 
 ;; Test helper macros
 
@@ -861,6 +879,8 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
      (mapcar (lambda (id) (cons id ,file-var)) ,ids)
      ,@body)))
 
+;; Helper functions for testing get-todo-config MCP tool result
+
 (defun org-mcp-test--check-todo-config-sequence
     (seq expected-type expected-keywords)
   "Check sequence SEQ has EXPECTED-TYPE and EXPECTED-KEYWORDS."
@@ -886,27 +906,13 @@ and binds `sequences' and `semantics' from the result for use in BODY."
   (declare (indent 1) (debug t))
   `(let ((org-todo-keywords ,keywords))
      (org-mcp-test--with-enabled
-       (let ((result (org-mcp-test--call-get-todo-config)))
-         (should (= (length result) 2))
-         (let ((sequences (cdr (assoc 'sequences result)))
-               (semantics (cdr (assoc 'semantics result))))
-           ,@body)))))
+      (let ((result (org-mcp-test--call-get-todo-config)))
+        (should (= (length result) 2))
+        (let ((sequences (cdr (assoc 'sequences result)))
+              (semantics (cdr (assoc 'semantics result))))
+          ,@body)))))
 
-(defun org-mcp-test--test-headline-resource-with-extension (extension)
-  "Test headline resource with file having EXTENSION.
-EXTENSION can be a string like \".txt\" or nil for no extension."
-  (let ((test-file
-         (make-temp-file
-          "org-mcp-test" nil extension org-mcp-test--content-nested-siblings)))
-    (unwind-protect
-        (let ((org-mcp-allowed-files (list test-file))
-              (uri
-               (format "org-headline://%s#Parent%%20Task"
-                       test-file)))
-          (org-mcp-test--verify-resource-read
-           uri
-           org-mcp-test--expected-parent-task-from-nested-siblings))
-      (delete-file test-file))))
+;; Helper functions for testing org-add-todo MCP tool
 
 (defun org-mcp-test--call-add-todo
     (title todoState tags body parentUri &optional afterUri)
@@ -925,8 +931,8 @@ AFTERURI is optional URI of sibling to insert after."
             (parent_uri . ,parentUri)
             (after_uri . ,afterUri)))
          (request
-          (mcp-server-lib-create-tools-call-request
-           "org-add-todo" 1 params))
+           (mcp-server-lib-create-tools-call-request
+            "org-add-todo" 1 params))
          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
     (mcp-server-lib-ert-process-tool-response response)))
 
@@ -947,8 +953,8 @@ AFTERURI is optional URI of sibling to insert after."
             (parent_uri . ,parentUri)
             (after_uri . ,afterUri)))
          (request
-          (mcp-server-lib-create-tools-call-request
-           "org-add-todo" 1 params))
+           (mcp-server-lib-create-tools-call-request
+            "org-add-todo" 1 params))
          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
          (result (mcp-server-lib-ert-process-tool-response response)))
     ;; If we get here, the tool succeeded when we expected failure
