@@ -409,11 +409,13 @@ Second child content.
 
 (defconst org-mcp-test--pattern-renamed-simple-todo
   (concat
-   "^\\* TODO Updated Task\n"
+   "\\`\\* TODO Updated Task\n"
    " *:PROPERTIES:\n"
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
-   "First line of body\\.$")
+   "First line of body\\.\n"
+   "Second line of body\\.\n"
+   "Third line of body\\.\\'")
   "Pattern for renamed simple TODO with generated ID.")
 
 (defconst org-mcp-test--pattern-renamed-todo-with-tags
@@ -549,6 +551,16 @@ Second child content.
    " *:END:\n"
    "This Target is under Second Section, not First Section\\.\\'")
   "Regex for hierarchy test after renaming second Target.")
+
+(defconst org-mcp-test--regex-add-todo-with-mutex-tags
+  (concat
+   "\\`#\\+TITLE: Test Org File\n"
+   "\n"
+   "\\* TODO Test Task[ \t]+\\(:[^:\n]+\\)+:\n"
+   " *:PROPERTIES:\n"
+   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
+   " *:END:\n?\\'")
+  "Regex for add-todo test accepting any tag order.")
 
 (defconst org-mcp-test--regex-todo-keywords-after
   (concat
@@ -1893,11 +1905,9 @@ Another task description."))
            (equal
             (alist-get 'uri result)
             org-mcp-test--content-with-id-uri))
-          (let ((content (org-mcp-test--read-file test-file)))
-            (should
-             (string-match
-              org-mcp-test--expected-regex-todo-to-in-progress-with-id
-              content))))))))
+          (org-mcp-test--verify-file-matches
+           test-file
+           org-mcp-test--expected-regex-todo-to-in-progress-with-id))))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."
@@ -2430,13 +2440,9 @@ This is valid Org-mode syntax and should be allowed."
             (should (assoc 'success result))
             (should (equal (alist-get 'success result) t))
             ;; Verify tags were added correctly
-            (let ((content (org-mcp-test--read-file test-file)))
-              ;; Check task was added
-              (should (string-match-p "\\* TODO Test Task" content))
-              ;; Check all tags are present (order doesn't matter)
-              (should (string-match-p ":work:" content))
-              (should (string-match-p ":@office:" content))
-              (should (string-match-p ":project:" content)))))))))
+            (org-mcp-test--verify-file-matches
+             test-file
+             org-mcp-test--regex-add-todo-with-mutex-tags)))))))
 
 (ert-deftest org-mcp-test-add-todo-nil-tags ()
   "Test that adding TODO with nil tags creates headline without tags."
@@ -2500,10 +2506,9 @@ This is valid Org-mode syntax and should be allowed."
             (should
              (string-match "^org-id://" (alist-get 'uri result)))
             ;; Verify file content
-            (should
-             (string-match-p
-              org-mcp-test--pattern-renamed-simple-todo
-              (org-mcp-test--read-file test-file)))))))))
+            (org-mcp-test--verify-file-matches
+             test-file
+             org-mcp-test--pattern-renamed-simple-todo)))))))
 
 (ert-deftest org-mcp-test-rename-headline-title-mismatch ()
   "Test that rename fails when current title doesn't match."
@@ -2623,11 +2628,9 @@ paths and only matches headlines at the appropriate hierarchy level."
               (alist-get 'uri result)
               org-mcp-test--content-with-id-uri))
             ;; Verify file content
-            (let ((content (org-mcp-test--read-file test-file)))
-              (should
-               (string-match
-                org-mcp-test--expected-regex-renamed-second-child
-                content)))))))))
+            (org-mcp-test--verify-file-matches
+             test-file
+             org-mcp-test--expected-regex-renamed-second-child)))))))
 
 (ert-deftest org-mcp-test-rename-headline-id-not-found ()
   "Test error when ID doesn't exist."
@@ -2828,11 +2831,9 @@ correctly restricts search to the parent's subtree."
                resource-uri "Target" "Renamed Target")))
         ;; Should succeed and rename the correct Target
         (should (equal (alist-get 'success result) t))
-        (let ((content (org-mcp-test--read-file test-file)))
-          (should
-           (string-match-p
-            org-mcp-test--regex-hierarchy-second-target-renamed
-            content))))))))
+        (org-mcp-test--verify-file-matches
+         test-file
+         org-mcp-test--regex-hierarchy-second-target-renamed))))))
 
 (ert-deftest org-mcp-test-rename-headline-with-todo-keyword ()
   "Test that headlines with TODO keywords can be renamed.
