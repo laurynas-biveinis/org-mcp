@@ -864,12 +864,6 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
 
 ;; Helper functions for testing org-get-todo-config MCP tool
 
-(defun org-mcp-test--call-get-todo-config ()
-  "Call org-get-todo-config tool via JSON-RPC and return the result."
-  (let ((result
-         (mcp-server-lib-ert-call-tool "org-get-todo-config" nil)))
-    (json-read-from-string result)))
-
 (defun org-mcp-test--check-todo-config-sequence
     (seq expected-type expected-keywords)
   "Check sequence SEQ has EXPECTED-TYPE and EXPECTED-KEYWORDS."
@@ -895,7 +889,8 @@ and binds `sequences' and `semantics' from the result for use in BODY."
   (declare (indent 1) (debug t))
   `(let ((org-todo-keywords ,keywords))
      (org-mcp-test--with-enabled
-      (let ((result (org-mcp-test--call-get-todo-config)))
+      (let ((result (json-read-from-string
+                     (mcp-server-lib-ert-call-tool "org-get-todo-config" nil))))
         (should (= (length result) 2))
         (let ((sequences (cdr (assoc 'sequences result)))
               (semantics (cdr (assoc 'semantics result))))
