@@ -1012,8 +1012,10 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
     (should (equal (alist-get 'new_state result) new-state))
     (should (stringp (alist-get 'uri result)))
     (should (string-prefix-p "org-id://" (alist-get 'uri result)))
-    (org-mcp-test--verify-file-matches test-file expected-content-regex)
-    result))
+    ;; For ID-based URIs, verify the returned URI matches the input
+    (when (string-prefix-p "org-id://" resource-uri)
+      (should (equal (alist-get 'uri result) resource-uri)))
+    (org-mcp-test--verify-file-matches test-file expected-content-regex)))
 
 (defun org-mcp-test--call-read-headline-expecting-error (file headline-path)
   "Call org-read-headline tool via JSON-RPC expecting an error.
@@ -1874,15 +1876,10 @@ Another task description."))
            '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
       (org-mcp-test--with-id-setup test-file test-content
           `(,org-mcp-test--content-with-id-id)
-        (let ((result
-               (org-mcp-test--update-todo-state-and-check
-                org-mcp-test--content-with-id-uri "TODO" "IN-PROGRESS"
-                test-file
-                org-mcp-test--expected-task-with-id-in-progress-regex)))
-          (should
-           (equal
-            (alist-get 'uri result)
-            org-mcp-test--content-with-id-uri)))))))
+        (org-mcp-test--update-todo-state-and-check
+         org-mcp-test--content-with-id-uri "TODO" "IN-PROGRESS"
+         test-file
+         org-mcp-test--expected-task-with-id-in-progress-regex)))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."
