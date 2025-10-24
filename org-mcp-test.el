@@ -716,6 +716,15 @@ Second child content.
    org-mcp-test--content-with-id-id)
   "Pattern for org-read-by-id tool result.")
 
+(defconst org-mcp-test--content-id-resource
+  (concat
+   "* Section with ID\n"
+   ":PROPERTIES:\n"
+   ":ID: 12345678-abcd-efgh-ijkl-1234567890ab\n"
+   ":END:\n"
+   "Content of section with ID.")
+  "Content for ID resource tests.")
+
 ;; Test helpers
 
 (defun org-mcp-test--read-file (file)
@@ -817,21 +826,16 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
 
 ;; Helper functions for reading MCP resources
 
-(defun org-mcp-test--build-resource-read-expected-fields (uri expected-text)
-  "Build expected fields alist for resource read verification.
-URI is the resource URI.
-EXPECTED-TEXT is the expected text content.
-Returns an alist with uri, text, and mimeType fields."
+(defun org-mcp-test--build-resource-read-expected-fields (uri text)
+  "Build fields alist with URI and TEXT for resource read verification."
   `((uri . ,uri)
-    (text . ,expected-text)
+    (text . ,text)
     (mimeType . "text/plain")))
 
-(defun org-mcp-test--verify-resource-read (uri expected-text)
-  "Verify MCP resource at URI being EXPECTED-TEXT."
+(defun org-mcp-test--verify-resource-read (uri text)
+  "Verify MCP resource at URI being TEXT."
   (mcp-server-lib-ert-verify-resource-read
-   uri
-   (org-mcp-test--build-resource-read-expected-fields
-    uri expected-text)))
+   uri (org-mcp-test--build-resource-read-expected-fields uri text)))
 
 ;; Helper functions for testing org-get-todo-config MCP tool
 
@@ -1748,20 +1752,13 @@ Content of subsection 2.1."))
 
 (ert-deftest org-mcp-test-id-resource-returns-content ()
   "Test that ID resource returns content for valid ID."
-  (let ((test-content
-         (concat
-          "* Section with ID\n"
-          ":PROPERTIES:\n"
-          ":ID: 12345678-abcd-efgh-ijkl-1234567890ab\n"
-          ":END:\n"
-          "Content of section with ID.")))
-    (org-mcp-test--with-id-setup test-file test-content
-        `("12345678-abcd-efgh-ijkl-1234567890ab")
-      (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
-        (mcp-server-lib-ert-verify-resource-read
-         uri
-         (org-mcp-test--build-resource-read-expected-fields
-          uri test-content))))))
+  (org-mcp-test--with-id-setup test-file org-mcp-test--content-id-resource
+      `("12345678-abcd-efgh-ijkl-1234567890ab")
+    (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
+      (mcp-server-lib-ert-verify-resource-read
+       uri
+       (org-mcp-test--build-resource-read-expected-fields
+        uri org-mcp-test--content-id-resource)))))
 
 (ert-deftest org-mcp-test-id-resource-not-found ()
   "Test ID resource error for non-existent ID."
