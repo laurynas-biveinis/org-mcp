@@ -1736,29 +1736,28 @@ Content of subsection 2.1."))
 (ert-deftest org-mcp-test-headline-resource-navigation ()
   "Test that headline navigation respects structure."
   (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-wrong-levels))
-    ;; Test accessing "Target Headline" under "First Parent"
-    ;; Should get the level-2 headline, NOT the level-3 one
-    (let ((uri
-           (format
-            "org-headline://%s#First%%20Parent/Target%%20Headline"
-            test-file)))
-      ;; This SHOULD throw an error because First Parent has no such child
-      ;; But the bug causes it to return the wrong headline
-      (org-mcp-test--read-resource-expecting-error
-       uri
-       "Cannot find headline: 'First Parent/Target Headline'"))))
-
+   ((test-file org-mcp-test--content-wrong-levels))
+   ;; Test accessing "Target Headline" under "First Parent"
+   ;; Should get the level-2 headline, NOT the level-3 one
+   (let ((uri
+          (format
+           "org-headline://%s#First%%20Parent/Target%%20Headline"
+           test-file)))
+     ;; This SHOULD throw an error because First Parent has no such child
+     ;; But the bug causes it to return the wrong headline
+     (org-mcp-test--read-resource-expecting-error
+      uri
+      "Cannot find headline: 'First Parent/Target Headline'"))))
 
 (ert-deftest org-mcp-test-id-resource-returns-content ()
   "Test that ID resource returns content for valid ID."
-  (org-mcp-test--with-id-setup test-file org-mcp-test--content-id-resource
-      `("12345678-abcd-efgh-ijkl-1234567890ab")
-    (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
-      (mcp-server-lib-ert-verify-resource-read
-       uri
-       (org-mcp-test--build-resource-read-expected-fields
-        uri org-mcp-test--content-id-resource)))))
+  (org-mcp-test--with-id-setup
+   test-file org-mcp-test--content-id-resource
+   `("12345678-abcd-efgh-ijkl-1234567890ab")
+   (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
+     (org-mcp-test--verify-resource-read
+      uri
+      org-mcp-test--content-id-resource))))
 
 (ert-deftest org-mcp-test-id-resource-not-found ()
   "Test ID resource error for non-existent ID."
