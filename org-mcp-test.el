@@ -1057,8 +1057,7 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
       ;; If input URI was ID-based, result URI should remain ID-based
       (when (string-prefix-p "org-id://" uri)
         (should (equal result-uri uri)))
-      (org-mcp-test--verify-file-matches test-file expected-content-regex)
-      result)))
+      (org-mcp-test--verify-file-matches test-file expected-content-regex))))
 
 (defun org-mcp-test--call-rename-headline-expecting-error
     (test-file uri current-title new-title)
@@ -2255,111 +2254,113 @@ This is valid Org-mode syntax and should be allowed."
 (ert-deftest org-mcp-test-add-todo-after-sibling ()
   "Test adding TODO after a specific sibling."
   (let ((initial-content org-mcp-test--content-nested-siblings))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            (org-tag-alist '("work")))
-        ;; First add ID to First Child 50% Complete so we can reference it
-        (let ((first-id nil))
-          (with-temp-buffer
-            (set-visited-file-name test-file t)
-            (insert-file-contents test-file)
-            (org-mode)
-            (goto-char (point-min))
-            ;; Add ID to First Child 50% Complete
-            (re-search-forward "^\\*\\* First Child 50% Complete")
-            (org-id-get-create)
-            (setq first-id (org-id-get))
-            (write-region (point-min) (point-max) test-file))
-          ;; Kill any buffer visiting the test file
-          (let ((buf (find-buffer-visiting test-file)))
-            (when buf
-              (kill-buffer buf)))
+    (org-mcp-test--with-temp-org-file
+     test-file initial-content
+     (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
+           (org-tag-alist '("work")))
+       ;; First add ID to First Child 50% Complete so we can reference it
+       (let ((first-id nil))
+         (with-temp-buffer
+           (set-visited-file-name test-file t)
+           (insert-file-contents test-file)
+           (org-mode)
+           (goto-char (point-min))
+           ;; Add ID to First Child 50% Complete
+           (re-search-forward "^\\*\\* First Child 50% Complete")
+           (org-id-get-create)
+           (setq first-id (org-id-get))
+           (write-region (point-min) (point-max) test-file))
+         ;; Kill any buffer visiting the test file
+         (let ((buf (find-buffer-visiting test-file)))
+           (when buf
+             (kill-buffer buf)))
 
-          (org-mcp-test--with-id-tracking
-              (list test-file)
-              `((,first-id . ,test-file))
-            (let ((parent-uri
-                   (format "org-headline://%s#Parent%%20Task"
-                           test-file))
-                  (after-uri (format "org-id://%s" first-id)))
-              (org-mcp-test--add-todo-and-check
-               "New Task After First"
-               "TODO"
-               '("work")
-               nil
-               parent-uri
-               after-uri
-               (file-name-nondirectory test-file)
-               test-file
-               org-mcp-test--regex-todo-after-sibling))))))))
-
+         (org-mcp-test--with-id-tracking
+          (list test-file)
+          `((,first-id . ,test-file))
+          (let ((parent-uri
+                 (format "org-headline://%s#Parent%%20Task"
+                         test-file))
+                (after-uri (format "org-id://%s" first-id)))
+            (org-mcp-test--add-todo-and-check
+             "New Task After First"
+             "TODO"
+             '("work")
+             nil
+             parent-uri
+             after-uri
+             (file-name-nondirectory test-file)
+             test-file
+             org-mcp-test--regex-todo-after-sibling))))))))
 
 (ert-deftest org-mcp-test-add-todo-afterUri-not-sibling ()
   "Test error when afterUri is not a child of parentUri."
   (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
         (org-tag-alist '("work")))
-    (org-mcp-test--with-id-setup test-file
-        org-mcp-test--content-wrong-levels
-        `(,org-mcp-test--other-child-id)
-      (let* ((parent-uri
-              (format "org-headline://%s#First%%20Parent"
-                      test-file))
-             (after-uri
-              (format "org-id://%s" org-mcp-test--other-child-id)))
-        ;; Error: Other Child is not a child of First Parent
-        (org-mcp-test--call-add-todo-expecting-error
-         test-file "New Task" "TODO" '("work") nil parent-uri
-         after-uri)))))
+    (org-mcp-test--with-id-setup
+     test-file
+     org-mcp-test--content-wrong-levels
+     `(,org-mcp-test--other-child-id)
+     (let* ((parent-uri
+             (format "org-headline://%s#First%%20Parent"
+                     test-file))
+            (after-uri
+             (format "org-id://%s" org-mcp-test--other-child-id)))
+       ;; Error: Other Child is not a child of First Parent
+       (org-mcp-test--call-add-todo-expecting-error
+        test-file "New Task" "TODO" '("work") nil parent-uri
+        after-uri)))))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
-  (org-mcp-test--with-temp-org-file test-file
-      org-mcp-test--content-nested-siblings
-    (let ((org-todo-keywords '((sequence "TODO(t!)" "|" "DONE(d!)")))
-          (org-tag-alist '("work"))
-          (org-id-locations-file nil))
-      (org-mcp-test--with-enabled
-        ;; Use org-id:// for parent instead of org-headline://
-        (let ((parent-uri
-               (format "org-id://%s"
-                       org-mcp-test--content-nested-siblings-parent-id)))
-          (org-mcp-test--add-todo-and-check
-           "Child via ID"
-           "TODO"
-           '("work")
-           nil
-           parent-uri
-           nil
-           (file-name-nondirectory test-file)
-           test-file
-           org-mcp-test--pattern-add-todo-parent-id-uri))))))
-
+  (org-mcp-test--with-temp-org-file
+   test-file
+   org-mcp-test--content-nested-siblings
+   (let ((org-todo-keywords '((sequence "TODO(t!)" "|" "DONE(d!)")))
+         (org-tag-alist '("work"))
+         (org-id-locations-file nil))
+     (org-mcp-test--with-enabled
+      ;; Use org-id:// for parent instead of org-headline://
+      (let ((parent-uri
+             (format "org-id://%s"
+                     org-mcp-test--content-nested-siblings-parent-id)))
+        (org-mcp-test--add-todo-and-check
+         "Child via ID"
+         "TODO"
+         '("work")
+         nil
+         parent-uri
+         nil
+         (file-name-nondirectory test-file)
+         test-file
+         org-mcp-test--pattern-add-todo-parent-id-uri))))))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-error ()
   "Test that mutually exclusive tags are rejected."
   (let ((initial-content "#+TITLE: Test Org File\n\n"))
-    (org-mcp-test--with-temp-org-file test-file initial-content
-      (let ((org-id-track-globally nil)
-            (org-id-locations-file nil)
-            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            ;; Configure mutex tag groups
-            (org-tag-alist
-             '(("work" . ?w)
-               :startgroup
-               ("@office" . ?o)
-               ("@home" . ?h)
-               :endgroup)))
-        (org-mcp-test--with-enabled
-          ;; Try to add TODO with conflicting tags - should error
-          (let ((parent-uri (format "org-headline://%s#" test-file)))
-            (org-mcp-test--call-add-todo-expecting-error
-             test-file
-             "Test Task"
-             "TODO"
-             ["work" "@office" "@home"] ; conflicting tags
-             nil
-             parent-uri
-             nil)))))))
+    (org-mcp-test--with-temp-org-file
+     test-file initial-content
+     (let ((org-id-track-globally nil)
+           (org-id-locations-file nil)
+           (org-todo-keywords '((sequence "TODO" "|" "DONE")))
+           ;; Configure mutex tag groups
+           (org-tag-alist
+            '(("work" . ?w)
+              :startgroup
+              ("@office" . ?o)
+              ("@home" . ?h)
+              :endgroup)))
+       (org-mcp-test--with-enabled
+        ;; Try to add TODO with conflicting tags - should error
+        (let ((parent-uri (format "org-headline://%s#" test-file)))
+          (org-mcp-test--call-add-todo-expecting-error
+           test-file
+           "Test Task"
+           "TODO"
+           ["work" "@office" "@home"] ; conflicting tags
+           nil
+           parent-uri
+           nil)))))))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-valid ()
   "Test that non-conflicting tags from mutex groups are accepted."
