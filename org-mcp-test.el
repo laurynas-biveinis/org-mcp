@@ -826,16 +826,12 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
 
 ;; Helper functions for reading MCP resources
 
-(defun org-mcp-test--build-resource-read-expected-fields (uri text)
-  "Build fields alist with URI and TEXT for resource read verification."
-  `((uri . ,uri)
-    (text . ,text)
-    (mimeType . "text/plain")))
-
 (defun org-mcp-test--verify-resource-read (uri text)
   "Verify MCP resource at URI being TEXT."
   (mcp-server-lib-ert-verify-resource-read
-   uri (org-mcp-test--build-resource-read-expected-fields uri text)))
+   uri `((uri . ,uri)
+         (text . ,text)
+         (mimeType . "text/plain"))))
 
 ;; Helper functions for testing org-get-todo-config MCP tool
 
