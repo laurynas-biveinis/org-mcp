@@ -932,6 +932,23 @@ EXPECTED-FILES is a list of expected file paths."
 
 ;; Helper functions for testing org-add-todo MCP tool
 
+(defmacro org-mcp-test--with-add-todo-setup
+    (file-var initial-content todo-keywords tag-alist &rest body)
+  "Helper for org-add-todo test.
+Sets up FILE-VAR with INITIAL-CONTENT and org configuration.
+TODO-KEYWORDS is the org-todo-keywords config (nil for default).
+TAG-ALIST is the org-tag-alist config (nil for default).
+Executes BODY with org-mcp enabled and standard variables set."
+  (declare (indent 2))
+  `(org-mcp-test--with-temp-org-files
+    ((,file-var ,initial-content))
+    (let ((org-todo-keywords
+           ,(or todo-keywords ''((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+          (org-tag-alist
+           ,(or tag-alist ''("work" "personal" "urgent")))
+          (org-id-locations-file nil))
+      ,@body)))
+
 (defmacro org-mcp-test--call-add-todo-expecting-error
     (initial-content todo-keywords tag-alist title todoState tags body parentUri
                      &optional afterUri)
@@ -945,25 +962,26 @@ TAGS is a list of tag strings or nil.
 BODY is the body text or nil.
 PARENTURI is the URI of the parent item.
 AFTERURI is optional URI of sibling to insert after."
-  `(org-mcp-test--with-add-todo-setup test-file ,initial-content ,todo-keywords
-       ,tag-alist
-     (org-mcp-test--assert-error-and-file
-      test-file
-      (let* ((params
-              `((title . ,,title)
-                (todo_state . ,,todoState)
-                (tags . ,,tags)
-                (body . ,,body)
-                (parent_uri . ,,parentUri)
-                (after_uri . ,,afterUri)))
-             (request
-               (mcp-server-lib-create-tools-call-request
-                "org-add-todo" nil params))
-             (response (mcp-server-lib-process-jsonrpc-parsed request
+  `(org-mcp-test--with-add-todo-setup
+    test-file ,initial-content ,todo-keywords
+    ,tag-alist
+    (org-mcp-test--assert-error-and-file
+     test-file
+     (let* ((params
+             `((title . ,,title)
+               (todo_state . ,,todoState)
+               (tags . ,,tags)
+               (body . ,,body)
+               (parent_uri . ,,parentUri)
+               (after_uri . ,,afterUri)))
+            (request
+              (mcp-server-lib-create-tools-call-request
+               "org-add-todo" nil params))
+            (response (mcp-server-lib-process-jsonrpc-parsed request
                                                              mcp-server-lib-ert-server-id))
-             (result (mcp-server-lib-ert-process-tool-response response)))
-        ;; If we get here, the tool succeeded when we expected failure
-        (error "Expected error but got success: %s" result)))))
+            (result (mcp-server-lib-ert-process-tool-response response)))
+       ;; If we get here, the tool succeeded when we expected failure
+       (error "Expected error but got success: %s" result)))))
 
 (defun org-mcp-test--add-todo-and-check
     (title todoState tags body parentUri afterUri
@@ -1458,23 +1476,6 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
    '("/home/user/tasks.org"
      "/home/user/projects.org"
      "/home/user/notes.org")))
-
-(defmacro org-mcp-test--with-add-todo-setup
-    (file-var initial-content todo-keywords tag-alist &rest body)
-  "Helper for org-add-todo test.
-Sets up FILE-VAR with INITIAL-CONTENT and org configuration.
-TODO-KEYWORDS is the org-todo-keywords config (nil for default).
-TAG-ALIST is the org-tag-alist config (nil for default).
-Executes BODY with org-mcp enabled and standard variables set."
-  (declare (indent 2))
-  `(org-mcp-test--with-temp-org-files
-       ((,file-var ,initial-content))
-     (let ((org-todo-keywords
-            ,(or todo-keywords ''((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-           (org-tag-alist
-            ,(or tag-alist ''("work" "personal" "urgent")))
-           (org-id-locations-file nil))
-       ,@body)))
 
 (defun org-mcp-test--assert-add-todo-rejects-body-headline
     (initial-content parent-headline body-with-headline)
