@@ -725,6 +725,35 @@ Second child content.
    "Content of section with ID.")
   "Content for ID resource tests.")
 
+(defconst org-mcp-test--content-headline-resource
+  "* First Section
+Some content in first section.
+** Subsection 1.1
+Content of subsection 1.1.
+** Subsection 1.2
+Content of subsection 1.2.
+* Second Section
+Content in second section.
+** Subsection 2.1
+Content of subsection 2.1."
+  "Test content with hierarchical headlines for resource read tests.")
+
+(defconst org-mcp-test--expected-first-section
+  (concat
+   "* First Section\n"
+   "Some content in first section.\n"
+   "** Subsection 1.1\n"
+   "Content of subsection 1.1.\n"
+   "** Subsection 1.2\n"
+   "Content of subsection 1.2.")
+  "Expected content when reading 'First Section' top-level headline.")
+
+(defconst org-mcp-test--expected-subsection-1-1
+  (concat
+   "** Subsection 1.1\n"
+   "Content of subsection 1.1.")
+  "Expected content when reading 'First Section/Subsection 1.1' nested headline.")
+
 ;; Test helpers
 
 (defun org-mcp-test--read-file (file)
@@ -1604,44 +1633,29 @@ Very deep content."))
          uri
          (format "'%s': the referenced file not in allowed list" forbidden-file))))))
 
-(ert-deftest org-mcp-test-headline-resource-returns-content ()
-  "Test that headline resource returns specific headline content."
-  (let ((test-content
-         "* First Section
-Some content in first section.
-** Subsection 1.1
-Content of subsection 1.1.
-** Subsection 1.2
-Content of subsection 1.2.
-* Second Section
-Content in second section.
-** Subsection 2.1
-Content of subsection 2.1."))
-    (org-mcp-test--with-temp-org-files
-        ((test-file test-content))
-      ;; Test getting a top-level headline
-      (let ((uri
-             (format "org-headline://%s#First%%20Section"
-                     test-file)))
-        (org-mcp-test--verify-resource-read
-         uri
-         (concat
-          "* First Section\n"
-          "Some content in first section.\n"
-          "** Subsection 1.1\n"
-          "Content of subsection 1.1.\n"
-          "** Subsection 1.2\n"
-          "Content of subsection 1.2.")))
-      ;; Test getting a nested headline
-      (let ((uri
-             (format (concat
-                      "org-headline://%s#"
-                      "First%%20Section/Subsection%%201.1")
-                     test-file)))
-        (org-mcp-test--verify-resource-read
-         uri
-         (concat
-          "** Subsection 1.1\n" "Content of subsection 1.1."))))))
+(ert-deftest org-mcp-test-headline-resource-returns-top-level-content ()
+  "Test that headline resource returns top-level headline content."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-headline-resource))
+    (let ((uri
+           (format "org-headline://%s#First%%20Section"
+                   test-file)))
+      (org-mcp-test--verify-resource-read
+       uri
+       org-mcp-test--expected-first-section))))
+
+(ert-deftest org-mcp-test-headline-resource-returns-nested-content ()
+  "Test that headline resource returns nested headline content."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-headline-resource))
+    (let ((uri
+           (format (concat
+                    "org-headline://%s#"
+                    "First%%20Section/Subsection%%201.1")
+                   test-file)))
+      (org-mcp-test--verify-resource-read
+       uri
+       org-mcp-test--expected-subsection-1-1))))
 
 (ert-deftest org-mcp-test-headline-resource-not-found ()
   "Test headline resource error for non-existent headline."
