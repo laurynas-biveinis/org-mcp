@@ -2544,16 +2544,11 @@ paths and only matches headlines at the appropriate hierarchy level."
               (format "org-headline://%s#First%%20Parent/Target%%20Headline"
                       test-file)))
         ;; This should throw an error because First Parent has no Target Headline
-        (org-mcp-test--assert-error-and-file test-file
-          (let* ((request
-                   (mcp-server-lib-create-tools-call-request
-                    "org-rename-headline" 1
-                    `((uri . ,resource-uri)
-                      (current_title . "Target Headline")
-                      (new_title . "Renamed Target Headline"))))
-                 (response
-                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-            (mcp-server-lib-ert-process-tool-response response))))))))
+        (org-mcp-test--call-rename-headline-expecting-error
+         test-file
+         resource-uri
+         "Target Headline"
+         "Renamed Target Headline"))))))
 
 (ert-deftest org-mcp-test-rename-headline-by-id ()
   "Test renaming a headline accessed by org-id URI."
@@ -2580,17 +2575,11 @@ paths and only matches headlines at the appropriate hierarchy level."
           (org-id-locations-file nil))
       (org-mcp-test--with-enabled
         ;; Try to rename non-existent ID
-        (org-mcp-test--assert-error-and-file test-file
-          (let* ((resource-uri "org-id://non-existent-id-12345")
-                 (request
-                  (mcp-server-lib-create-tools-call-request
-                   "org-rename-headline" 1
-                   `((uri . ,resource-uri)
-                     (current_title . "Whatever")
-                     (new_title . "Should Fail"))))
-                 (response
-                  (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-            (mcp-server-lib-ert-process-tool-response response)))))))
+        (org-mcp-test--call-rename-headline-expecting-error
+         test-file
+         "org-id://non-existent-id-12345"
+         "Whatever"
+         "Should Fail")))))
 
 (ert-deftest org-mcp-test-rename-headline-with-slash ()
   "Test renaming a headline containing a slash character.
@@ -2687,38 +2676,17 @@ This test documents the first-match behavior when duplicate headlines exist."
       test-file org-mcp-test--content-nested-siblings
       (let ((org-id-track-globally t)
             (org-id-locations-file (make-temp-file "test-org-id")))
-        (org-mcp-test--with-enabled
-         ;; Rename headline using path-based URI
-         (let* ((resource-uri
-                 (format
-                  "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
-                  test-file))
-                (params
-                 `((uri . ,resource-uri)
-                   (current_title . "Third Child #3")
-                   (new_title . "Renamed Child")))
-                (request
-                 (mcp-server-lib-create-tools-call-request
-                  "org-rename-headline" 1 params))
-                (response
-                 (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-                (result
-                 (mcp-server-lib-ert-process-tool-response
-                  response)))
-           ;; Check result
-           (should (equal (alist-get 'success result) t))
-           (should
-            (equal
-             (alist-get 'previous_title result)
-             "Third Child #3"))
-           (should
-            (equal (alist-get 'new_title result) "Renamed Child"))
-           ;; The returned URI should now be an org-id:// URI
-           (should (string-match "^org-id://" (alist-get (quote uri) result)))
-           ;; Verify the file content matches expected pattern
-           (org-mcp-test--verify-file-matches
-            test-file
-            org-mcp-test--pattern-renamed-headline-with-id))))))
+        ;; Rename headline using path-based URI
+        (let ((resource-uri
+               (format
+                "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
+                test-file)))
+          (org-mcp-test--call-rename-headline-and-check
+           resource-uri
+           "Third Child #3"
+           "Renamed Child"
+           test-file
+           org-mcp-test--pattern-renamed-headline-with-id)))))
 
 
 (ert-deftest org-mcp-test-rename-headline-hierarchy ()
