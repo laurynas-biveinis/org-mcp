@@ -1454,16 +1454,19 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
      "/home/user/notes.org")))
 
 (defmacro org-mcp-test--with-add-todo-setup
-    (file-var initial-content &rest body)
+    (file-var initial-content todo-keywords tag-alist &rest body)
   "Helper for org-add-todo test.
-Sets up FILE-VAR with INITIAL-CONTENT and standard org configuration.
+Sets up FILE-VAR with INITIAL-CONTENT and org configuration.
+TODO-KEYWORDS is the org-todo-keywords config (nil for default).
+TAG-ALIST is the org-tag-alist config (nil for default).
 Executes BODY with org-mcp enabled and standard variables set."
   (declare (indent 2))
   `(org-mcp-test--with-temp-org-files
        ((,file-var ,initial-content))
      (let ((org-todo-keywords
-            '((sequence "TODO" "IN-PROGRESS" "|" "DONE")))
-           (org-tag-alist '("work" "personal" "urgent"))
+            ,(or todo-keywords ''((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+           (org-tag-alist
+            ,(or tag-alist ''("work" "personal" "urgent")))
            (org-id-locations-file nil))
        ,@body)))
 
@@ -1473,7 +1476,7 @@ Executes BODY with org-mcp enabled and standard variables set."
 INITIAL-CONTENT is the initial file content.
 PARENT-HEADLINE is the parent headline path (empty string for top-level).
 BODY-WITH-HEADLINE is the body containing invalid headline."
-  (org-mcp-test--with-add-todo-setup test-file initial-content
+  (org-mcp-test--with-add-todo-setup test-file initial-content nil nil
     (let ((parent-uri
            (format "org-headline://%s#%s" test-file parent-headline)))
       (org-mcp-test--call-add-todo-expecting-error
@@ -1502,7 +1505,7 @@ BODY-WITH-HEADLINE is the body containing invalid headline."
   "Assert that adding TODO with INVALID-TITLE throws an error.
 Tests that the given title is rejected when creating a TODO."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       (org-mcp-test--call-add-todo-expecting-error
        test-file invalid-title "TODO" nil nil parent-uri))))
@@ -1955,7 +1958,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-top-level ()
   "Test adding a top-level TODO item."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       (org-mcp-test--add-todo-and-check
        "New Task"
@@ -1975,7 +1978,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-top-level-with-header ()
   "Test adding top-level TODO after header comments."
   (let ((initial-content org-mcp-test--content-nested-siblings))
-    (org-mcp-test--with-add-todo-setup test-file initial-content
+    (org-mcp-test--with-add-todo-setup test-file initial-content nil nil
       (let ((parent-uri (format "org-headline://%s#" test-file)))
         (org-mcp-test--add-todo-and-check
          "New Top Task"
@@ -1991,7 +1994,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-invalid-state ()
   "Test that adding TODO with invalid state throws error."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       (org-mcp-test--call-add-todo-expecting-error
        test-file
@@ -2026,7 +2029,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-tag-reject-invalid-with-alist ()
   "Test that tags not in `org-tag-alist' are rejected."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       ;; Should reject tags not in org-tag-alist
       (org-mcp-test--call-add-todo-expecting-error
@@ -2035,7 +2038,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-tag-accept-valid-with-alist ()
   "Test that tags in `org-tag-alist' are accepted."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       ;; Should accept tags in org-tag-alist (work, personal, urgent)
       (org-mcp-test--add-todo-and-check
@@ -2056,7 +2059,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-tag-validation-without-alist ()
   "Test valid tag names are accepted when `org-tag-alist' is empty."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((org-tag-alist nil)
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s#" test-file)))
@@ -2080,7 +2083,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-tag-invalid-exclamation ()
   "Test that tags with exclamation mark are rejected."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((org-tag-alist nil)
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s#" test-file)))
@@ -2090,7 +2093,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-tag-invalid-dash ()
   "Test that tags with dash character are rejected."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((org-tag-alist nil)
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s#" test-file)))
@@ -2100,7 +2103,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-tag-invalid-hash ()
   "Test that tags with hash character are rejected."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((org-tag-alist nil)
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s#" test-file)))
@@ -2110,7 +2113,7 @@ Another task."))
 (ert-deftest org-mcp-test-add-todo-child-under-parent ()
   "Test adding a child TODO under an existing parent."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-nested-siblings
+      org-mcp-test--content-nested-siblings nil nil
     (let ((parent-uri
            (format "org-headline://%s#Parent%%20Task" test-file)))
       (org-mcp-test--add-todo-and-check
@@ -2128,7 +2131,7 @@ Another task."))
   "Test adding a child TODO with empty string for after_uri.
 Empty string should be treated as nil - append as last child."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-nested-siblings
+      org-mcp-test--content-nested-siblings nil nil
     (let ((parent-uri
            (format "org-headline://%s#Parent%%20Task" test-file)))
       (org-mcp-test--add-todo-and-check
@@ -2146,7 +2149,7 @@ Empty string should be treated as nil - append as last child."
   "Test that adding a second child creates it at the same level as first child.
 This tests the bug where the second child was created at level 4 instead of level 3."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-level2-parent-level3-children
+      org-mcp-test--content-level2-parent-level3-children nil nil
     (let ((parent-uri
            (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
                    test-file)))
@@ -2190,7 +2193,7 @@ Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (v
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file))
           (body-text org-mcp-test--body-text-multiline))
       (org-mcp-test--add-todo-and-check
@@ -2229,7 +2232,7 @@ Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (v
   "Test that body ending with just asterisk at EOF is correctly accepted.
 A single asterisk without space is not a valid Org headline."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file))
           (body-with-asterisk "Some initial text.\n*"))
       ;; Should succeed since * without space is not a headline
@@ -2255,7 +2258,7 @@ A single asterisk without space is not a valid Org headline."
 Unbalanced blocks like #+BEGIN_EXAMPLE without #+END_EXAMPLE should be
 rejected in TODO body content."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let
         ((parent-uri (format "org-headline://%s#" test-file))
          (body-with-unbalanced-block
@@ -2273,7 +2276,7 @@ rejected in TODO body content."
   "Test that adding TODO with body containing unbalanced END block is rejected.
 An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file))
           (body-with-unbalanced-end
            "Some text before\n#+END_EXAMPLE\nMore text after"))
@@ -2291,7 +2294,7 @@ An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
 #+END_SRC inside an EXAMPLE block is literal text, not a block delimiter.
 This is valid Org-mode syntax and should be allowed."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file))
           (body-with-literal-end
            "Example of source block:\n#+BEGIN_EXAMPLE\n#+END_SRC\n#+END_EXAMPLE\nText after."))
@@ -2363,6 +2366,7 @@ This is valid Org-mode syntax and should be allowed."
   (org-mcp-test--with-add-todo-setup
    test-file
    org-mcp-test--content-wrong-levels
+   nil nil
    (let ((parent-uri
           (format "org-headline://%s#First%%20Parent" test-file))
          (after-uri
@@ -2396,62 +2400,50 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-error ()
   "Test that mutually exclusive tags are rejected."
-  (let ((initial-content "#+TITLE: Test Org File\n\n"))
-    (org-mcp-test--with-temp-org-files
-        ((test-file initial-content))
-      (let ((org-id-track-globally nil)
-            (org-id-locations-file nil)
-            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            ;; Configure mutex tag groups
-            (org-tag-alist
-             '(("work" . ?w)
-               :startgroup
-               ("@office" . ?o)
-               ("@home" . ?h)
-               :endgroup)))
-        ;; Try to add TODO with conflicting tags - should error
-        (let ((parent-uri (format "org-headline://%s#" test-file)))
-          (org-mcp-test--call-add-todo-expecting-error
-           test-file
-           "Test Task"
-           "TODO"
-           ["work" "@office" "@home"] ; conflicting tags
-           nil
-           parent-uri
-           nil))))))
+  (org-mcp-test--with-add-todo-setup test-file
+      "#+TITLE: Test Org File\n\n"
+      '((sequence "TODO" "|" "DONE"))
+      '(("work" . ?w)
+        :startgroup
+        ("@office" . ?o)
+        ("@home" . ?h)
+        :endgroup)
+    (let ((parent-uri (format "org-headline://%s#" test-file)))
+      (org-mcp-test--call-add-todo-expecting-error
+       test-file
+       "Test Task"
+       "TODO"
+       ["work" "@office" "@home"] ; conflicting tags
+       nil
+       parent-uri
+       nil))))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-valid ()
   "Test that non-conflicting tags from mutex groups are accepted."
-  (let ((initial-content "#+TITLE: Test Org File\n\n"))
-    (org-mcp-test--with-temp-org-files
-        ((test-file initial-content))
-      (let ((org-id-track-globally nil)
-            (org-id-locations-file nil)
-            (org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            ;; Configure mutex tag groups
-            (org-tag-alist
-             '(("work" . ?w)
-               :startgroup
-               ("@office" . ?o)
-               ("@home" . ?h)
-               :endgroup ("project" . ?p))))
-        ;; Add TODO with non-conflicting tags
-        (let ((parent-uri (format "org-headline://%s#" test-file)))
-          (org-mcp-test--add-todo-and-check
-           "Test Task"
-           "TODO"
-           ["work" "@office" "project"] ; no conflict
-           nil
-           parent-uri
-           nil
-           (file-name-nondirectory test-file)
-           test-file
-           org-mcp-test--regex-add-todo-with-mutex-tags))))))
+  (org-mcp-test--with-add-todo-setup test-file
+      "#+TITLE: Test Org File\n\n"
+      '((sequence "TODO" "|" "DONE"))
+      '(("work" . ?w)
+        :startgroup
+        ("@office" . ?o)
+        ("@home" . ?h)
+        :endgroup ("project" . ?p))
+    (let ((parent-uri (format "org-headline://%s#" test-file)))
+      (org-mcp-test--add-todo-and-check
+       "Test Task"
+       "TODO"
+       ["work" "@office" "project"] ; no conflict
+       nil
+       parent-uri
+       nil
+       (file-name-nondirectory test-file)
+       test-file
+       org-mcp-test--regex-add-todo-with-mutex-tags))))
 
 (ert-deftest org-mcp-test-add-todo-nil-tags ()
   "Test that adding TODO with nil tags creates headline without tags."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       (org-mcp-test--add-todo-and-check
        "Task Without Tags"
@@ -2467,7 +2459,7 @@ This is valid Org-mode syntax and should be allowed."
 (ert-deftest org-mcp-test-add-todo-empty-list-tags ()
   "Test that adding TODO with empty list tags creates headline without tags."
   (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-empty
+      org-mcp-test--content-empty nil nil
     (let ((parent-uri (format "org-headline://%s#" test-file)))
       (org-mcp-test--add-todo-and-check
        "Task Without Tags"
