@@ -2371,25 +2371,26 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-nested-siblings))
-    (let ((org-todo-keywords '((sequence "TODO(t!)" "|" "DONE(d!)")))
-          (org-tag-alist '("work"))
-          (org-id-locations-file nil))
-      ;; Use org-id:// for parent instead of org-headline://
-      (let ((parent-uri
-             (format "org-id://%s"
-                     org-mcp-test--content-nested-siblings-parent-id)))
-        (org-mcp-test--add-todo-and-check
-         "Child via ID"
-         "TODO"
-         '("work")
-         nil
-         parent-uri
-         nil
-         (file-name-nondirectory test-file)
-         test-file
-         org-mcp-test--pattern-add-todo-parent-id-uri)))))
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-nested-siblings
+      '((sequence "TODO(t!)" "|" "DONE(d!)"))
+      '("work")
+      (list org-mcp-test--content-nested-siblings-parent-id
+            org-mcp-test--content-with-id-id)
+    ;; Use org-id:// for parent instead of org-headline://
+    (let ((parent-uri
+           (format "org-id://%s"
+                   org-mcp-test--content-nested-siblings-parent-id)))
+      (org-mcp-test--add-todo-and-check
+       "Child via ID"
+       "TODO"
+       '("work")
+       nil
+       parent-uri
+       nil
+       (file-name-nondirectory test-file)
+       test-file
+       org-mcp-test--pattern-add-todo-parent-id-uri))))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-error ()
   "Test that mutually exclusive tags are rejected."
