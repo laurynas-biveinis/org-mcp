@@ -1098,38 +1098,31 @@ NEW-TITLE is the new title to set."
 
 ;; Helper functions for testing org-edit-body MCP tool
 
-(defun org-mcp-test--call-edit-body
-    (resource-uri old-body new-body &optional replace-all)
-  "Call org-edit-body tool via JSON-RPC and return the result.
+(defun org-mcp-test--call-edit-body-and-check
+    (test-file resource-uri old-body new-body expected-pattern
+               &optional replace-all expected-id)
+  "Call org-edit-body tool and check result structure and file content.
+TEST-FILE is the path to the file to check.
 RESOURCE-URI is the URI of the node to edit.
 OLD-BODY is the substring to search for within the node's body.
 NEW-BODY is the replacement text.
-REPLACE-ALL if true, replace all occurrences (default: nil)."
+EXPECTED-PATTERN is a regexp that the file content should match.
+REPLACE-ALL if true, replace all occurrences (default: nil).
+EXPECTED-ID if provided, check the returned URI has this exact ID."
   (let* ((params
           `((resource_uri . ,resource-uri)
             (old_body . ,old-body)
             (new_body . ,new-body)
             (replace_all . ,replace-all)))
-         (request
-           (mcp-server-lib-create-tools-call-request
-            "org-edit-body" 1 params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id)))
-    (mcp-server-lib-ert-process-tool-response response)))
-
-(defun org-mcp-test--check-edit-body-result
-    (result test-file expected-pattern &optional expected-id)
-  "Check edit-body RESULT structure and file content.
-RESULT is the return value from `org-edit-body` tool.
-TEST-FILE is the path to the file to check.
-EXPECTED-PATTERN is a regexp that the file content should match.
-EXPECTED-ID if provided, check the returned URI has this exact ID."
-  (should (= (length result) 2))
-  (should (equal (alist-get 'success result) t))
-  (let ((uri (alist-get 'uri result)))
-    (if expected-id
-        (should (equal uri (concat "org-id://" expected-id)))
-      (should (string-prefix-p "org-id://" uri))))
-  (org-mcp-test--verify-file-matches test-file expected-pattern))
+         (result-text (mcp-server-lib-ert-call-tool "org-edit-body" params))
+         (result (json-read-from-string result-text)))
+    (should (= (length result) 2))
+    (should (equal (alist-get 'success result) t))
+    (let ((uri (alist-get 'uri result)))
+      (if expected-id
+          (should (equal uri (concat "org-id://" expected-id)))
+        (should (string-prefix-p "org-id://" uri))))
+    (org-mcp-test--verify-file-matches test-file expected-pattern)))
 
 (defun org-mcp-test--call-edit-body-expecting-error
     (test-file resource-uri old-body new-body &optional replace-all)
@@ -2771,34 +2764,30 @@ The navigation function should find headlines even when they have TODO keywords.
    test-file
    org-mcp-test--content-nested-siblings
    `(,org-mcp-test--content-with-id-id)
-   (let ((result
-          (org-mcp-test--call-edit-body
-           org-mcp-test--content-with-id-uri
-           "Second child content."
-           "Updated second child content."
-           nil)))
-     (org-mcp-test--check-edit-body-result
-      result
-      test-file
-      org-mcp-test--pattern-edit-body-single-line
-      org-mcp-test--content-with-id-id))))
+   (org-mcp-test--call-edit-body-and-check
+    test-file
+    org-mcp-test--content-with-id-uri
+    "Second child content."
+    "Updated second child content."
+    org-mcp-test--pattern-edit-body-single-line
+    nil
+    org-mcp-test--content-with-id-id)))
 
 (ert-deftest org-mcp-test-edit-body-multiline ()
   "Test org-edit-body tool for multi-line replacement."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-with-id-todo
       `(,org-mcp-test--content-with-id-id)
-    (let ((result
-           (org-mcp-test--call-edit-body
-            org-mcp-test--content-with-id-uri
-            "Second line of content."
-            "This has been replaced
+    (org-mcp-test--call-edit-body-and-check
+     test-file
+     org-mcp-test--content-with-id-uri
+     "Second line of content."
+     "This has been replaced
 with new multiline
 content here."
-            nil)))
-      (org-mcp-test--check-edit-body-result
-       result test-file org-mcp-test--pattern-edit-body-multiline
-       org-mcp-test--content-with-id-id))))
+     org-mcp-test--pattern-edit-body-multiline
+     nil
+     org-mcp-test--content-with-id-id)))
 
 (ert-deftest org-mcp-test-edit-body-multiple-without-replaceall ()
   "Test error for multiple occurrences without replaceAll."
@@ -2813,15 +2802,13 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-with-id-repeated-text
       `("test-id")
-    (let ((result
-           (org-mcp-test--call-edit-body "org-id://test-id"
-                                         "occurrence of pattern"
-                                         "REPLACED"
-                                         t))) ; replaceAll = true
-      (org-mcp-test--check-edit-body-result
-       result
-       test-file
-       org-mcp-test--pattern-edit-body-replace-all))))
+    (org-mcp-test--call-edit-body-and-check
+     test-file
+     "org-id://test-id"
+     "occurrence of pattern"
+     "REPLACED"
+     org-mcp-test--pattern-edit-body-replace-all
+     t)))
 
 (ert-deftest org-mcp-test-edit-body-replace-all-explicit-false ()
   "Test that explicit replace_all=false triggers error on multiple matches."
@@ -2829,11 +2816,12 @@ content here."
       org-mcp-test--content-with-id-repeated-text
       `("test-id")
     ;; Should error because multiple occurrences exist
-    (org-mcp-test--assert-error-and-file test-file
-      (org-mcp-test--call-edit-body "org-id://test-id"
-                                    "occurrence of pattern"
-                                    "REPLACED"
-                                    :false))))
+    (org-mcp-test--call-edit-body-expecting-error
+     test-file
+     "org-id://test-id"
+     "occurrence of pattern"
+     "REPLACED"
+     :false)))
 
 (ert-deftest org-mcp-test-edit-body-not-found ()
   "Test org-edit-body tool error when text is not found."
@@ -2852,16 +2840,14 @@ content here."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
     (org-mcp-test--with-enabled
-      (let* ((resource-uri
-              (format "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
-                      test-file))
-             (result
-              (org-mcp-test--call-edit-body
-               resource-uri "" "New content added."
-               nil)))
-        (org-mcp-test--check-edit-body-result
-         result
+      (let ((resource-uri
+             (format "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
+                     test-file)))
+        (org-mcp-test--call-edit-body-and-check
          test-file
+         resource-uri
+         ""
+         "New content added."
          org-mcp-test--pattern-edit-body-empty)))))
 
 (ert-deftest org-mcp-test-edit-body-empty-old-non-empty-body ()
@@ -2881,32 +2867,24 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-with-id-no-body
       `(,org-mcp-test--timestamp-id)
-    (let ((result
-           (org-mcp-test--call-edit-body
-            (format "org-id://%s" org-mcp-test--timestamp-id)
-            ""
-            "Content added after properties."
-            nil)))
-      (org-mcp-test--check-edit-body-result
-       result
-       test-file
-       org-mcp-test--pattern-edit-body-empty-with-props))))
+    (org-mcp-test--call-edit-body-and-check
+     test-file
+     (format "org-id://%s" org-mcp-test--timestamp-id)
+     ""
+     "Content added after properties."
+     org-mcp-test--pattern-edit-body-empty-with-props)))
 
 (ert-deftest org-mcp-test-edit-body-nested-headlines ()
   "Test org-edit-body preserves nested headlines."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-nested-siblings
     (org-mcp-test--with-enabled
-      (let ((result
-             (org-mcp-test--call-edit-body
-              (format "org-headline://%s#Parent%%20Task" test-file)
-              "Some parent content."
-              "Updated parent content"
-              nil)))
-        (org-mcp-test--check-edit-body-result
-         result
-         test-file
-         org-mcp-test--pattern-edit-body-nested-headlines)))))
+      (org-mcp-test--call-edit-body-and-check
+       test-file
+       (format "org-headline://%s#Parent%%20Task" test-file)
+       "Some parent content."
+       "Updated parent content"
+       org-mcp-test--pattern-edit-body-nested-headlines))))
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-in-middle ()
   "Test org-edit-body rejects newBody with headline marker in middle."
@@ -2926,17 +2904,13 @@ content here."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
-    (let ((result
-           (org-mcp-test--call-edit-body
-            org-mcp-test--content-with-id-uri
-            "Second child content."
-            "some text
+    (org-mcp-test--call-edit-body-and-check
+     test-file
+     org-mcp-test--content-with-id-uri
+     "Second child content."
+     "some text
 *** Subheading content"
-            nil)))
-      (org-mcp-test--check-edit-body-result
-       result
-       test-file
-       org-mcp-test--pattern-edit-body-accept-lower-level))))
+     org-mcp-test--pattern-edit-body-accept-lower-level)))
 
 (ert-deftest org-mcp-test-edit-body-reject-higher-level-headline ()
   "Test org-edit-body rejects newBody with higher-level headline.
