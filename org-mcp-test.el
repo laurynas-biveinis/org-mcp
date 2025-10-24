@@ -120,24 +120,16 @@ Task content."
    "With some content.")
   "Multi-line body text for testing TODO items with content.")
 
-(defconst org-mcp-test--other-child-id "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
-  "ID value for Other Child in afterUri-not-sibling test.")
-
 (defconst org-mcp-test--content-wrong-levels
-  (format
-   "* First Parent
+  "* First Parent
 Some content in first parent.
 * Second Parent
 ** Other Child
-:PROPERTIES:
-:ID:       %s
-:END:
 *** Target Headline
 This should NOT be found via First Parent/Target Headline path.
 * Third Parent
 ** Target Headline
 This is actually a child of Third Parent, not First Parent!"
-   org-mcp-test--other-child-id)
   "Test content with same headline names at different levels.")
 
 (defconst org-mcp-test--content-todo-with-tags
@@ -2368,21 +2360,17 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-add-todo-afterUri-not-sibling ()
   "Test error when afterUri is not a child of parentUri."
-  (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
-        (org-tag-alist '("work")))
-    (org-mcp-test--with-id-setup
-     test-file
-     org-mcp-test--content-wrong-levels
-     `(,org-mcp-test--other-child-id)
-     (let* ((parent-uri
-             (format "org-headline://%s#First%%20Parent"
-                     test-file))
-            (after-uri
-             (format "org-id://%s" org-mcp-test--other-child-id)))
-       ;; Error: Other Child is not a child of First Parent
-       (org-mcp-test--call-add-todo-expecting-error
-        test-file "New Task" "TODO" '("work") nil parent-uri
-        after-uri)))))
+  (org-mcp-test--with-add-todo-setup
+   test-file
+   org-mcp-test--content-wrong-levels
+   (let ((parent-uri
+          (format "org-headline://%s#First%%20Parent" test-file))
+         (after-uri
+          (format "org-headline://%s#Second%%20Parent/Other%%20Child"
+                  test-file)))
+     ;; Error: Other Child is not a child of First Parent
+     (org-mcp-test--call-add-todo-expecting-error
+      test-file "New Task" "TODO" '("work") nil parent-uri after-uri))))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
