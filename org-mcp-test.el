@@ -2619,17 +2619,15 @@ More content."
 This test documents the first-match behavior when duplicate headlines exist."
   (org-mcp-test--with-temp-org-file test-file
       org-mcp-test--content-duplicate-headlines-before
-    (org-mcp-test--with-enabled
-      ;; Use headline:// URI with ambiguous path
-      (let ((resource-uri
-             (format "org-headline://%s#Project%%20Review"
-                     test-file)))
-        ;; Should succeed - renames first match
-        (org-mcp--tool-rename-headline
-         resource-uri "Project Review" "Q1 Review"))
-
-      ;; Verify only first occurrence was renamed
-      (org-mcp-test--verify-file-matches
+    ;; Use headline:// URI with ambiguous path
+    (let ((resource-uri
+           (format "org-headline://%s#Project%%20Review"
+                   test-file)))
+      ;; Should succeed - renames first match
+      (org-mcp-test--call-rename-headline-and-check
+       resource-uri
+       "Project Review"
+       "Q1 Review"
        test-file
        org-mcp-test--regex-duplicate-first-renamed))))
 
@@ -2694,20 +2692,19 @@ correctly restricts search to the parent's subtree."
 The navigation function should find headlines even when they have TODO keywords."
   (org-mcp-test--with-temp-org-file
       test-file org-mcp-test--content-todo-keywords-before
-    (org-mcp-test--with-enabled
-      ;; Try to rename using the headline title without TODO keyword
-      (let ((resource-uri
-             (format
-              "org-headline://%s#Project%%20Management/Review%%20Documents"
-              test-file)))
-        ;; This should work - finding "Review Documents" even though
-        ;; the actual headline is "TODO Review Documents"
-        (org-mcp--tool-rename-headline
-         resource-uri "Review Documents" "Q1 Planning Review"))
-
-      ;; Verify the headline was renamed correctly
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--regex-todo-keywords-after))))
+    ;; Try to rename using the headline title without TODO keyword
+    (let ((resource-uri
+           (format
+            "org-headline://%s#Project%%20Management/Review%%20Documents"
+            test-file)))
+      ;; This should work - finding "Review Documents" even though
+      ;; the actual headline is "TODO Review Documents"
+      (org-mcp-test--call-rename-headline-and-check
+       resource-uri
+       "Review Documents"
+       "Q1 Planning Review"
+       test-file
+       org-mcp-test--regex-todo-keywords-after))))
 
 ;;; org-edit-body tests
 
