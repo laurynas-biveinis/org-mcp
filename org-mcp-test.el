@@ -716,74 +716,7 @@ Second child content.
    org-mcp-test--content-with-id-id)
   "Pattern for org-read-by-id tool result.")
 
-;;; Helper functions for calling MCP tools
-
-(defun org-mcp-test--call-read-file (file)
-  "Call org-read-file tool via JSON-RPC and return the result.
-FILE is the file path to read."
-  (let ((params `((file . ,file))))
-    (mcp-server-lib-ert-call-tool "org-read-file" params)))
-
-(defun org-mcp-test--call-read-outline (file)
-  "Call org-read-outline tool via JSON-RPC and return the result.
-FILE is the file path to read the outline from."
-  (let* ((params `((file . ,file)))
-         (result-json
-          (mcp-server-lib-ert-call-tool "org-read-outline" params)))
-    (json-parse-string result-json :object-type 'alist)))
-
-(defun org-mcp-test--call-read-headline (file headline-path)
-  "Call org-read-headline tool via JSON-RPC and return the result.
-FILE is the file path, HEADLINE-PATH is the slash-separated path to the headline."
-  (let ((params `((file . ,file)
-                  (headline_path . ,headline-path))))
-    (mcp-server-lib-ert-call-tool "org-read-headline" params)))
-
-(defun org-mcp-test--call-read-by-id (uuid)
-  "Call org-read-by-id tool via JSON-RPC and return the result.
-UUID is the ID property of the headline to read."
-  (let ((params `((uuid . ,uuid))))
-    (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
-
-;; Helper functions for reading MCP resources
-
-(defun org-mcp-test--build-resource-read-expected-fields (uri expected-text)
-  "Build expected fields alist for resource read verification.
-URI is the resource URI.
-EXPECTED-TEXT is the expected text content.
-Returns an alist with uri, text, and mimeType fields."
-  `((uri . ,uri)
-    (text . ,expected-text)
-    (mimeType . "text/plain")))
-
-(defun org-mcp-test--verify-resource-read (uri expected-text)
-  "Verify resource read with org-mcp enabled.
-URI is the resource URI to read.
-EXPECTED-TEXT is the expected text content.
-The helper automatically checks that URI and mimeType match expected values."
-  (org-mcp-test--with-enabled
-   (mcp-server-lib-ert-verify-resource-read
-    uri
-    (org-mcp-test--build-resource-read-expected-fields
-     uri expected-text))))
-
-(defun org-mcp-test--test-headline-resource-with-extension (extension)
-  "Test headline resource with file having EXTENSION.
-EXTENSION can be a string like \".txt\" or nil for no extension."
-  (let ((test-file
-         (make-temp-file
-          "org-mcp-test" nil extension org-mcp-test--content-nested-siblings)))
-    (unwind-protect
-        (let ((org-mcp-allowed-files (list test-file))
-              (uri
-               (format "org-headline://%s#Parent%%20Task"
-                       test-file)))
-          (org-mcp-test--verify-resource-read
-           uri
-           org-mcp-test--expected-parent-task-from-nested-siblings))
-      (delete-file test-file))))
-
-;; Test helper macros
+;; Test helpers
 
 (defun org-mcp-test--read-file (file)
   "Read and return the contents of FILE as a string."
@@ -865,6 +798,28 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
      (list ,file-var)
      (mapcar (lambda (id) (cons id ,file-var)) ,ids)
      ,@body)))
+
+;; Helper functions for reading MCP resources
+
+(defun org-mcp-test--build-resource-read-expected-fields (uri expected-text)
+  "Build expected fields alist for resource read verification.
+URI is the resource URI.
+EXPECTED-TEXT is the expected text content.
+Returns an alist with uri, text, and mimeType fields."
+  `((uri . ,uri)
+    (text . ,expected-text)
+    (mimeType . "text/plain")))
+
+(defun org-mcp-test--verify-resource-read (uri expected-text)
+  "Verify resource read with org-mcp enabled.
+URI is the resource URI to read.
+EXPECTED-TEXT is the expected text content.
+The helper automatically checks that URI and mimeType match expected values."
+  (org-mcp-test--with-enabled
+   (mcp-server-lib-ert-verify-resource-read
+    uri
+    (org-mcp-test--build-resource-read-expected-fields
+     uri expected-text))))
 
 ;; Helper functions for testing org-get-todo-config MCP tool
 
@@ -988,8 +943,7 @@ PARENTURI is the URI of the parent item.
 AFTERURI is optional URI of sibling to insert after.
 BASENAME is the expected file basename.
 TEST-FILE is the path to the file to check.
-EXPECTED-PATTERN is a regexp that the file content should match.
-Returns the result from `org-add-todo' tool."
+EXPECTED-PATTERN is a regexp that the file content should match."
   (let* ((params
           `((title . ,title)
             (todo_state . ,todoState)
@@ -1005,8 +959,7 @@ Returns the result from `org-add-todo' tool."
     (should (string-match-p "\\`org-id://.+" (alist-get 'uri result)))
     (should (equal (alist-get 'file result) basename))
     (should (equal (alist-get 'title result) title))
-    (org-mcp-test--verify-file-matches test-file expected-pattern)
-    result))
+    (org-mcp-test--verify-file-matches test-file expected-pattern)))
 
 ;; Helper functions for testing org-update-todo-state MCP tool
 
@@ -1029,17 +982,38 @@ TEST-FILE is the test file path to verify remains unchanged.
 RESOURCE-URI is the URI to update.
 CURRENT-STATE is the current TODO state.
 NEW-STATE is the new TODO state to set."
-  (org-mcp-test--assert-error-and-file test-file
-    (let* ((request
+  (org-mcp-test--assert-error-and-file
+   test-file
+   (let* ((request
             (mcp-server-lib-create-tools-call-request
              "org-update-todo-state" 1
              `((uri . ,resource-uri)
                (current_state . ,current-state)
                (new_state . ,new-state))))
-           (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-           (result (mcp-server-lib-ert-process-tool-response response)))
-      ;; If we get here, the tool succeeded when we expected failure
-      (error "Expected error but got success: %s" result))))
+          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+          (result (mcp-server-lib-ert-process-tool-response response)))
+     ;; If we get here, the tool succeeded when we expected failure
+     (error "Expected error but got success: %s" result))))
+
+(defun org-mcp-test--update-todo-state-and-check
+    (resource-uri old-state new-state test-file expected-content-regex)
+  "Update TODO state and verify the result via MCP JSON-RPC.
+RESOURCE-URI is the URI to update.
+OLD-STATE is the current TODO state to update from.
+NEW-STATE is the new TODO state to update to.
+TEST-FILE is the file to verify content after update.
+EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
+  (let ((result
+         (org-mcp-test--call-update-todo-state
+          resource-uri old-state new-state)))
+    (should (= (length result) 4))
+    (should (equal (alist-get 'success result) t))
+    (should (equal (alist-get 'previous_state result) old-state))
+    (should (equal (alist-get 'new_state result) new-state))
+    (should (stringp (alist-get 'uri result)))
+    (should (string-prefix-p "org-id://" (alist-get 'uri result)))
+    (org-mcp-test--verify-file-matches test-file expected-content-regex)
+    result))
 
 (defun org-mcp-test--call-read-headline-expecting-error (file headline-path)
   "Call org-read-headline tool via JSON-RPC expecting an error.
@@ -1087,42 +1061,25 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
       result)))
 
 (defun org-mcp-test--call-rename-headline-expecting-error
-    (uri current-title new-title)
-  "Call org-rename-headline tool via JSON-RPC expecting an error.
+    (test-file uri current-title new-title)
+  "Call org-rename-headline tool expecting an error and verify file unchanged.
+TEST-FILE is the test file path to verify remains unchanged.
 URI is the URI to rename.
 CURRENT-TITLE is the current title for validation.
 NEW-TITLE is the new title to set."
-  (let* ((params
-          `((uri . ,uri)
-            (current_title . ,current-title)
-            (new_title . ,new-title)))
-         (request
-           (mcp-server-lib-create-tools-call-request
-            "org-rename-headline" 1 params))
-         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-         (result (mcp-server-lib-ert-process-tool-response response)))
-    ;; If we get here, the tool succeeded when we expected failure
-    (error "Expected error but got success: %s" result)))
-
-(defun org-mcp-test--update-todo-state-and-check
-    (resource-uri old-state new-state test-file expected-content-regex)
-  "Update TODO state and verify the result via MCP JSON-RPC.
-RESOURCE-URI is the URI to update.
-OLD-STATE is the current TODO state to update from.
-NEW-STATE is the new TODO state to update to.
-TEST-FILE is the file to verify content after update.
-EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
-  (let ((result
-         (org-mcp-test--call-update-todo-state
-          resource-uri old-state new-state)))
-    (should (= (length result) 4))
-    (should (equal (alist-get 'success result) t))
-    (should (equal (alist-get 'previous_state result) old-state))
-    (should (equal (alist-get 'new_state result) new-state))
-    (should (stringp (alist-get 'uri result)))
-    (should (string-prefix-p "org-id://" (alist-get 'uri result)))
-    (org-mcp-test--verify-file-matches test-file expected-content-regex)
-    result))
+  (org-mcp-test--assert-error-and-file
+   test-file
+   (let* ((params
+           `((uri . ,uri)
+             (current_title . ,current-title)
+             (new_title . ,new-title)))
+          (request
+            (mcp-server-lib-create-tools-call-request
+             "org-rename-headline" 1 params))
+          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+          (result (mcp-server-lib-ert-process-tool-response response)))
+     ;; If we get here, the tool succeeded when we expected failure
+     (error "Expected error but got success: %s" result))))
 
 (defun org-mcp-test--read-resource-expecting-error
     (uri expected-error-message)
@@ -1138,13 +1095,69 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
      mcp-server-lib-jsonrpc-error-invalid-params
      expected-error-message)))
 
+;; Helper functions for testing org-read-file MCP tool
+
+(defun org-mcp-test--call-read-file (file)
+  "Call org-read-file tool via JSON-RPC and return the result.
+FILE is the file path to read."
+  (let ((params `((file . ,file))))
+    (mcp-server-lib-ert-call-tool "org-read-file" params)))
+
+;; Helper functions for testing org-read-outline MCP tool
+
+(defun org-mcp-test--call-read-outline (file)
+  "Call org-read-outline tool via JSON-RPC and return the result.
+FILE is the file path to read the outline from."
+  (let* ((params `((file . ,file)))
+         (result-json
+          (mcp-server-lib-ert-call-tool "org-read-outline" params)))
+    (json-parse-string result-json :object-type 'alist)))
+
+;; Helper functions for testing org-read-headline MCP tool
+
+(defun org-mcp-test--call-read-headline (file headline-path)
+  "Call org-read-headline tool via JSON-RPC and return the result.
+FILE is the file path, HEADLINE-PATH is the slash-separated path to the headline."
+  (let ((params `((file . ,file)
+                  (headline_path . ,headline-path))))
+    (mcp-server-lib-ert-call-tool "org-read-headline" params)))
+
+;; Helper functions for testing org-read-headline MCP tool
+
+(defun org-mcp-test--call-read-by-id (uuid)
+  "Call org-read-by-id tool via JSON-RPC and return the result.
+UUID is the ID property of the headline to read."
+  (let ((params `((uuid . ,uuid))))
+    (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
+
+;; Helper functions for testing org-headline MCP resource
+
+(defun org-mcp-test--test-headline-resource-with-extension (extension)
+  "Test headline resource with file having EXTENSION.
+EXTENSION can be a string like \".txt\" or nil for no extension."
+  (let ((test-file
+         (make-temp-file
+          "org-mcp-test" nil extension org-mcp-test--content-nested-siblings)))
+    (unwind-protect
+        (let ((org-mcp-allowed-files (list test-file))
+              (uri
+               (format "org-headline://%s#Parent%%20Task"
+                       test-file)))
+          (org-mcp-test--verify-resource-read
+           uri
+           org-mcp-test--expected-parent-task-from-nested-siblings))
+      (delete-file test-file))))
+
+;;; Tests
+
 (ert-deftest org-mcp-test-tool-get-todo-config-empty ()
   "Test org-get-todo-config with empty `org-todo-keywords'."
-  (org-mcp-test--with-get-todo-config-result nil
-    (should (assoc 'sequences result))
-    (should (assoc 'semantics result))
-    (should (equal sequences []))
-    (should (equal semantics []))))
+  (org-mcp-test--with-get-todo-config-result
+   nil
+   (should (assoc 'sequences result))
+   (should (assoc 'semantics result))
+   (should (equal sequences []))
+   (should (equal semantics []))))
 
 (ert-deftest org-mcp-test-tool-get-todo-config-default ()
   "Test org-get-todo-config with default `org-todo-keywords'."
@@ -1426,9 +1439,8 @@ NEW-TITLE is the invalid new title that should be rejected."
              (format "org-headline://%s#%s"
                      test-file
                      (url-hexify-string headline-title))))
-        (org-mcp-test--assert-error-and-file test-file
-          (org-mcp-test--call-rename-headline-expecting-error
-           resource-uri headline-title new-title))))))
+        (org-mcp-test--call-rename-headline-expecting-error
+         test-file resource-uri headline-title new-title)))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
@@ -2435,9 +2447,8 @@ This is valid Org-mode syntax and should be allowed."
         (let* ((resource-uri
                 (format "org-headline://%s#Original%%20Task"
                         test-file)))
-          (org-mcp-test--assert-error-and-file test-file
-            (org-mcp-test--call-rename-headline-expecting-error
-             resource-uri "Wrong Title" "Updated Task")))))))
+          (org-mcp-test--call-rename-headline-expecting-error
+           test-file resource-uri "Wrong Title" "Updated Task"))))))
 
 (ert-deftest org-mcp-test-rename-headline-preserve-tags ()
   "Test that renaming preserves tags."
