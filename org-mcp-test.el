@@ -371,6 +371,27 @@ Second child content.
    "\\*\\* Third Child #3\\'")
   "Pattern for TODO added after specific sibling.")
 
+(defconst org-mcp-test--regex-todo-after-second-child
+  (concat
+   "^#\\+TITLE: My Org Document\n\n"
+   "\\* Parent Task\n"
+   ":PROPERTIES:\n"
+   ":ID: +" org-mcp-test--content-nested-siblings-parent-id "\n"
+   ":END:\n"
+   "Some parent content\\.\n"
+   "\\*\\* First Child 50% Complete\n"
+   "First child content\\.\n"
+   "It spans multiple lines\\.\n"
+   "\\*\\* Second Child\n"
+   ":PROPERTIES:\n"
+   ":ID: +" org-mcp-test--content-with-id-id "\n"
+   ":END:\n"
+   "Second child content\\.\n\n?"
+   "\\*\\* TODO New Task After Second +:[^\n]*\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
+   "\\*\\* Third Child #3\\'")
+  "Pattern for TODO added after Second Child sibling.")
+
 (defconst org-mcp-test--regex-todo-without-tags
   (concat
    "^\\* TODO Task Without Tags *\n" ; No tags, optional spaces
@@ -2318,45 +2339,26 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-add-todo-after-sibling ()
   "Test adding TODO after a specific sibling."
-  (let ((initial-content org-mcp-test--content-nested-siblings))
-    (org-mcp-test--with-temp-org-files
-        ((test-file initial-content))
-     (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
-           (org-tag-alist '("work")))
-       ;; First add ID to First Child 50% Complete so we can reference it
-       (let ((first-id nil))
-         (with-temp-buffer
-           (set-visited-file-name test-file t)
-           (insert-file-contents test-file)
-           (org-mode)
-           (goto-char (point-min))
-           ;; Add ID to First Child 50% Complete
-           (re-search-forward "^\\*\\* First Child 50% Complete")
-           (org-id-get-create)
-           (setq first-id (org-id-get))
-           (write-region (point-min) (point-max) test-file))
-         ;; Kill any buffer visiting the test file
-         (let ((buf (find-buffer-visiting test-file)))
-           (when buf
-             (kill-buffer buf)))
-
-         (org-mcp-test--with-id-tracking
-          (list test-file)
-          `((,first-id . ,test-file))
-          (let ((parent-uri
-                 (format "org-headline://%s#Parent%%20Task"
-                         test-file))
-                (after-uri (format "org-id://%s" first-id)))
-            (org-mcp-test--add-todo-and-check
-             "New Task After First"
-             "TODO"
-             '("work")
-             nil
-             parent-uri
-             after-uri
-             (file-name-nondirectory test-file)
-             test-file
-             org-mcp-test--regex-todo-after-sibling))))))))
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-nested-siblings
+      '((sequence "TODO" "|" "DONE"))
+      '("work")
+      (list org-mcp-test--content-nested-siblings-parent-id
+            org-mcp-test--content-with-id-id)
+    (let ((parent-uri
+           (format "org-headline://%s#Parent%%20Task"
+                   test-file))
+          (after-uri org-mcp-test--content-with-id-uri))
+      (org-mcp-test--add-todo-and-check
+       "New Task After Second"
+       "TODO"
+       '("work")
+       nil
+       parent-uri
+       after-uri
+       (file-name-nondirectory test-file)
+       test-file
+       org-mcp-test--regex-todo-after-second-child))))
 
 (ert-deftest org-mcp-test-add-todo-afterUri-not-sibling ()
   "Test error when afterUri is not a child of parentUri."
