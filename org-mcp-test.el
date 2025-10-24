@@ -847,13 +847,13 @@ then registers each ID location and enables MCP for BODY.
 The created temp file is automatically added to `org-mcp-allowed-files'."
   (declare (indent 2) (debug t))
   `(org-mcp-test--with-temp-org-files
-       ((,file-var ,initial-content))
-     (org-mcp-test--with-id-tracking
-      (list ,file-var)
-      (mapcar (lambda (id) (cons id ,file-var)) ,ids)
-      ,@body)))
+    ((,file-var ,initial-content))
+    (org-mcp-test--with-id-tracking
+     (list ,file-var)
+     (mapcar (lambda (id) (cons id ,file-var)) ,ids)
+     ,@body)))
 
-;; Helper functions for reading MCP resources
+;; Helpers for reading MCP resources
 
 (defun org-mcp-test--verify-resource-read (uri text)
   "Verify MCP resource at URI being TEXT."
@@ -862,7 +862,7 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
          (text . ,text)
          (mimeType . "text/plain"))))
 
-;; Helper functions for testing org-get-todo-config MCP tool
+;; Helpers for testing org-get-todo-config MCP tool
 
 (defun org-mcp-test--check-todo-config-sequence
     (seq expected-type expected-keywords)
@@ -896,7 +896,7 @@ and binds `sequences' and `semantics' from the result for use in BODY."
               (semantics (cdr (assoc 'semantics result))))
           ,@body)))))
 
-;; Helper functions for testing org-get-tag-config MCP tool
+;; Helpers for testing org-get-tag-config MCP tool
 
 (defmacro org-mcp-test--get-tag-config-and-check
     (expected-alist expected-persistent expected-inheritance expected-exclude)
@@ -920,7 +920,7 @@ org-tags-exclude-from-inheritance (string)."
       (should (equal (alist-get 'org-tags-exclude-from-inheritance result)
                      ,expected-exclude)))))
 
-;; Helper functions for testing org-get-allowed-files MCP tool
+;; Helpers for testing org-get-allowed-files MCP tool
 
 (defun org-mcp-test--get-allowed-files-and-check (allowed-files expected-files)
   "Call org-get-allowed-files tool and verify the result.
@@ -2085,18 +2085,33 @@ Another task."))
           " *:ID: +[^\n]+\n"
           " *:END:\n\\)?$"))))))
 
-(ert-deftest org-mcp-test-add-todo-tag-invalid-characters ()
-  "Test that tags with invalid characters are rejected."
+(ert-deftest org-mcp-test-add-todo-tag-invalid-exclamation ()
+  "Test that tags with exclamation mark are rejected."
   (org-mcp-test--with-add-todo-setup test-file
       org-mcp-test--content-empty
     (let ((org-tag-alist nil)
           (org-tag-persistent-alist nil))
       (let ((parent-uri (format "org-headline://%s#" test-file)))
-        ;; Should reject tags with special characters
         (org-mcp-test--call-add-todo-expecting-error
-         test-file "Task" "TODO" '("invalid-tag!") nil parent-uri)
+         test-file "Task" "TODO" '("invalid-tag!") nil parent-uri)))))
+
+(ert-deftest org-mcp-test-add-todo-tag-invalid-dash ()
+  "Test that tags with dash character are rejected."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
+    (let ((org-tag-alist nil)
+          (org-tag-persistent-alist nil))
+      (let ((parent-uri (format "org-headline://%s#" test-file)))
         (org-mcp-test--call-add-todo-expecting-error
-         test-file "Task" "TODO" '("tag-with-dash") nil parent-uri)
+         test-file "Task" "TODO" '("tag-with-dash") nil parent-uri)))))
+
+(ert-deftest org-mcp-test-add-todo-tag-invalid-hash ()
+  "Test that tags with hash character are rejected."
+  (org-mcp-test--with-add-todo-setup test-file
+      org-mcp-test--content-empty
+    (let ((org-tag-alist nil)
+          (org-tag-persistent-alist nil))
+      (let ((parent-uri (format "org-headline://%s#" test-file)))
         (org-mcp-test--call-add-todo-expecting-error
          test-file "Task" "TODO" '("tag#hash") nil parent-uri)))))
 
