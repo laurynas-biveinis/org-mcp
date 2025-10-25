@@ -1018,6 +1018,25 @@ AFTERURI is optional URI of sibling to insert after."
        ;; If we get here, the tool succeeded when we expected failure
        (error "Expected error but got success: %s" result)))))
 
+(defun org-mcp-test--assert-add-todo-rejects-body-headline
+    (initial-content parent-headline body-with-headline)
+  "Test that adding TODO with BODY-WITH-HEADLINE is rejected.
+INITIAL-CONTENT is the initial file content.
+PARENT-HEADLINE is the parent headline path (empty string for top-level).
+BODY-WITH-HEADLINE is the body containing invalid headline."
+  (org-mcp-test--call-add-todo-expecting-error
+   initial-content nil nil
+   "Test Task" "TODO" '("work") body-with-headline
+   (format "org-headline://%s#%s" test-file parent-headline)))
+
+(defun org-mcp-test--assert-add-todo-invalid-title (invalid-title)
+  "Assert that adding TODO with INVALID-TITLE throws an error.
+Tests that the given title is rejected when creating a TODO."
+  (org-mcp-test--call-add-todo-expecting-error
+   org-mcp-test--content-empty nil nil
+   invalid-title "TODO" nil nil
+   (format "org-headline://%s#" test-file)))
+
 (defmacro org-mcp-test--add-todo-and-check
     (initial-content todo-keywords tag-alist ids
                      title todoState tags body parentUri afterUri
@@ -1056,12 +1075,13 @@ variables after setup, e.g., ((org-tag-alist nil))."
             (should (equal (alist-get 'file result) ,basename))
             (should (equal (alist-get 'title result) ,title))
             (org-mcp-test--verify-file-matches test-file ,expected-pattern))))
-    `(org-mcp-test--with-add-todo-setup test-file
-         ,initial-content ,todo-keywords ,tag-alist ,ids
-       ,(if override-bindings
-            `(let ,override-bindings
-               ,checking-logic)
-          checking-logic))))
+    `(org-mcp-test--with-add-todo-setup
+      test-file
+      ,initial-content ,todo-keywords ,tag-alist ,ids
+      ,(if override-bindings
+           `(let ,override-bindings
+              ,checking-logic)
+         checking-logic))))
 
 ;; Helper functions for testing org-update-todo-state MCP tool
 
@@ -1527,43 +1547,24 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
      "/home/user/projects.org"
      "/home/user/notes.org")))
 
-(defun org-mcp-test--assert-add-todo-rejects-body-headline
-    (initial-content parent-headline body-with-headline)
-  "Test that adding TODO with BODY-WITH-HEADLINE is rejected.
-INITIAL-CONTENT is the initial file content.
-PARENT-HEADLINE is the parent headline path (empty string for top-level).
-BODY-WITH-HEADLINE is the body containing invalid headline."
-  (org-mcp-test--call-add-todo-expecting-error
-   initial-content nil nil
-   "Test Task" "TODO" '("work") body-with-headline
-   (format "org-headline://%s#%s" test-file parent-headline)))
-
 (ert-deftest org-mcp-test-file-resource-template-in-list ()
   "Test that file template appears in resources/templates/list."
   (let ((org-mcp-allowed-files '("test.org")))
     (org-mcp-test--with-enabled
-      (let ((templates
-             (mcp-server-lib-ert-get-resource-templates-list)))
-        ;; Check that we have four templates now
-        (should (= (length templates) 4))
-        ;; Check that we have all templates
-        (let ((template-uris
-               (mapcar
-                (lambda (template)
-                  (alist-get 'uriTemplate template))
-                (append templates nil))))
-          (should (member "org://{filename}" template-uris))
-          (should (member "org-outline://{filename}" template-uris))
-          (should (member "org-headline://{filename}" template-uris))
-          (should (member "org-id://{uuid}" template-uris)))))))
-
-(defun org-mcp-test--assert-add-todo-invalid-title (invalid-title)
-  "Assert that adding TODO with INVALID-TITLE throws an error.
-Tests that the given title is rejected when creating a TODO."
-  (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-empty nil nil
-   invalid-title "TODO" nil nil
-   (format "org-headline://%s#" test-file)))
+     (let ((templates
+            (mcp-server-lib-ert-get-resource-templates-list)))
+       ;; Check that we have four templates now
+       (should (= (length templates) 4))
+       ;; Check that we have all templates
+       (let ((template-uris
+              (mapcar
+               (lambda (template)
+                 (alist-get 'uriTemplate template))
+               (append templates nil))))
+         (should (member "org://{filename}" template-uris))
+         (should (member "org-outline://{filename}" template-uris))
+         (should (member "org-headline://{filename}" template-uris))
+         (should (member "org-id://{uuid}" template-uris)))))))
 
 (defun org-mcp-test--assert-rename-headline-rejected
     (initial-content headline-title new-title)
@@ -1572,13 +1573,13 @@ INITIAL-CONTENT is the Org content to test with.
 HEADLINE-TITLE is the current headline to rename.
 NEW-TITLE is the invalid new title that should be rejected."
   (org-mcp-test--with-temp-org-files
-      ((test-file initial-content))
-    (let ((resource-uri
-           (format "org-headline://%s#%s"
-                   test-file
-                   (url-hexify-string headline-title))))
-      (org-mcp-test--call-rename-headline-expecting-error
-       test-file resource-uri headline-title new-title))))
+   ((test-file initial-content))
+   (let ((resource-uri
+          (format "org-headline://%s#%s"
+                  test-file
+                  (url-hexify-string headline-title))))
+     (org-mcp-test--call-rename-headline-expecting-error
+      test-file resource-uri headline-title new-title))))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
