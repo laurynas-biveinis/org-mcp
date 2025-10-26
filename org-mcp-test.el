@@ -1148,19 +1148,22 @@ EXPECTED-PATTERN-REGEX is an anchored regex that matches the expected result."
       (should
        (string-match-p expected-pattern-regex result-text)))))
 
-(defun org-mcp-test--call-read-headline-expecting-error (file headline-path)
+(defmacro org-mcp-test--call-read-headline-expecting-error (content headline-path)
   "Call org-read-headline tool via JSON-RPC expecting an error.
-FILE is the path to the Org file.
+CONTENT is the Org file content to use.
 HEADLINE-PATH is the headline path string."
-  (let* ((request
-           (mcp-server-lib-create-tools-call-request
-            "org-read-headline" 1
-            `((file . ,file)
-              (headline_path . ,headline-path))))
-         (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-         (result (mcp-server-lib-ert-process-tool-response response)))
-    ;; If we get here, the tool succeeded when we expected failure
-    (error "Expected error but got success: %s" result)))
+  (declare (indent 0))
+  `(org-mcp-test--with-temp-org-files
+       ((test-file ,content))
+     (let* ((request
+              (mcp-server-lib-create-tools-call-request
+               "org-read-headline" 1
+               (list (cons 'file test-file)
+                     (cons 'headline_path ,headline-path))))
+            (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+            (result (mcp-server-lib-ert-process-tool-response response)))
+       ;; If we get here, the tool succeeded when we expected failure
+       (error "Expected error but got success: %s" result))))
 
 ;; Helper functions for testing org-rename-headline MCP tool
 
@@ -2911,11 +2914,10 @@ Some quote
 
 (ert-deftest org-mcp-test-tool-read-headline-empty-path ()
   "Test org-read-headline with empty headline_path signals validation error."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-nested-siblings))
-    (should-error
-     (org-mcp-test--call-read-headline-expecting-error test-file "")
-     :type 'mcp-server-lib-tool-error)))
+  (should-error
+   (org-mcp-test--call-read-headline-expecting-error
+    org-mcp-test--content-nested-siblings "")
+   :type 'mcp-server-lib-tool-error))
 
 (ert-deftest org-mcp-test-tool-read-headline-single-level ()
   "Test org-read-headline with single-level path."
