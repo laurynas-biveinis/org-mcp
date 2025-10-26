@@ -1133,6 +1133,21 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
       (should (equal (alist-get 'uri result) resource-uri)))
     (org-mcp-test--verify-file-matches test-file expected-content-regex)))
 
+;; Helper functions for testing org-read-headline MCP tool
+
+(defun org-mcp--tool-read-headline-and-check (initial-content headline-path expected-pattern-regex)
+  "Call org-read-headline tool via JSON-RPC and verify the result.
+INITIAL-CONTENT is the content to write to the temp file.
+HEADLINE-PATH is the slash-separated path to the headline.
+EXPECTED-PATTERN-REGEX is an anchored regex that matches the expected result."
+  (org-mcp-test--with-temp-org-files
+      ((test-file initial-content))
+    (let* ((params `((file . ,test-file)
+                     (headline_path . ,headline-path)))
+           (result-text (mcp-server-lib-ert-call-tool "org-read-headline" params)))
+      (should
+       (string-match-p expected-pattern-regex result-text)))))
+
 (defun org-mcp-test--call-read-headline-expecting-error (file headline-path)
   "Call org-read-headline tool via JSON-RPC expecting an error.
 FILE is the path to the Org file.
@@ -1280,16 +1295,7 @@ FILE is the file path to read the outline from."
           (mcp-server-lib-ert-call-tool "org-read-outline" params)))
     (json-parse-string result-json :object-type 'alist)))
 
-;; Helper functions for testing org-read-headline MCP tool
-
-(defun org-mcp-test--call-read-headline (file headline-path)
-  "Call org-read-headline tool via JSON-RPC and return the result.
-FILE is the file path, HEADLINE-PATH is the slash-separated path to the headline."
-  (let ((params `((file . ,file)
-                  (headline_path . ,headline-path))))
-    (mcp-server-lib-ert-call-tool "org-read-headline" params)))
-
-;; Helper functions for testing org-read-headline MCP tool
+;; Helper functions for testing org-read-by-id MCP tool
 
 (defun org-mcp-test--call-read-by-id (uuid)
   "Call org-read-by-id tool via JSON-RPC and return the result.
@@ -2913,26 +2919,17 @@ Some quote
 
 (ert-deftest org-mcp-test-tool-read-headline-single-level ()
   "Test org-read-headline with single-level path."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-slash-not-nested-before))
-    (let ((result-text
-           (org-mcp-test--call-read-headline test-file "Parent%2FChild")))
-      (should
-       (string-match-p
-        org-mcp-test--pattern-tool-read-headline-single
-        result-text)))))
+  (org-mcp--tool-read-headline-and-check
+   org-mcp-test--content-slash-not-nested-before
+   "Parent%2FChild"
+   org-mcp-test--pattern-tool-read-headline-single))
 
 (ert-deftest org-mcp-test-tool-read-headline-nested ()
   "Test org-read-headline with nested path."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-nested-siblings))
-    (let ((result-text
-           (org-mcp-test--call-read-headline
-            test-file "Parent%20Task/First%20Child%2050%25%20Complete")))
-      (should
-       (string-match-p
-        org-mcp-test--pattern-tool-read-headline-nested
-        result-text)))))
+  (org-mcp--tool-read-headline-and-check
+   org-mcp-test--content-nested-siblings
+   "Parent%20Task/First%20Child%2050%25%20Complete"
+   org-mcp-test--pattern-tool-read-headline-nested))
 
 (ert-deftest org-mcp-test-tool-read-by-id ()
   "Test org-read-by-id tool returns headline content by ID."
