@@ -1092,18 +1092,20 @@ TEST-FILE is the test file path to verify remains unchanged.
 RESOURCE-URI is the URI to update.
 CURRENT-STATE is the current TODO state.
 NEW-STATE is the new TODO state to set."
-  (org-mcp-test--assert-error-and-file
-   test-file
-   (let* ((request
-            (mcp-server-lib-create-tools-call-request
-             "org-update-todo-state" 1
-             `((uri . ,resource-uri)
-               (current_state . ,current-state)
-               (new_state . ,new-state))))
-          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-          (result (mcp-server-lib-ert-process-tool-response response)))
-     ;; If we get here, the tool succeeded when we expected failure
-     (error "Expected error but got success: %s" result))))
+  (let ((org-todo-keywords
+         '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+    (org-mcp-test--assert-error-and-file
+     test-file
+     (let* ((request
+              (mcp-server-lib-create-tools-call-request
+               "org-update-todo-state" 1
+               `((uri . ,resource-uri)
+                 (current_state . ,current-state)
+                 (new_state . ,new-state))))
+            (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+            (result (mcp-server-lib-ert-process-tool-response response)))
+       ;; If we get here, the tool succeeded when we expected failure
+       (error "Expected error but got success: %s" result)))))
 
 (defun org-mcp-test--update-todo-state-and-check
     (resource-uri old-state new-state test-file expected-content-regex)
@@ -1855,13 +1857,11 @@ Very deep content."))
   (let ((test-content "* TODO Task One\nTask description."))
     (org-mcp-test--with-temp-org-files
         ((test-file test-content))
-      (let ((org-todo-keywords
-             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-        ;; Try to update with wrong current state
-        (let ((resource-uri
-               (format "org-headline://%s#Task%%20One" test-file)))
-          (org-mcp-test--call-update-todo-state-expecting-error
-           test-file resource-uri "IN-PROGRESS" "DONE"))))))
+      ;; Try to update with wrong current state
+      (let ((resource-uri
+             (format "org-headline://%s#Task%%20One" test-file)))
+        (org-mcp-test--call-update-todo-state-expecting-error
+         test-file resource-uri "IN-PROGRESS" "DONE")))))
 
 (ert-deftest org-mcp-test-update-todo-with-timestamp-id ()
   "Test updating TODO state using timestamp-format ID (not UUID)."
@@ -1880,26 +1880,22 @@ Very deep content."))
   (let ((test-content "* TODO Task One\nTask description."))
     (org-mcp-test--with-temp-org-files
         ((test-file test-content))
-      (let ((org-todo-keywords
-             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-        ;; Try to set empty state
-        (let ((resource-uri
-               (format "org-headline://%s#Task%%20One" test-file)))
-          (org-mcp-test--call-update-todo-state-expecting-error
-           test-file resource-uri "TODO" ""))))))
+      ;; Try to set empty state
+      (let ((resource-uri
+             (format "org-headline://%s#Task%%20One" test-file)))
+        (org-mcp-test--call-update-todo-state-expecting-error
+         test-file resource-uri "TODO" "")))))
 
 (ert-deftest org-mcp-test-update-todo-state-invalid ()
   "Test TODO state update fails for invalid new state."
   (let ((test-content "* TODO Task One\nTask description."))
     (org-mcp-test--with-temp-org-files
         ((test-file test-content))
-      (let ((org-todo-keywords
-             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-        ;; Try to update to invalid state
-        (let ((resource-uri
-               (format "org-headline://%s#Task%%20One" test-file)))
-          (org-mcp-test--call-update-todo-state-expecting-error
-           test-file resource-uri "TODO" "INVALID-STATE"))))))
+      ;; Try to update to invalid state
+      (let ((resource-uri
+             (format "org-headline://%s#Task%%20One" test-file)))
+        (org-mcp-test--call-update-todo-state-expecting-error
+         test-file resource-uri "TODO" "INVALID-STATE")))))
 
 (ert-deftest org-mcp-test-update-todo-state-with-open-buffer ()
   "Test TODO state update works when file is open in another buffer."
@@ -1937,41 +1933,37 @@ Task description.
 Another task description."))
     (org-mcp-test--with-temp-org-files
         ((test-file test-content))
-      (let ((org-todo-keywords
-             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-        ;; Open the file in a buffer and modify it elsewhere
-        (let ((buffer (find-file-noselect test-file)))
-          (unwind-protect
-              (progn
-                ;; Make a modification at an unrelated location
-                (with-current-buffer buffer
-                  (goto-char (point-max))
-                  (insert "\n* TODO Task Three\nAdded in buffer.")
-                  ;; Buffer is now modified but not saved
-                  (should (buffer-modified-p)))
+      ;; Open the file in a buffer and modify it elsewhere
+      (let ((buffer (find-file-noselect test-file)))
+        (unwind-protect
+            (progn
+              ;; Make a modification at an unrelated location
+              (with-current-buffer buffer
+                (goto-char (point-max))
+                (insert "\n* TODO Task Three\nAdded in buffer.")
+                ;; Buffer is now modified but not saved
+                (should (buffer-modified-p)))
 
-                ;; Try to update while buffer has unsaved changes
-                (let ((resource-uri
-                       (format "org-headline://%s#Task%%20One"
-                               test-file)))
-                  (org-mcp-test--call-update-todo-state-expecting-error
-                   test-file resource-uri "TODO" "IN-PROGRESS")
-                  ;; Verify buffer still has unsaved changes
-                  (with-current-buffer buffer
-                    (should (buffer-modified-p)))))
-            ;; Clean up: kill the buffer
-            (kill-buffer buffer)))))))
+              ;; Try to update while buffer has unsaved changes
+              (let ((resource-uri
+                     (format "org-headline://%s#Task%%20One"
+                             test-file)))
+                (org-mcp-test--call-update-todo-state-expecting-error
+                 test-file resource-uri "TODO" "IN-PROGRESS")
+                ;; Verify buffer still has unsaved changes
+                (with-current-buffer buffer
+                  (should (buffer-modified-p)))))
+          ;; Clean up: kill the buffer
+          (kill-buffer buffer))))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-id ()
   "Test TODO state update fails for non-existent UUID."
   (let ((test-content "* TODO Task One\nTask description."))
-    (let ((org-todo-keywords
-           '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-      (org-mcp-test--with-id-setup test-file test-content '()
-        ;; Try to update a non-existent ID
-        (let ((resource-uri "org-id://nonexistent-uuid-12345"))
-          (org-mcp-test--call-update-todo-state-expecting-error
-           test-file resource-uri "TODO" "IN-PROGRESS"))))))
+    (org-mcp-test--with-id-setup test-file test-content '()
+      ;; Try to update a non-existent ID
+      (let ((resource-uri "org-id://nonexistent-uuid-12345"))
+        (org-mcp-test--call-update-todo-state-expecting-error
+         test-file resource-uri "TODO" "IN-PROGRESS")))))
 
 (ert-deftest org-mcp-test-update-todo-state-by-id ()
   "Test updating TODO state using org-id:// URI."
@@ -1994,14 +1986,12 @@ Task description.
 Another task."))
     (org-mcp-test--with-temp-org-files
         ((test-file test-content))
-      (let ((org-todo-keywords
-             '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-        ;; Try to update a non-existent headline
-        (let ((resource-uri
-               (format "org-headline://%s#Nonexistent%%20Task"
-                       test-file)))
-          (org-mcp-test--call-update-todo-state-expecting-error
-           test-file resource-uri "TODO" "IN-PROGRESS"))))))
+      ;; Try to update a non-existent headline
+      (let ((resource-uri
+             (format "org-headline://%s#Nonexistent%%20Task"
+                     test-file)))
+        (org-mcp-test--call-update-todo-state-expecting-error
+         test-file resource-uri "TODO" "IN-PROGRESS")))))
 
 (ert-deftest org-mcp-test-add-todo-top-level ()
   "Test adding a top-level TODO item."
