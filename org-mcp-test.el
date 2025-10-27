@@ -1170,34 +1170,46 @@ NEW-TITLE is the new title to set.
 EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer.
 IDS-TO-REGISTER is optional list of IDs to register for the temp file."
   (org-mcp-test--with-temp-org-files
-      ((test-file initial-content))
-    (when ids-to-register
-      (let ((org-id-track-globally t)
-            (org-id-locations-file nil)
-            (org-id-locations nil))
-        (dolist (id ids-to-register)
-          (org-id-add-location id test-file))))
-    (let* ((uri (if (string-prefix-p "org-" headline-path-or-uri)
-                    headline-path-or-uri
-                  (format "org-headline://%s#%s" test-file headline-path-or-uri)))
-           (params
-            `((uri . ,uri)
-              (current_title . ,current-title)
-              (new_title . ,new-title)))
-           (result-text
-            (mcp-server-lib-ert-call-tool "org-rename-headline" params))
-           (result (json-read-from-string result-text))
-           (result-uri (alist-get 'uri result)))
-      (should (= (length result) 4))
-      (should (equal (alist-get 'success result) t))
-      (should (equal (alist-get 'previous_title result) current-title))
-      (should (equal (alist-get 'new_title result) new-title))
-      (should (stringp result-uri))
-      (should (string-prefix-p "org-id://" result-uri))
-      ;; If input URI was ID-based, result URI should remain ID-based
-      (when (string-prefix-p "org-id://" uri)
-        (should (equal result-uri uri)))
-      (org-mcp-test--verify-file-matches test-file expected-content-regex))))
+   ((test-file initial-content))
+   (when ids-to-register
+     (let ((org-id-track-globally t)
+           (org-id-locations-file nil)
+           (org-id-locations nil))
+       (dolist (id ids-to-register)
+         (org-id-add-location id test-file))))
+   (let* ((uri (if (string-prefix-p "org-" headline-path-or-uri)
+                   headline-path-or-uri
+                 (format "org-headline://%s#%s" test-file headline-path-or-uri)))
+          (params
+           `((uri . ,uri)
+             (current_title . ,current-title)
+             (new_title . ,new-title)))
+          (result-text
+           (mcp-server-lib-ert-call-tool "org-rename-headline" params))
+          (result (json-read-from-string result-text))
+          (result-uri (alist-get 'uri result)))
+     (should (= (length result) 4))
+     (should (equal (alist-get 'success result) t))
+     (should (equal (alist-get 'previous_title result) current-title))
+     (should (equal (alist-get 'new_title result) new-title))
+     (should (stringp result-uri))
+     (should (string-prefix-p "org-id://" result-uri))
+     ;; If input URI was ID-based, result URI should remain ID-based
+     (when (string-prefix-p "org-id://" uri)
+       (should (equal result-uri uri)))
+     (org-mcp-test--verify-file-matches test-file expected-content-regex))))
+
+(defun org-mcp-test--assert-rename-headline-rejected
+    (initial-content headline-title new-title)
+  "Assert renaming headline to NEW-TITLE is rejected.
+INITIAL-CONTENT is the Org content to test with.
+HEADLINE-TITLE is the current headline to rename.
+NEW-TITLE is the invalid new title that should be rejected."
+  (org-mcp-test--call-rename-headline-expecting-error
+   initial-content
+   (url-hexify-string headline-title)
+   headline-title
+   new-title))
 
 (defun org-mcp-test--call-rename-headline-expecting-error
     (initial-content headline-path-or-uri current-title new-title)
@@ -1344,6 +1356,8 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
 
 ;;; Tests
 
+;; org-get-todo-config tests
+
 (ert-deftest org-mcp-test-tool-get-todo-config-empty ()
   "Test org-get-todo-config with empty `org-todo-keywords'."
   (org-mcp-test--with-get-todo-config-result
@@ -1448,16 +1462,19 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
 
 (ert-deftest org-mcp-test-tool-get-todo-config-type-no-separator ()
   "Test org-get-todo-config with type keywords and no separator."
-  (org-mcp-test--with-get-todo-config-result '((type "BUG" "FEATURE" "ENHANCEMENT"))
-    (should (= (length sequences) 1))
-    (org-mcp-test--check-todo-config-sequence
-     (aref sequences 0) "type" ["BUG" "FEATURE" "|" "ENHANCEMENT"])
-    (should (= (length semantics) 3))
-    (org-mcp-test--check-todo-config-semantic (aref semantics 0) "BUG" nil "type")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 1) "FEATURE" nil "type")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 2) "ENHANCEMENT" t "type")))
+  (org-mcp-test--with-get-todo-config-result
+   '((type "BUG" "FEATURE" "ENHANCEMENT"))
+   (should (= (length sequences) 1))
+   (org-mcp-test--check-todo-config-sequence
+    (aref sequences 0) "type" ["BUG" "FEATURE" "|" "ENHANCEMENT"])
+   (should (= (length semantics) 3))
+   (org-mcp-test--check-todo-config-semantic (aref semantics 0) "BUG" nil "type")
+   (org-mcp-test--check-todo-config-semantic
+    (aref semantics 1) "FEATURE" nil "type")
+   (org-mcp-test--check-todo-config-semantic
+    (aref semantics 2) "ENHANCEMENT" t "type")))
+
+;; org-get-tag-config tests
 
 (ert-deftest org-mcp-test-tool-get-tag-config-empty ()
   "Test org-get-tag-config with empty `org-tag-alist'."
@@ -1547,6 +1564,8 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
      "(\"work\" \"personal\")" "nil" "(\"work\")"
      "nil")))
 
+;; org-get-allowed-files tests
+
 (ert-deftest org-mcp-test-tool-get-allowed-files-empty ()
   "Test org-get-allowed-files with empty configuration."
   (org-mcp-test--get-allowed-files-and-check nil nil))
@@ -1567,61 +1586,6 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
      "/home/user/projects.org"
      "/home/user/notes.org")))
 
-(ert-deftest org-mcp-test-file-resource-template-in-list ()
-  "Test that file template appears in resources/templates/list."
-  (let ((org-mcp-allowed-files '("test.org")))
-    (org-mcp-test--with-enabled
-     (let ((templates
-            (mcp-server-lib-ert-get-resource-templates-list)))
-       ;; Check that we have four templates now
-       (should (= (length templates) 4))
-       ;; Check that we have all templates
-       (let ((template-uris
-              (mapcar
-               (lambda (template)
-                 (alist-get 'uriTemplate template))
-               (append templates nil))))
-         (should (member "org://{filename}" template-uris))
-         (should (member "org-outline://{filename}" template-uris))
-         (should (member "org-headline://{filename}" template-uris))
-         (should (member "org-id://{uuid}" template-uris)))))))
-
-(defun org-mcp-test--assert-rename-headline-rejected
-    (initial-content headline-title new-title)
-  "Assert renaming headline to NEW-TITLE is rejected.
-INITIAL-CONTENT is the Org content to test with.
-HEADLINE-TITLE is the current headline to rename.
-NEW-TITLE is the invalid new title that should be rejected."
-  (org-mcp-test--call-rename-headline-expecting-error
-   initial-content
-   (url-hexify-string headline-title)
-   headline-title
-   new-title))
-
-(ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
-  "Test that resources are unregistered after `org-mcp-disable'."
-  (let ((org-mcp-allowed-files '("test.org")))
-    ;; Enable then disable
-    (org-mcp-enable)
-    (org-mcp-disable)
-    ;; Start server and check resources
-    (mcp-server-lib-ert-with-server
-     :tools nil
-     :resources nil
-     (let ((resources (mcp-server-lib-ert-get-resource-list)))
-       ;; Check that the resource list is empty
-       (should (= (length resources) 0))))))
-
-(ert-deftest org-mcp-test-file-resource-read ()
-  "Test that reading a resource returns file content."
-  (let ((test-content "* Test Heading\nThis is test content."))
-    (org-mcp-test--with-temp-org-files
-        ((test-file test-content))
-      (let ((uri (format "org://%s" test-file)))
-        (org-mcp-test--verify-resource-read
-         uri
-         test-content)))))
-
 (ert-deftest org-mcp-test-outline-resource-returns-structure ()
   "Test that outline resource returns document structure."
   (let ((test-content
@@ -1636,53 +1600,53 @@ Content of second section.
 *** Deep subsection
 Very deep content."))
     (org-mcp-test--with-temp-org-files
-        ((test-file test-content))
-      (let* ((uri (format "org-outline://%s" test-file))
-             (request
+     ((test-file test-content))
+     (let* ((uri (format "org-outline://%s" test-file))
+            (request
               (mcp-server-lib-create-resources-read-request uri))
-             (response-json
-              (mcp-server-lib-process-jsonrpc request mcp-server-lib-ert-server-id))
-             (response
-              (json-parse-string response-json
-                                 :object-type 'alist))
-             (result (alist-get 'result response))
-             (contents (alist-get 'contents result)))
-        ;; Check if we have an error instead of result
-        (when (alist-get 'error response)
-          (error
-           "Resource request failed: %s"
-           (alist-get 'message (alist-get 'error response))))
-        (let* ((outline-json (alist-get 'text (aref contents 0)))
-               (outline
-                (json-parse-string outline-json
-                                   :object-type 'alist))
-               (headings (alist-get 'headings outline)))
-          ;; Check we have the right number of top-level headings
-          (should (= (length headings) 2))
-          ;; Check first heading
-          (let ((first (aref headings 0)))
-            (should
-             (equal (alist-get 'title first) "First Section"))
-            (should (= (alist-get 'level first) 1))
-            ;; Check children of first heading
-            (let ((children (alist-get 'children first)))
-              (should (= (length children) 2))
-              (should
-               (equal
-                (alist-get 'title (aref children 0))
-                "Subsection 1.1"))
-              (should
-               (equal
-                (alist-get 'title (aref children 1))
-                "Subsection 1.2"))))
-          ;; Check second heading
-          (let ((second (aref headings 1)))
-            (should
-             (equal (alist-get 'title second) "Second Section"))
-            (should (= (alist-get 'level second) 1))
-            ;; Deep subsection is empty (level 3 under level 1)
-            (should
-             (= (length (alist-get 'children second)) 0))))))))
+            (response-json
+             (mcp-server-lib-process-jsonrpc request mcp-server-lib-ert-server-id))
+            (response
+             (json-parse-string response-json
+                                :object-type 'alist))
+            (result (alist-get 'result response))
+            (contents (alist-get 'contents result)))
+       ;; Check if we have an error instead of result
+       (when (alist-get 'error response)
+         (error
+          "Resource request failed: %s"
+          (alist-get 'message (alist-get 'error response))))
+       (let* ((outline-json (alist-get 'text (aref contents 0)))
+              (outline
+               (json-parse-string outline-json
+                                  :object-type 'alist))
+              (headings (alist-get 'headings outline)))
+         ;; Check we have the right number of top-level headings
+         (should (= (length headings) 2))
+         ;; Check first heading
+         (let ((first (aref headings 0)))
+           (should
+            (equal (alist-get 'title first) "First Section"))
+           (should (= (alist-get 'level first) 1))
+           ;; Check children of first heading
+           (let ((children (alist-get 'children first)))
+             (should (= (length children) 2))
+             (should
+              (equal
+               (alist-get 'title (aref children 0))
+               "Subsection 1.1"))
+             (should
+              (equal
+               (alist-get 'title (aref children 1))
+               "Subsection 1.2"))))
+         ;; Check second heading
+         (let ((second (aref headings 1)))
+           (should
+            (equal (alist-get 'title second) "Second Section"))
+           (should (= (alist-get 'level second) 1))
+           ;; Deep subsection is empty (level 3 under level 1)
+           (should
+            (= (length (alist-get 'children second)) 0))))))))
 
 (ert-deftest org-mcp-test-file-not-in-allowed-list-returns-error ()
   "Test that reading a file not in allowed list returns an error."
@@ -2863,14 +2827,60 @@ Some quote
 
 (ert-deftest org-mcp-test-tool-read-by-id ()
   "Test org-read-by-id tool returns headline content by ID."
-  (org-mcp-test--with-id-setup test-file org-mcp-test--content-nested-siblings
-      `(,org-mcp-test--content-with-id-id)
-    (let ((result-text
-           (org-mcp-test--call-read-by-id org-mcp-test--content-with-id-id)))
-      (should
-       (string-match-p
-        org-mcp-test--pattern-tool-read-by-id
-        result-text)))))
+  (org-mcp-test--with-id-setup
+   test-file org-mcp-test--content-nested-siblings
+   `(,org-mcp-test--content-with-id-id)
+   (let ((result-text
+          (org-mcp-test--call-read-by-id org-mcp-test--content-with-id-id)))
+     (should
+      (string-match-p
+       org-mcp-test--pattern-tool-read-by-id
+       result-text)))))
+
+;; Resource tests
+
+(ert-deftest org-mcp-test-file-resource-template-in-list ()
+  "Test that file template appears in resources/templates/list."
+  (let ((org-mcp-allowed-files '("test.org")))
+    (org-mcp-test--with-enabled
+     (let ((templates
+            (mcp-server-lib-ert-get-resource-templates-list)))
+       ;; Check that we have four templates now
+       (should (= (length templates) 4))
+       ;; Check that we have all templates
+       (let ((template-uris
+              (mapcar
+               (lambda (template)
+                 (alist-get 'uriTemplate template))
+               (append templates nil))))
+         (should (member "org://{filename}" template-uris))
+         (should (member "org-outline://{filename}" template-uris))
+         (should (member "org-headline://{filename}" template-uris))
+         (should (member "org-id://{uuid}" template-uris)))))))
+
+(ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
+  "Test that resources are unregistered after `org-mcp-disable'."
+  (let ((org-mcp-allowed-files '("test.org")))
+    ;; Enable then disable
+    (org-mcp-enable)
+    (org-mcp-disable)
+    ;; Start server and check resources
+    (mcp-server-lib-ert-with-server
+      :tools nil
+      :resources nil
+      (let ((resources (mcp-server-lib-ert-get-resource-list)))
+        ;; Check that the resource list is empty
+        (should (= (length resources) 0))))))
+
+(ert-deftest org-mcp-test-file-resource-read ()
+  "Test that reading a resource returns file content."
+  (let ((test-content "* Test Heading\nThis is test content."))
+    (org-mcp-test--with-temp-org-files
+     ((test-file test-content))
+     (let ((uri (format "org://%s" test-file)))
+       (org-mcp-test--verify-resource-read
+        uri
+        test-content)))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
