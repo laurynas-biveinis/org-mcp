@@ -1733,19 +1733,17 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."
-  (let ((test-content
-         "* TODO Task One
-Task description.
-* TODO Task Two
-Another task."))
+  (let ((test-content org-mcp-test--content-simple-todo))
     (org-mcp-test--with-temp-org-files
-        ((test-file test-content))
-      ;; Try to update a non-existent headline
-      (let ((resource-uri
-             (format "org-headline://%s#Nonexistent%%20Task"
-                     test-file)))
-        (org-mcp-test--call-update-todo-state-expecting-error
-         test-file resource-uri "TODO" "IN-PROGRESS")))))
+     ((test-file test-content))
+     ;; Try to update a non-existent headline
+     (let ((resource-uri
+            (format "org-headline://%s#Nonexistent%%20Task"
+                    test-file)))
+       (org-mcp-test--call-update-todo-state-expecting-error
+        test-file resource-uri "TODO" "IN-PROGRESS")))))
+
+;; org-add-todo tests
 
 (ert-deftest org-mcp-test-add-todo-top-level ()
   "Test adding a top-level TODO item."
