@@ -874,15 +874,6 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
      (mapcar (lambda (id) (cons id ,file-var)) ,ids)
      ,@body)))
 
-;; Helpers for reading MCP resources
-
-(defun org-mcp-test--verify-resource-read (uri text)
-  "Verify MCP resource at URI being TEXT."
-  (mcp-server-lib-ert-verify-resource-read
-   uri `((uri . ,uri)
-         (text . ,text)
-         (mimeType . "text/plain"))))
-
 ;; Helpers for testing org-get-todo-config MCP tool
 
 (defun org-mcp-test--check-todo-config-sequence
@@ -1216,37 +1207,23 @@ HEADLINE-PATH-OR-URI is either a headline path fragment or full URI.
 CURRENT-TITLE is the current title for validation.
 NEW-TITLE is the new title to set."
   (org-mcp-test--with-temp-org-files
-      ((test-file initial-content))
-    (let ((uri (if (string-prefix-p "org-" headline-path-or-uri)
-                   headline-path-or-uri
-                 (format "org-headline://%s#%s" test-file headline-path-or-uri))))
-      (org-mcp-test--assert-error-and-file
-       test-file
-       (let* ((params
-               `((uri . ,uri)
-                 (current_title . ,current-title)
-                 (new_title . ,new-title)))
-              (request
-                (mcp-server-lib-create-tools-call-request
-                 "org-rename-headline" 1 params))
-              (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-              (result (mcp-server-lib-ert-process-tool-response response)))
-         ;; If we get here, the tool succeeded when we expected failure
-         (error "Expected error but got success: %s" result))))))
-
-(defun org-mcp-test--read-resource-expecting-error
-    (uri expected-error-message)
-  "Read resource at URI expecting an error with EXPECTED-ERROR-MESSAGE."
-  (let* ((request (mcp-server-lib-create-resources-read-request uri))
-         (response-json (mcp-server-lib-process-jsonrpc request mcp-server-lib-ert-server-id))
-         (response
-          (json-parse-string response-json :object-type 'alist)))
-    (unless (assoc 'error response)
-      (error "Expected error but got success for URI: %s" uri))
-    (mcp-server-lib-ert-check-error-object
-     response
-     mcp-server-lib-jsonrpc-error-invalid-params
-     expected-error-message)))
+   ((test-file initial-content))
+   (let ((uri (if (string-prefix-p "org-" headline-path-or-uri)
+                  headline-path-or-uri
+                (format "org-headline://%s#%s" test-file headline-path-or-uri))))
+     (org-mcp-test--assert-error-and-file
+      test-file
+      (let* ((params
+              `((uri . ,uri)
+                (current_title . ,current-title)
+                (new_title . ,new-title)))
+             (request
+               (mcp-server-lib-create-tools-call-request
+                "org-rename-headline" 1 params))
+             (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+             (result (mcp-server-lib-ert-process-tool-response response)))
+        ;; If we get here, the tool succeeded when we expected failure
+        (error "Expected error but got success: %s" result))))))
 
 ;; Helper functions for testing org-edit-body MCP tool
 
@@ -1325,7 +1302,28 @@ UUID is the ID property of the headline to read."
   (let ((params `((uuid . ,uuid))))
     (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
 
-;; Helper functions for testing org-headline MCP resource
+;; Helper functions for testing MCP resources
+
+(defun org-mcp-test--verify-resource-read (uri text)
+  "Verify MCP resource at URI being TEXT."
+  (mcp-server-lib-ert-verify-resource-read
+   uri `((uri . ,uri)
+         (text . ,text)
+         (mimeType . "text/plain"))))
+
+(defun org-mcp-test--read-resource-expecting-error
+    (uri expected-error-message)
+  "Read resource at URI expecting an error with EXPECTED-ERROR-MESSAGE."
+  (let* ((request (mcp-server-lib-create-resources-read-request uri))
+         (response-json (mcp-server-lib-process-jsonrpc request mcp-server-lib-ert-server-id))
+         (response
+          (json-parse-string response-json :object-type 'alist)))
+    (unless (assoc 'error response)
+      (error "Expected error but got success for URI: %s" uri))
+    (mcp-server-lib-ert-check-error-object
+     response
+     mcp-server-lib-jsonrpc-error-invalid-params
+     expected-error-message)))
 
 (defun org-mcp-test--test-headline-resource-with-extension (extension)
   "Test headline resource with file having EXTENSION.
