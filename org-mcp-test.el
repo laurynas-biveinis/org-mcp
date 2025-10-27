@@ -1688,11 +1688,7 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
 
 (ert-deftest org-mcp-test-update-todo-state-with-modified-buffer ()
   "Test TODO state update fails when buffer has unsaved changes."
-  (let ((test-content
-         "* TODO Task One
-Task description.
-* TODO Task Two
-Another task description."))
+  (let ((test-content org-mcp-test--content-simple-todo))
     (org-mcp-test--with-temp-org-files
         ((test-file test-content))
       ;; Open the file in a buffer and modify it elsewhere
@@ -1700,13 +1696,13 @@ Another task description."))
         ;; Make a modification at an unrelated location
         (with-current-buffer buffer
           (goto-char (point-max))
-          (insert "\n* TODO Task Three\nAdded in buffer.")
+          (insert "\n* TODO Another Task\nAdded in buffer.")
           ;; Buffer is now modified but not saved
           (should (buffer-modified-p)))
 
         ;; Try to update while buffer has unsaved changes
         (let ((resource-uri
-               (format "org-headline://%s#Task%%20One"
+               (format "org-headline://%s#Original%%20Task"
                        test-file)))
           (org-mcp-test--call-update-todo-state-expecting-error
            test-file resource-uri "TODO" "IN-PROGRESS")
