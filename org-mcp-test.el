@@ -867,6 +867,17 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
      (mapcar (lambda (id) (cons id ,file-var)) ,ids)
      ,@body)))
 
+(defmacro org-mcp-test--with-file-buffer (buffer file &rest body)
+  "Open FILE in BUFFER and execute BODY, ensuring buffer is killed.
+BUFFER is the variable name to bind the buffer to.
+FILE is the file path to open.
+BODY is the code to execute with the buffer."
+  (declare (indent 2) (debug t))
+  `(let ((,buffer (find-file-noselect ,file)))
+     (unwind-protect
+         (progn ,@body)
+       (kill-buffer ,buffer))))
+
 ;; Helpers for testing org-get-todo-config MCP tool
 
 (defun org-mcp-test--check-todo-config-sequence
@@ -1591,6 +1602,8 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
         uri
         (format "'%s': the referenced file not in allowed list" forbidden-file))))))
 
+;;; org-update-todo-state tests
+
 (ert-deftest org-mcp-test-update-todo-state-success ()
   "Test successful TODO state update."
   (let ((test-content org-mcp-test--content-with-id-todo))
@@ -1658,24 +1671,20 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
       (let ((org-todo-keywords
              '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
         ;; Open the file in a buffer
-        (let ((buffer (find-file-noselect test-file)))
-          (unwind-protect
-              (progn
-                ;; Update TODO state while buffer is open
-                (let ((resource-uri
-                       (format "org-headline://%s#Task%%20with%%20ID"
-                               test-file)))
-                  (org-mcp-test--update-todo-state-and-check
-                   resource-uri "TODO" "IN-PROGRESS"
-                   test-file org-mcp-test--expected-task-with-id-in-progress-regex)
-                  ;; Verify the buffer was also updated
-                  (with-current-buffer buffer
-                    (goto-char (point-min))
-                    (should
-                     (re-search-forward "^\\* IN-PROGRESS Task with ID"
-                                        nil t)))))
-            ;; Clean up: kill the buffer
-            (kill-buffer buffer)))))))
+        (org-mcp-test--with-file-buffer buffer test-file
+          ;; Update TODO state while buffer is open
+          (let ((resource-uri
+                 (format "org-headline://%s#Task%%20with%%20ID"
+                         test-file)))
+            (org-mcp-test--update-todo-state-and-check
+             resource-uri "TODO" "IN-PROGRESS"
+             test-file org-mcp-test--expected-task-with-id-in-progress-regex)
+            ;; Verify the buffer was also updated
+            (with-current-buffer buffer
+              (goto-char (point-min))
+              (should
+               (re-search-forward "^\\* IN-PROGRESS Task with ID"
+                                  nil t)))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-with-modified-buffer ()
   "Test TODO state update fails when buffer has unsaved changes."
@@ -1687,27 +1696,23 @@ Another task description."))
     (org-mcp-test--with-temp-org-files
         ((test-file test-content))
       ;; Open the file in a buffer and modify it elsewhere
-      (let ((buffer (find-file-noselect test-file)))
-        (unwind-protect
-            (progn
-              ;; Make a modification at an unrelated location
-              (with-current-buffer buffer
-                (goto-char (point-max))
-                (insert "\n* TODO Task Three\nAdded in buffer.")
-                ;; Buffer is now modified but not saved
-                (should (buffer-modified-p)))
+      (org-mcp-test--with-file-buffer buffer test-file
+        ;; Make a modification at an unrelated location
+        (with-current-buffer buffer
+          (goto-char (point-max))
+          (insert "\n* TODO Task Three\nAdded in buffer.")
+          ;; Buffer is now modified but not saved
+          (should (buffer-modified-p)))
 
-              ;; Try to update while buffer has unsaved changes
-              (let ((resource-uri
-                     (format "org-headline://%s#Task%%20One"
-                             test-file)))
-                (org-mcp-test--call-update-todo-state-expecting-error
-                 test-file resource-uri "TODO" "IN-PROGRESS")
-                ;; Verify buffer still has unsaved changes
-                (with-current-buffer buffer
-                  (should (buffer-modified-p)))))
-          ;; Clean up: kill the buffer
-          (kill-buffer buffer))))))
+        ;; Try to update while buffer has unsaved changes
+        (let ((resource-uri
+               (format "org-headline://%s#Task%%20One"
+                       test-file)))
+          (org-mcp-test--call-update-todo-state-expecting-error
+           test-file resource-uri "TODO" "IN-PROGRESS")
+          ;; Verify buffer still has unsaved changes
+          (with-current-buffer buffer
+            (should (buffer-modified-p))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-id ()
   "Test TODO state update fails for non-existent UUID."
