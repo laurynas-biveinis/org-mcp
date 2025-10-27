@@ -1209,25 +1209,30 @@ IDS-TO-REGISTER is optional list of IDs to register for the temp file."
       (org-mcp-test--verify-file-matches test-file expected-content-regex))))
 
 (defun org-mcp-test--call-rename-headline-expecting-error
-    (test-file uri current-title new-title)
+    (initial-content headline-path-or-uri current-title new-title)
   "Call org-rename-headline tool expecting an error and verify file unchanged.
-TEST-FILE is the test file path to verify remains unchanged.
-URI is the URI to rename.
+INITIAL-CONTENT is the initial Org file content.
+HEADLINE-PATH-OR-URI is either a headline path fragment or full URI.
 CURRENT-TITLE is the current title for validation.
 NEW-TITLE is the new title to set."
-  (org-mcp-test--assert-error-and-file
-   test-file
-   (let* ((params
-           `((uri . ,uri)
-             (current_title . ,current-title)
-             (new_title . ,new-title)))
-          (request
-            (mcp-server-lib-create-tools-call-request
-             "org-rename-headline" 1 params))
-          (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
-          (result (mcp-server-lib-ert-process-tool-response response)))
-     ;; If we get here, the tool succeeded when we expected failure
-     (error "Expected error but got success: %s" result))))
+  (org-mcp-test--with-temp-org-files
+      ((test-file initial-content))
+    (let ((uri (if (string-prefix-p "org-" headline-path-or-uri)
+                   headline-path-or-uri
+                 (format "org-headline://%s#%s" test-file headline-path-or-uri))))
+      (org-mcp-test--assert-error-and-file
+       test-file
+       (let* ((params
+               `((uri . ,uri)
+                 (current_title . ,current-title)
+                 (new_title . ,new-title)))
+              (request
+                (mcp-server-lib-create-tools-call-request
+                 "org-rename-headline" 1 params))
+              (response (mcp-server-lib-process-jsonrpc-parsed request mcp-server-lib-ert-server-id))
+              (result (mcp-server-lib-ert-process-tool-response response)))
+         ;; If we get here, the tool succeeded when we expected failure
+         (error "Expected error but got success: %s" result))))))
 
 (defun org-mcp-test--read-resource-expecting-error
     (uri expected-error-message)
@@ -1589,14 +1594,11 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
 INITIAL-CONTENT is the Org content to test with.
 HEADLINE-TITLE is the current headline to rename.
 NEW-TITLE is the invalid new title that should be rejected."
-  (org-mcp-test--with-temp-org-files
-   ((test-file initial-content))
-   (let ((resource-uri
-          (format "org-headline://%s#%s"
-                  test-file
-                  (url-hexify-string headline-title))))
-     (org-mcp-test--call-rename-headline-expecting-error
-      test-file resource-uri headline-title new-title))))
+  (org-mcp-test--call-rename-headline-expecting-error
+   initial-content
+   (url-hexify-string headline-title)
+   headline-title
+   new-title))
 
 (ert-deftest org-mcp-test-file-resource-not-in-list-after-disable ()
   "Test that resources are unregistered after `org-mcp-disable'."
@@ -2442,15 +2444,12 @@ This is valid Org-mode syntax and should be allowed."
 
 (ert-deftest org-mcp-test-rename-headline-title-mismatch ()
   "Test that rename fails when current title doesn't match."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-simple-todo))
-    (let ((org-todo-keywords '((sequence "TODO" "|" "DONE"))))
-      ;; Try to rename with wrong current title
-      (let* ((resource-uri
-              (format "org-headline://%s#Original%%20Task"
-                      test-file)))
-        (org-mcp-test--call-rename-headline-expecting-error
-         test-file resource-uri "Wrong Title" "Updated Task")))))
+  (let ((org-todo-keywords '((sequence "TODO" "|" "DONE"))))
+    (org-mcp-test--call-rename-headline-expecting-error
+     org-mcp-test--content-simple-todo
+     "Original%20Task"
+     "Wrong Title"
+     "Updated Task")))
 
 (ert-deftest org-mcp-test-rename-headline-preserve-tags ()
   "Test that renaming preserves tags."
@@ -2476,22 +2475,16 @@ This is valid Org-mode syntax and should be allowed."
   "Test correct headline path navigation in nested structures.
 Verifies that the implementation correctly navigates nested headline
 paths and only matches headlines at the appropriate hierarchy level."
-  (let ((initial-content org-mcp-test--content-wrong-levels))
-    (org-mcp-test--with-temp-org-files
-        ((test-file initial-content))
-      ;; Try to rename "First Parent/Target Headline"
-      ;; But there's no Target Headline under First Parent!
-      ;; The function should fail, but it might incorrectly
-      ;; find Third Parent's Target Headline
-      (let* ((resource-uri
-              (format "org-headline://%s#First%%20Parent/Target%%20Headline"
-                      test-file)))
-        ;; This should throw an error because First Parent has no Target Headline
-        (org-mcp-test--call-rename-headline-expecting-error
-         test-file
-         resource-uri
-         "Target Headline"
-         "Renamed Target Headline")))))
+  ;; Try to rename "First Parent/Target Headline"
+  ;; But there's no Target Headline under First Parent!
+  ;; The function should fail, but it might incorrectly
+  ;; find Third Parent's Target Headline
+  ;; This should throw an error because First Parent has no Target Headline
+  (org-mcp-test--call-rename-headline-expecting-error
+   org-mcp-test--content-wrong-levels
+   "First%20Parent/Target%20Headline"
+   "Target Headline"
+   "Renamed Target Headline"))
 
 (ert-deftest org-mcp-test-rename-headline-by-id ()
   "Test renaming a headline accessed by org-id URI."
@@ -2505,16 +2498,13 @@ paths and only matches headlines at the appropriate hierarchy level."
 
 (ert-deftest org-mcp-test-rename-headline-id-not-found ()
   "Test error when ID doesn't exist."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-nested-siblings))
-    (let ((org-id-track-globally nil)
-          (org-id-locations-file nil))
-      ;; Try to rename non-existent ID
-      (org-mcp-test--call-rename-headline-expecting-error
-       test-file
-       "org-id://non-existent-id-12345"
-       "Whatever"
-       "Should Fail"))))
+  (let ((org-id-track-globally nil)
+        (org-id-locations-file nil))
+    (org-mcp-test--call-rename-headline-expecting-error
+     org-mcp-test--content-nested-siblings
+     "org-id://non-existent-id-12345"
+     "Whatever"
+     "Should Fail")))
 
 (ert-deftest org-mcp-test-rename-headline-with-slash ()
   "Test renaming a headline containing a slash character.
