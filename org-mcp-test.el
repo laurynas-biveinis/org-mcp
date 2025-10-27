@@ -743,13 +743,18 @@ Second child content.
    org-mcp-test--content-with-id-id)
   "Pattern for org-read-by-id tool result.")
 
+(defconst org-mcp-test--content-id-resource-id
+  "12345678-abcd-efgh-ijkl-1234567890ab"
+  "ID value for org-mcp-test--content-id-resource.")
+
 (defconst org-mcp-test--content-id-resource
-  (concat
-   "* Section with ID\n"
-   ":PROPERTIES:\n"
-   ":ID: 12345678-abcd-efgh-ijkl-1234567890ab\n"
-   ":END:\n"
-   "Content of section with ID.")
+  (format
+   "* Section with ID
+:PROPERTIES:
+:ID: %s
+:END:
+Content of section with ID."
+   org-mcp-test--content-id-resource-id)
   "Content for ID resource tests.")
 
 (defconst org-mcp-test--content-headline-resource
@@ -1325,11 +1330,13 @@ FILE is the file path to read the outline from."
 
 ;; Helper functions for testing org-read-by-id MCP tool
 
-(defun org-mcp-test--call-read-by-id (uuid)
-  "Call org-read-by-id tool via JSON-RPC and return the result.
-UUID is the ID property of the headline to read."
-  (let ((params `((uuid . ,uuid))))
-    (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
+(defun org-mcp-test--call-read-by-id-and-check (uuid expected-pattern)
+  "Call org-read-by-id tool via JSON-RPC and verify the result.
+UUID is the ID property of the headline to read.
+EXPECTED-PATTERN is a regex pattern the result should match."
+  (let* ((params `((uuid . ,uuid)))
+         (result-text (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
+    (should (string-match-p expected-pattern result-text))))
 
 ;; Helper functions for testing MCP resources
 
@@ -2540,36 +2547,41 @@ Without BEGIN_SRC"
 
 (ert-deftest org-mcp-test-edit-body-reject-mismatched-blocks ()
   "Test org-edit-body rejects newBody with mismatched blocks."
-  (org-mcp-test--with-id-setup test-file
-      org-mcp-test--content-nested-siblings
-      `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Second child content."
-     "Text here
+  (org-mcp-test--with-id-setup
+   test-file
+   org-mcp-test--content-nested-siblings
+   `(,org-mcp-test--content-with-id-id)
+   (org-mcp-test--call-edit-body-expecting-error
+    test-file
+    org-mcp-test--content-with-id-uri
+    "Second child content."
+    "Text here
 #+BEGIN_QUOTE
 Some quote
 #+END_EXAMPLE"
-     nil)))
+    nil)))
 
-;;; Resource template workaround tool tests
+;; org-read-file tests
 
 (ert-deftest org-mcp-test-tool-read-file ()
   "Test org-read-file tool returns same content as file resource."
   (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-nested-siblings))
-    (let ((result-text (org-mcp-test--call-read-file test-file)))
-      (should (string= result-text org-mcp-test--content-nested-siblings)))))
+   ((test-file org-mcp-test--content-nested-siblings))
+   (let ((result-text (org-mcp-test--call-read-file test-file)))
+     (should (string= result-text org-mcp-test--content-nested-siblings)))))
+
+;; org-read-outline tests
 
 (ert-deftest org-mcp-test-tool-read-outline ()
   "Test org-read-outline tool returns valid JSON outline structure."
   (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-nested-siblings))
-    (let* ((result (org-mcp-test--call-read-outline test-file))
-           (headings (alist-get 'headings result)))
-      (should (= (length headings) 1))
-      (should (string= (alist-get 'title (aref headings 0)) "Parent Task")))))
+   ((test-file org-mcp-test--content-nested-siblings))
+   (let* ((result (org-mcp-test--call-read-outline test-file))
+          (headings (alist-get 'headings result)))
+     (should (= (length headings) 1))
+     (should (string= (alist-get 'title (aref headings 0)) "Parent Task")))))
+
+;; org-read-headline test
 
 (ert-deftest org-mcp-test-tool-read-headline-empty-path ()
   "Test org-read-headline with empty headline_path signals validation error."
@@ -2597,12 +2609,9 @@ Some quote
   (org-mcp-test--with-id-setup
    test-file org-mcp-test--content-nested-siblings
    `(,org-mcp-test--content-with-id-id)
-   (let ((result-text
-          (org-mcp-test--call-read-by-id org-mcp-test--content-with-id-id)))
-     (should
-      (string-match-p
-       org-mcp-test--pattern-tool-read-by-id
-       result-text)))))
+   (org-mcp-test--call-read-by-id-and-check
+    org-mcp-test--content-with-id-id
+    org-mcp-test--pattern-tool-read-by-id)))
 
 ;; Resource tests
 
@@ -2829,8 +2838,8 @@ Some quote
   "Test that ID resource returns content for valid ID."
   (org-mcp-test--with-id-setup
    test-file org-mcp-test--content-id-resource
-   `("12345678-abcd-efgh-ijkl-1234567890ab")
-   (let ((uri "org-id://12345678-abcd-efgh-ijkl-1234567890ab"))
+   `(,org-mcp-test--content-id-resource-id)
+   (let ((uri (format "org-id://%s" org-mcp-test--content-id-resource-id)))
      (org-mcp-test--verify-resource-read
       uri
       org-mcp-test--content-id-resource))))
@@ -2848,21 +2857,16 @@ Some quote
   ;; Create two files - one allowed, one not
   (org-mcp-test--with-temp-org-files
    ((allowed-file "* Allowed\n")
-    (other-file
-     (concat
-      "* Section with ID\n"
-      ":PROPERTIES:\n"
-      ":ID: test-id-789\n"
-      ":END:\n"
-      "This file is not in allowed list.")))
+    (other-file org-mcp-test--content-id-resource))
    (org-mcp-test--with-id-tracking
     (list allowed-file)
-    `(("test-id-789" . ,other-file))
-    (let ((uri "org-id://test-id-789"))
+    `((,org-mcp-test--content-id-resource-id . ,other-file))
+    (let ((uri (format "org-id://%s" org-mcp-test--content-id-resource-id)))
       ;; Should get an error for file not allowed
       (org-mcp-test--read-resource-expecting-error
        uri
-       (format "'%s': the referenced file not in allowed list" "test-id-789"))))))
+       (format "'%s': the referenced file not in allowed list"
+               org-mcp-test--content-id-resource-id))))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
