@@ -340,6 +340,19 @@ Second child content.
    "\n?$")
   "Pattern for TODO with body text.")
 
+(defconst org-mcp-test--regex-todo-with-literal-block-end
+  (concat
+   "^\\* TODO Task with literal END_SRC +:work:\n"
+   "\\(?: *:PROPERTIES:\n"
+   " *:ID: +[^\n]+\n"
+   " *:END:\n\\)?"
+   "Example of source block:\n"
+   "#\\+BEGIN_EXAMPLE\n"
+   "#\\+END_SRC\n"
+   "#\\+END_EXAMPLE\n"
+   "Text after\\.$")
+  "Pattern for TODO with body containing literal END_SRC inside EXAMPLE block.")
+
 (defconst org-mcp-test--regex-todo-after-sibling
   (concat
    "^#\\+TITLE: My Org Document\n\n"
@@ -2000,30 +2013,26 @@ A single asterisk without space is not a valid Org headline."
   "Test that adding TODO with body containing unbalanced block is rejected.
 Unbalanced blocks like #+BEGIN_EXAMPLE without #+END_EXAMPLE should be
 rejected in TODO body content."
-  (let ((body-with-unbalanced-block
-         "Here's an example:\n#+BEGIN_EXAMPLE\nsome code\nMore text after block"))
-    ;; Should reject unbalanced blocks
-    (org-mcp-test--call-add-todo-expecting-error
-     org-mcp-test--content-empty nil nil
-     "Task with unbalanced block"
-     "TODO"
-     '("work")
-     body-with-unbalanced-block
-     (format "org-headline://%s#" test-file))))
+  ;; Should reject unbalanced blocks
+  (org-mcp-test--call-add-todo-expecting-error
+   org-mcp-test--content-empty nil nil
+   "Task with unbalanced block"
+   "TODO"
+   '("work")
+   "Here's an example:\n#+BEGIN_EXAMPLE\nsome code\nMore text after block"
+   (format "org-headline://%s#" test-file)))
 
 (ert-deftest org-mcp-test-add-todo-body-with-unbalanced-end-block ()
   "Test that adding TODO with body containing unbalanced END block is rejected.
 An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
-  (let ((body-with-unbalanced-end
-         "Some text before\n#+END_EXAMPLE\nMore text after"))
-    ;; Should reject unbalanced END blocks
-    (org-mcp-test--call-add-todo-expecting-error
-     org-mcp-test--content-empty nil nil
-     "Task with unbalanced END block"
-     "TODO"
-     '("work")
-     body-with-unbalanced-end
-     (format "org-headline://%s#" test-file))))
+  ;; Should reject unbalanced END blocks
+  (org-mcp-test--call-add-todo-expecting-error
+   org-mcp-test--content-empty nil nil
+   "Task with unbalanced END block"
+   "TODO"
+   '("work")
+   "Some text before\n#+END_EXAMPLE\nMore text after"
+   (format "org-headline://%s#" test-file)))
 
 (ert-deftest org-mcp-test-add-todo-body-with-literal-block-end ()
   "Test that TODO body with END_SRC inside EXAMPLE block is accepted.
@@ -2039,16 +2048,7 @@ This is valid Org-mode syntax and should be allowed."
    (format "org-headline://%s#" test-file)
    nil
    (file-name-nondirectory test-file)
-   (concat
-    "^\\* TODO Task with literal END_SRC +:work:\n"
-    "\\(?: *:PROPERTIES:\n"
-    " *:ID: +[^\n]+\n"
-    " *:END:\n\\)?"
-    "Example of source block:\n"
-    "#\\+BEGIN_EXAMPLE\n"
-    "#\\+END_SRC\n"
-    "#\\+END_EXAMPLE\n"
-    "Text after\\.$")))
+   org-mcp-test--regex-todo-with-literal-block-end))
 
 (ert-deftest org-mcp-test-add-todo-after-sibling ()
   "Test adding TODO after a specific sibling."
@@ -2158,6 +2158,8 @@ This is valid Org-mode syntax and should be allowed."
    nil ; no afterUri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-without-tags))
+
+;; org-rename-headline tests
 
 (ert-deftest org-mcp-test-rename-headline-simple ()
   "Test renaming a simple TODO headline."
