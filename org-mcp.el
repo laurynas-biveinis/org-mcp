@@ -300,11 +300,121 @@ Returns the full path if allowed, signals an error otherwise."
 
 (defun org-mcp--generate-outline (file-path)
   "Generate JSON outline structure for FILE-PATH."
-  (org-mcp--with-org-file file-path
-    (let ((headings (org-mcp--extract-headings)))
-      `((headings . ,headings)))))
+  (org-mcp--with-org-file
+   file-path
+   (let ((headings (org-mcp--extract-headings)))
+     `((headings . ,headings)))))
+
+(defun org-mcp--decode-file-path (encoded-path)
+  "Decode special characters from ENCODED-PATH.
+Specifically decodes %23 back to #."
+  (replace-regexp-in-string "%23" "#" encoded-path))
+
+(defun org-mcp--split-headline-uri (path-after-protocol)
+  "Split PATH-AFTER-PROTOCOL into (file-path . headline-path).
+PATH-AFTER-PROTOCOL is the part after `org-headline://'.
+Returns (FILE . HEADLINE) where FILE is the decoded file path and
+HEADLINE is the part after the fragment separator.
+File paths with # characters should be encoded as %23."
+  (if-let* ((hash-pos (string-match "#" path-after-protocol)))
+    (cons
+     (org-mcp--decode-file-path
+      (substring path-after-protocol 0 hash-pos))
+     (substring path-after-protocol (1+ hash-pos)))
+    (cons (org-mcp--decode-file-path path-after-protocol) nil)))
+
+(defun org-mcp--parse-resource-uri (uri)
+  "Parse URI and return (file-path . headline-path).
+Validates file access and returns expanded file path."
+  (let (file-path
+        headline-path)
+    (org-mcp--with-uri-prefix-dispatch
+        uri
+      ;; Handle org-headline:// URIs
+      (let* ((split-result (org-mcp--split-headline-uri headline))
+             (filename (car split-result))
+             (headline-path-str (cdr split-result))
+             (allowed-file (org-mcp--validate-file-access filename)))
+        (setq file-path (expand-file-name allowed-file))
+        (setq headline-path
+              (when headline-path-str
+                (mapcar
+                 #'url-unhex-string
+                 (split-string headline-path-str "/")))))
+      ;; Handle org-id:// URIs
+      (progn
+        (setq file-path (org-mcp--find-allowed-file-with-id id))
+        (setq headline-path (list id))))
+    (cons file-path headline-path)))
+
+(defun org-mcp--navigate-to-headline (headline-path)
+  "Navigate to headline in HEADLINE-PATH.
+HEADLINE-PATH is a list of headline titles forming a path.
+Returns t if found, nil otherwise.  Point is left at the headline."
+  (catch 'not-found
+    (let ((search-start (point-min))
+          (search-end (point-max))
+          (current-level 0)
+          (found nil)
+          (path-index 0))
+      (dolist (target-title headline-path)
+        (setq found nil)
+        (goto-char search-start)
+        (while (and (not found)
+                    (re-search-forward "^\\*+ " search-end t))
+          (let ((title (org-get-heading t t t t))
+                (level (org-current-level)))
+            (when (and (string= title target-title)
+                       (or (= current-level 0)
+                           (= level (1+ current-level))))
+              (setq found t)
+              (setq current-level level)
+              ;; Limit search to this subtree for nesting
+              (when (< (1+ path-index) (length headline-path))
+                (setq search-start (point))
+                (setq search-end
+                      (save-excursion
+                        (org-end-of-subtree t t)
+                        (point)))))))
+        (unless found
+          (throw 'not-found nil))
+        (setq path-index (1+ path-index))))
+    t))
+
+(defun org-mcp--extract-headline-content ()
+  "Extract content of current headline including the headline itself.
+Point should be at the headline."
+  (let ((start (line-beginning-position)))
+    (org-end-of-subtree t t)
+    ;; Remove trailing newline if present
+    (when (and (> (point) start) (= (char-before) ?\n))
+      (backward-char))
+    (buffer-substring-no-properties start (point))))
+
+(defun org-mcp--get-headline-content (file-path headline-path)
+  "Get content for headline at HEADLINE-PATH in FILE-PATH.
+HEADLINE-PATH is a list of headline titles to traverse.
+Returns the content string or nil if not found."
+  (org-mcp--with-org-file
+   file-path
+   (when (org-mcp--navigate-to-headline headline-path)
+     (org-mcp--extract-headline-content))))
 
 ;; Tool handlers
+
+(defun org-mcp--goto-headline-from-uri (headline-path is-id)
+  "Navigate to headline based on HEADLINE-PATH and IS-ID flag.
+If IS-ID is non-nil, treats HEADLINE-PATH as containing an ID.
+Otherwise, navigates using HEADLINE-PATH as title hierarchy."
+  (if is-id
+      ;; ID case - headline-path contains single ID
+      (let ((pos (org-find-property "ID" (car headline-path))))
+        (if pos
+            (goto-char pos)
+          (org-mcp--id-not-found-error (car headline-path))))
+    ;; Path case - headline-path contains title hierarchy
+    (unless (org-mcp--navigate-to-headline headline-path)
+      (org-mcp--headline-not-found-error headline-path))))
 
 (defun org-mcp--tool-get-todo-config ()
   "Return the TODO keyword configuration."
@@ -373,24 +483,6 @@ PARAMS is an alist containing the filename parameter."
          (allowed-file (org-mcp--validate-file-access filename)))
     (org-mcp--read-file (expand-file-name allowed-file))))
 
-(defun org-mcp--decode-file-path (encoded-path)
-  "Decode special characters from ENCODED-PATH.
-Specifically decodes %23 back to #."
-  (replace-regexp-in-string "%23" "#" encoded-path))
-
-(defun org-mcp--split-headline-uri (path-after-protocol)
-  "Split PATH-AFTER-PROTOCOL into (file-path . headline-path).
-PATH-AFTER-PROTOCOL is the part after `org-headline://'.
-Returns (FILE . HEADLINE) where FILE is the decoded file path and
-HEADLINE is the part after the fragment separator.
-File paths with # characters should be encoded as %23."
-  (if-let* ((hash-pos (string-match "#" path-after-protocol)))
-    (cons
-     (org-mcp--decode-file-path
-      (substring path-after-protocol 0 hash-pos))
-     (substring path-after-protocol (1+ hash-pos)))
-    (cons (org-mcp--decode-file-path path-after-protocol) nil)))
-
 (defun org-mcp--handle-headline-resource (params)
   "Handler for org-headline://{filename} template.
 PARAMS is an alist containing the filename parameter.
@@ -417,121 +509,28 @@ The filename parameter includes both file and headline path."
       ;; No headline path means get entire file
       (org-mcp--read-file allowed-file))))
 
-(defun org-mcp--navigate-to-headline (headline-path)
-  "Navigate to headline in HEADLINE-PATH.
-HEADLINE-PATH is a list of headline titles forming a path.
-Returns t if found, nil otherwise.  Point is left at the headline."
-  (catch 'not-found
-    (let ((search-start (point-min))
-          (search-end (point-max))
-          (current-level 0)
-          (found nil)
-          (path-index 0))
-      (dolist (target-title headline-path)
-        (setq found nil)
-        (goto-char search-start)
-        (while (and (not found)
-                    (re-search-forward "^\\*+ " search-end t))
-          (let ((title (org-get-heading t t t t))
-                (level (org-current-level)))
-            (when (and (string= title target-title)
-                       (or (= current-level 0)
-                           (= level (1+ current-level))))
-              (setq found t)
-              (setq current-level level)
-              ;; Limit search to this subtree for nesting
-              (when (< (1+ path-index) (length headline-path))
-                (setq search-start (point))
-                (setq search-end
-                      (save-excursion
-                        (org-end-of-subtree t t)
-                        (point)))))))
-        (unless found
-          (throw 'not-found nil))
-        (setq path-index (1+ path-index))))
-    t))
-
-(defun org-mcp--get-headline-content (file-path headline-path)
-  "Get content for headline at HEADLINE-PATH in FILE-PATH.
-HEADLINE-PATH is a list of headline titles to traverse.
-Returns the content string or nil if not found."
-  (org-mcp--with-org-file file-path
-    (when (org-mcp--navigate-to-headline headline-path)
-      (org-mcp--extract-headline-content))))
-
-(defun org-mcp--extract-headline-content ()
-  "Extract content of current headline including the headline itself.
-Point should be at the headline."
-  (let ((start (line-beginning-position)))
-    (org-end-of-subtree t t)
-    ;; Remove trailing newline if present
-    (when (and (> (point) start) (= (char-before) ?\n))
-      (backward-char))
-    (buffer-substring-no-properties start (point))))
-
-
 (defun org-mcp--handle-id-resource (params)
   "Handler for org-id://{uuid} template.
 PARAMS is an alist containing the uuid parameter."
   (let* ((id (alist-get "uuid" params nil nil #'string=))
-         ;; Use org-id-find-id-file to get the file path
          (file-path (org-id-find-id-file id)))
     (unless file-path
       (org-mcp--resource-not-found-error "ID" id))
-    ;; Validate that the file is in allowed list
     (let ((allowed-file (org-mcp--find-allowed-file file-path)))
       (unless allowed-file
         (org-mcp--resource-file-access-error id))
-      ;; Get the content
       (org-mcp--get-content-by-id allowed-file id))))
-
-(defun org-mcp--parse-resource-uri (uri)
-  "Parse URI and return (file-path . headline-path).
-Validates file access and returns expanded file path."
-  (let (file-path
-        headline-path)
-    (org-mcp--with-uri-prefix-dispatch
-        uri
-      ;; Handle org-headline:// URIs
-      (let* ((split-result (org-mcp--split-headline-uri headline))
-             (filename (car split-result))
-             (headline-path-str (cdr split-result))
-             (allowed-file (org-mcp--validate-file-access filename)))
-        (setq file-path (expand-file-name allowed-file))
-        (setq headline-path
-              (when headline-path-str
-                (mapcar
-                 #'url-unhex-string
-                 (split-string headline-path-str "/")))))
-      ;; Handle org-id:// URIs
-      (progn
-        (setq file-path (org-mcp--find-allowed-file-with-id id))
-        (setq headline-path (list id))))
-    (cons file-path headline-path)))
-
-(defun org-mcp--goto-headline-from-uri (headline-path is-id)
-  "Navigate to headline based on HEADLINE-PATH and IS-ID flag.
-If IS-ID is non-nil, treats HEADLINE-PATH as containing an ID.
-Otherwise, navigates using HEADLINE-PATH as title hierarchy."
-  (if is-id
-      ;; ID case - headline-path contains single ID
-      (let ((pos (org-find-property "ID" (car headline-path))))
-        (if pos
-            (goto-char pos)
-          (org-mcp--id-not-found-error (car headline-path))))
-    ;; Path case - headline-path contains title hierarchy
-    (unless (org-mcp--navigate-to-headline headline-path)
-      (org-mcp--headline-not-found-error headline-path))))
 
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
 Returns the content string or nil if not found."
-  (org-mcp--with-org-file file-path
-    ;; Find the headline with this ID
-    (let ((pos (org-find-property "ID" id)))
-      (when pos
-        (goto-char pos)
-        (org-mcp--extract-headline-content)))))
+  (org-mcp--with-org-file
+   file-path
+   ;; Find the headline with this ID
+   (let ((pos (org-find-property "ID" id)))
+     (when pos
+       (goto-char pos)
+       (org-mcp--extract-headline-content)))))
 
 (defun org-mcp--get-valid-todo-states ()
   "Get list of valid TODO states without annotations or separators.
