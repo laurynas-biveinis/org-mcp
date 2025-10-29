@@ -779,36 +779,36 @@ Throws validation error if AFTER-URI is invalid or sibling not found."
         ;; Parse afterUri to get the ID
         (let ((after-id
                (org-mcp--extract-uri-suffix
-                after-uri org-mcp--uri-id-prefix)))
+                after-uri org-mcp--uri-id-prefix))
+              (found nil))
           (unless after-id
             (org-mcp--tool-validation-error
              "Field after_uri is not %s: %s"
              org-mcp--uri-id-prefix after-uri))
           ;; Find the sibling with the specified ID
           (org-back-to-heading t) ;; At parent
-          (let ((found nil))
-            ;; Search sibling in parent's subtree
-            ;; Move to first child
-            (if (org-goto-first-child)
-                (progn
-                  ;; Now search among siblings
-                  (while (and (not found) (< (point) parent-end))
-                    (let ((current-id (org-entry-get nil "ID")))
-                      (when (string= current-id after-id)
-                        (setq found t)
-                        ;; Move to sibling end
-                        (org-end-of-subtree t t)))
-                    (unless found
-                      ;; Move to next sibling
-                      (unless (org-get-next-sibling)
-                        ;; No more siblings
-                        (goto-char parent-end)))))
-              ;; No children
-              (goto-char parent-end))
-            (unless found
-              (org-mcp--tool-validation-error
-               "Sibling with ID %s not found under parent"
-               after-id)))))
+          ;; Search sibling in parent's subtree
+          ;; Move to first child
+          (if (org-goto-first-child)
+              (progn
+                ;; Now search among siblings
+                (while (and (not found) (< (point) parent-end))
+                  (let ((current-id (org-entry-get nil "ID")))
+                    (when (string= current-id after-id)
+                      (setq found t)
+                      ;; Move to sibling end
+                      (org-end-of-subtree t t)))
+                  (unless found
+                    ;; Move to next sibling
+                    (unless (org-get-next-sibling)
+                      ;; No more siblings
+                      (goto-char parent-end)))))
+            ;; No children
+            (goto-char parent-end))
+          (unless found
+            (org-mcp--tool-validation-error
+             "Sibling with ID %s not found under parent"
+             after-id))))
     ;; No after_uri - insert at end of parent's subtree
     (org-end-of-subtree t t)
     ;; If we're at the start of a sibling, go back one char
