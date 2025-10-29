@@ -50,6 +50,59 @@
 (defconst org-mcp--uri-id-prefix "org-id://"
   "URI prefix for ID-based resources.")
 
+;; Error handling helpers
+
+(defun org-mcp--headline-not-found-error (headline-path)
+  "Throw error for HEADLINE-PATH not found."
+  (mcp-server-lib-tool-throw
+   (format "Cannot find headline: %s"
+           (mapconcat #'identity headline-path "/"))))
+
+(defun org-mcp--id-not-found-error (id)
+  "Throw error for ID not found."
+  (mcp-server-lib-tool-throw (format "Cannot find ID '%s'" id)))
+
+(defun org-mcp--tool-validation-error (message &rest args)
+  "Throw validation error MESSAGE with ARGS for tool operations."
+  (mcp-server-lib-tool-throw (apply #'format message args)))
+
+(defun org-mcp--resource-validation-error (message &rest args)
+  "Signal validation error MESSAGE with ARGS for resource operations."
+  (mcp-server-lib-resource-signal-error
+   mcp-server-lib-jsonrpc-error-invalid-params
+   (apply #'format message args)))
+
+(defun org-mcp--state-mismatch-error (expected found context)
+  "Throw state mismatch error.
+EXPECTED is the expected value, FOUND is the actual value,
+CONTEXT describes what is being compared."
+  (mcp-server-lib-tool-throw
+   (format "%s mismatch: expected '%s', found '%s'"
+           context expected found)))
+
+(defun org-mcp--resource-not-found-error (resource-type identifier)
+  "Signal resource not found error.
+RESOURCE-TYPE is the type of resource,
+IDENTIFIER is the resource identifier."
+  (mcp-server-lib-resource-signal-error
+   mcp-server-lib-jsonrpc-error-invalid-params
+   (format "Cannot find %s: '%s'" resource-type identifier)))
+
+(defun org-mcp--tool-file-access-error (locator)
+  "Throw file access error for tool operations.
+LOCATOR is the resource identifier (file path or ID) that was
+denied access."
+  (mcp-server-lib-tool-throw
+   (format "'%s': the referenced file not in allowed list" locator)))
+
+(defun org-mcp--resource-file-access-error (locator)
+  "Signal file access error for resource operations.
+LOCATOR is the resource identifier (file path or ID) that was
+denied access."
+  (mcp-server-lib-resource-signal-error
+   mcp-server-lib-jsonrpc-error-invalid-params
+   (format "'%s': the referenced file not in allowed list" locator)))
+
 ;; Helpers
 
 (defun org-mcp--read-file (file-path)
@@ -160,58 +213,28 @@ BODY can access FILE-PATH, OPERATION, and RESPONSE-ALIST as variables."
        ,@body
        (org-mcp--complete-and-save ,file-path ,response-alist))))
 
-;; Error handling helpers
-
-(defun org-mcp--headline-not-found-error (headline-path)
-  "Throw error for HEADLINE-PATH not found."
-  (mcp-server-lib-tool-throw
-   (format "Cannot find headline: %s"
-           (mapconcat #'identity headline-path "/"))))
-
-(defun org-mcp--id-not-found-error (id)
-  "Throw error for ID not found."
-  (mcp-server-lib-tool-throw (format "Cannot find ID '%s'" id)))
-
-(defun org-mcp--tool-validation-error (message &rest args)
-  "Throw validation error MESSAGE with ARGS for tool operations."
-  (mcp-server-lib-tool-throw (apply #'format message args)))
-
-(defun org-mcp--resource-validation-error (message &rest args)
-  "Signal validation error MESSAGE with ARGS for resource operations."
-  (mcp-server-lib-resource-signal-error
-   mcp-server-lib-jsonrpc-error-invalid-params
-   (apply #'format message args)))
-
-(defun org-mcp--state-mismatch-error (expected found context)
-  "Throw state mismatch error.
-EXPECTED is the expected value, FOUND is the actual value,
-CONTEXT describes what is being compared."
-  (mcp-server-lib-tool-throw
-   (format "%s mismatch: expected '%s', found '%s'"
-           context expected found)))
-
-(defun org-mcp--resource-not-found-error (resource-type identifier)
-  "Signal resource not found error.
-RESOURCE-TYPE is the type of resource,
-IDENTIFIER is the resource identifier."
-  (mcp-server-lib-resource-signal-error
-   mcp-server-lib-jsonrpc-error-invalid-params
-   (format "Cannot find %s: '%s'" resource-type identifier)))
-
-(defun org-mcp--tool-file-access-error (locator)
-  "Throw file access error for tool operations.
-LOCATOR is the resource identifier (file path or ID) that was
-denied access."
-  (mcp-server-lib-tool-throw
-   (format "'%s': the referenced file not in allowed list" locator)))
-
-(defun org-mcp--resource-file-access-error (locator)
-  "Signal file access error for resource operations.
-LOCATOR is the resource identifier (file path or ID) that was
-denied access."
-  (mcp-server-lib-resource-signal-error
-   mcp-server-lib-jsonrpc-error-invalid-params
-   (format "'%s': the referenced file not in allowed list" locator)))
+(defun org-mcp--find-allowed-file-with-id (id)
+  "Find an allowed file containing the Org ID.
+First looks up in the org-id database, then validates the file is in
+the allowed list.
+Returns the expanded file path if found and allowed,
+nil otherwise.
+Throws a tool error if ID exists but file is not allowed."
+  (if-let* ((id-file (org-id-find-id-file id)))
+    ;; ID found in database, check if file is allowed
+    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+      allowed-file
+      (org-mcp--tool-file-access-error id))
+    ;; ID not in database - might not exist or DB is stale
+    ;; Fall back to searching allowed files manually
+    (let ((found-file nil))
+      (dolist (allowed-file org-mcp-allowed-files)
+        (unless found-file
+          (when (file-exists-p allowed-file)
+            (org-mcp--with-org-file allowed-file
+              (when (org-find-property "ID" id)
+                (setq found-file (expand-file-name allowed-file)))))))
+      found-file)))
 
 (defmacro org-mcp--with-uri-prefix-dispatch
     (uri headline-body id-body)
@@ -284,29 +307,6 @@ Throws an error if neither prefix matches."
 (defun org-mcp--tool-get-allowed-files ()
   "Return the list of allowed Org files."
   (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
-
-(defun org-mcp--find-allowed-file-with-id (id)
-  "Find an allowed file containing the Org ID.
-First looks up in the org-id database, then validates the file is in
-the allowed list.
-Returns the expanded file path if found and allowed,
-nil otherwise.
-Throws a tool error if ID exists but file is not allowed."
-  (if-let* ((id-file (org-id-find-id-file id)))
-    ;; ID found in database, check if file is allowed
-    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-      allowed-file
-      (org-mcp--tool-file-access-error id))
-    ;; ID not in database - might not exist or DB is stale
-    ;; Fall back to searching allowed files manually
-    (let ((found-file nil))
-      (dolist (allowed-file org-mcp-allowed-files)
-        (unless found-file
-          (when (file-exists-p allowed-file)
-            (org-mcp--with-org-file allowed-file
-              (when (org-find-property "ID" id)
-                (setq found-file (expand-file-name allowed-file)))))))
-      found-file)))
 
 (defun org-mcp--validate-file-access (filename)
   "Validate that FILENAME is in the allowed list.
