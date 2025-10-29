@@ -122,6 +122,18 @@ RESPONSE-ALIST is an alist of response fields."
       response-alist
       `((uri . ,(concat org-mcp--uri-id-prefix id)))))))
 
+(defun org-mcp--fail-if-modified (file-path operation)
+  "Error if FILE-PATH has unsaved changes in any buffer.
+OPERATION is a string describing the operation for error messages."
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (and (buffer-file-name)
+                 (string= (buffer-file-name) file-path)
+                 (buffer-modified-p))
+        (org-mcp--tool-validation-error
+         "Cannot %s: file has unsaved changes in buffer"
+         operation)))))
+
 (defmacro org-mcp--with-org-file (file-path &rest body)
   "Execute BODY in a temp Org buffer with file at FILE-PATH."
   (declare (indent 1) (debug (form body)))
@@ -132,16 +144,21 @@ RESPONSE-ALIST is an alist of response fields."
      (goto-char (point-min))
      ,@body))
 
-(defmacro org-mcp--with-org-file-buffer
-    (file-path response-alist &rest body)
-  "Execute BODY in a temp buffer set up for Org file at FILE-PATH.
-After BODY executes, saves the buffer and returns the result of
-`org-mcp--complete-and-save' with FILE-PATH and RESPONSE-ALIST.
-BODY can access FILE-PATH and RESPONSE-ALIST as variables."
-  (declare (indent 2) (debug (form form body)))
-  `(org-mcp--with-org-file ,file-path
-     ,@body
-     (org-mcp--complete-and-save ,file-path ,response-alist)))
+(defmacro org-mcp--modify-and-save
+    (file-path operation response-alist &rest body)
+  "Execute BODY to modify Org file at FILE-PATH, then save and return response.
+First validates that FILE-PATH has no unsaved changes (using OPERATION for
+error messages).  Then executes BODY in a temp buffer set up for the Org file.
+After BODY executes, creates an Org ID if needed, saves the buffer, refreshes
+any visiting buffers, and returns the result of `org-mcp--complete-and-save'
+with FILE-PATH and RESPONSE-ALIST.
+BODY can access FILE-PATH, OPERATION, and RESPONSE-ALIST as variables."
+  (declare (indent 3) (debug (form form form body)))
+  `(progn
+     (org-mcp--fail-if-modified ,file-path ,operation)
+     (org-mcp--with-org-file ,file-path
+       ,@body
+       (org-mcp--complete-and-save ,file-path ,response-alist))))
 
 ;; Error handling helpers
 
@@ -534,18 +551,6 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
     (unless (org-mcp--navigate-to-headline headline-path)
       (org-mcp--headline-not-found-error headline-path))))
 
-(defun org-mcp--check-buffer-modifications (file-path operation)
-  "Check if FILE-PATH has unsaved change in any buffer.
-OPERATION is a string describing the operation for error messages."
-  (dolist (buf (buffer-list))
-    (with-current-buffer buf
-      (when (and (buffer-file-name)
-                 (string= (buffer-file-name) file-path)
-                 (buffer-modified-p))
-        (org-mcp--tool-validation-error
-         "Cannot %s: file has unsaved changes in buffer"
-         operation)))))
-
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
 Returns the content string or nil if not found."
@@ -593,13 +598,12 @@ MCP Parameters:
          "Invalid TODO state: '%s' - valid states: %s"
          new_state (mapconcat #'identity valid-states ", "))))
 
-    ;; Check for unsaved changes
-    (org-mcp--check-buffer-modifications file-path "update")
-
     ;; Update the TODO state in the file
-    (org-mcp--with-org-file-buffer file-path
-        `((previous_state . ,(or current_state ""))
-          (new_state . ,new_state))
+    (org-mcp--modify-and-save file-path "update"
+                              `((previous_state
+                                 .
+                                 ,(or current_state ""))
+                                (new_state . ,new_state))
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
 
@@ -842,13 +846,13 @@ MCP Parameters:
             (org-mcp--id-not-found-error id))
           (setq file-path allowed-file)))
 
-      ;; Check for unsaved changes
-      (org-mcp--check-buffer-modifications file-path "add TODO")
-
       ;; Add the TODO item
-      (org-mcp--with-org-file-buffer file-path
-          `((file . ,(file-name-nondirectory file-path))
-            (title . ,title))
+      (org-mcp--modify-and-save file-path "add TODO"
+                                `((file
+                                   .
+                                   ,(file-name-nondirectory
+                                     file-path))
+                                  (title . ,title))
         ;; Navigate to insertion point based on parentUri
         (let ((parent-path nil)
               (parent-id nil)
@@ -1041,12 +1045,10 @@ MCP Parameters:
          (file-path (car parsed))
          (headline-path (cdr parsed)))
 
-    ;; Check for unsaved changes
-    (org-mcp--check-buffer-modifications file-path "rename")
-
     ;; Rename the headline in the file
-    (org-mcp--with-org-file-buffer file-path
-        `((previous_title . ,current_title) (new_title . ,new_title))
+    (org-mcp--modify-and-save file-path "rename"
+                              `((previous_title . ,current_title)
+                                (new_title . ,new_title))
       ;; Navigate to the headline
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
@@ -1101,11 +1103,8 @@ Special behavior:
            (file-path (car parsed))
            (headline-path (cdr parsed)))
 
-      ;; Check for unsaved changes
-      (org-mcp--check-buffer-modifications file-path "edit body")
-
       ;; Process the file
-      (org-mcp--with-org-file-buffer file-path nil
+      (org-mcp--modify-and-save file-path "edit body" nil
         ;; Navigate to the headline
         (org-mcp--goto-headline-from-uri
          headline-path

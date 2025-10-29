@@ -3,7 +3,7 @@
 
 ((emacs-lisp-mode . ((fill-column . 70)
                      (indent-tabs-mode . nil)
-                     (elisp-lint-indent-specs . ((org-mcp--with-org-file-buffer . 2)
+                     (elisp-lint-indent-specs . ((org-mcp--modify-and-save . 3)
                                                  (org-mcp--with-uri-prefix-dispatch . 1)
                                                  (org-mcp-test--assert-error-and-file . 1)
                                                  (org-mcp-test--with-enabled . defun)
