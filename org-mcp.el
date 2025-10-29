@@ -252,20 +252,17 @@ ID-BODY is executed when URI starts with `org-mcp--uri-id-prefix',
 with the URI after the prefix bound to `id'.
 Throws an error if neither prefix matches."
   (declare (indent 1))
-  `(let ((headline
-          (org-mcp--extract-uri-suffix
-           ,uri org-mcp--uri-headline-prefix))
-         (id
-          (org-mcp--extract-uri-suffix ,uri org-mcp--uri-id-prefix)))
-     (cond
-      (headline
-       ,headline-body)
-      (id
-       ,id-body)
-      (t
+  `(if-let* ((id
+              (org-mcp--extract-uri-suffix
+               ,uri org-mcp--uri-id-prefix)))
+     ,id-body
+     (if-let* ((headline
+                (org-mcp--extract-uri-suffix
+                 ,uri org-mcp--uri-headline-prefix)))
+       ,headline-body
        (org-mcp--tool-validation-error
         "Invalid resource URI format: %s"
-        ,uri)))))
+        ,uri))))
 
 (defun org-mcp--validate-file-access (filename)
   "Validate that FILENAME is in the allowed list.
