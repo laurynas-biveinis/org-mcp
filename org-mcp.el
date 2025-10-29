@@ -64,12 +64,14 @@ Handles symlinks and path variations by normalizing both paths."
   (string= (file-truename path1) (file-truename path2)))
 
 (defun org-mcp--find-allowed-file (filename)
-  "Find FILENAME in `org-mcp-allowed-files' and return the full path.
+  "Find FILENAME in `org-mcp-allowed-files' and return the expanded path.
 Returns nil if the file is not in the allowed list."
-  (cl-find
-   (file-truename filename)
-   org-mcp-allowed-files
-   :test #'org-mcp--paths-equal-p))
+  (when-let* ((found
+               (cl-find
+                (file-truename filename)
+                org-mcp-allowed-files
+                :test #'org-mcp--paths-equal-p)))
+    (expand-file-name found)))
 
 (defun org-mcp--refresh-file-buffers (file-path)
   "Refresh all buffers visiting FILE-PATH.
@@ -275,7 +277,7 @@ Throws a tool error if ID exists but file is not allowed."
   (if-let* ((id-file (org-id-find-id-file id)))
     ;; ID found in database, check if file is allowed
     (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-      (expand-file-name allowed-file)
+      allowed-file
       (org-mcp--tool-file-access-error id))
     ;; ID not in database - might not exist or DB is stale
     ;; Fall back to searching allowed files manually
@@ -420,13 +422,13 @@ The filename parameter includes both file and headline path."
     (if headline-path
         (let ((content
                (org-mcp--get-headline-content
-                (expand-file-name allowed-file) headline-path)))
+                allowed-file headline-path)))
           (unless content
             (org-mcp--resource-not-found-error
              "headline" (mapconcat #'identity headline-path "/")))
           content)
       ;; No headline path means get entire file
-      (org-mcp--read-file (expand-file-name allowed-file)))))
+      (org-mcp--read-file allowed-file))))
 
 (defun org-mcp--navigate-to-headline (headline-path)
   "Navigate to headline in HEADLINE-PATH.
@@ -497,8 +499,7 @@ PARAMS is an alist containing the uuid parameter."
       (unless allowed-file
         (org-mcp--resource-file-access-error id))
       ;; Get the content
-      (org-mcp--get-content-by-id
-       (expand-file-name allowed-file) id))))
+      (org-mcp--get-content-by-id allowed-file id))))
 
 (defun org-mcp--parse-resource-uri (uri)
   "Parse URI and return (file-path . headline-path).
