@@ -63,6 +63,14 @@
 Handles symlinks and path variations by normalizing both paths."
   (string= (file-truename path1) (file-truename path2)))
 
+(defun org-mcp--find-allowed-file (filename)
+  "Find FILENAME in `org-mcp-allowed-files' and return the full path.
+Returns nil if the file is not in the allowed list."
+  (cl-find
+   (file-truename filename)
+   org-mcp-allowed-files
+   :test #'org-mcp--paths-equal-p))
+
 (defun org-mcp--refresh-file-buffers (file-path)
   "Refresh all buffers visiting FILE-PATH.
 Preserves narrowing state across the refresh operation."
@@ -256,16 +264,6 @@ Throws an error if neither prefix matches."
 (defun org-mcp--tool-get-allowed-files ()
   "Return the list of allowed Org files."
   (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
-
-(defun org-mcp--find-allowed-file (filename)
-  "Find FILENAME in `org-mcp-allowed-files' and return the full path.
-FILENAME must be an absolute path.
-Returns nil if the file is not in the allowed list."
-  (let ((normalized-filename (file-truename filename)))
-    (cl-find
-     normalized-filename
-     org-mcp-allowed-files
-     :test #'org-mcp--paths-equal-p)))
 
 (defun org-mcp--find-allowed-file-with-id (id)
   "Find an allowed file containing the Org ID.
