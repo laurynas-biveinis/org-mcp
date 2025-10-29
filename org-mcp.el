@@ -300,10 +300,9 @@ Returns the full path if allowed, signals an error otherwise."
 
 (defun org-mcp--generate-outline (file-path)
   "Generate JSON outline structure for FILE-PATH."
-  (org-mcp--with-org-file
-   file-path
-   (let ((headings (org-mcp--extract-headings)))
-     `((headings . ,headings)))))
+  (org-mcp--with-org-file file-path
+    (let ((headings (org-mcp--extract-headings)))
+      `((headings . ,headings)))))
 
 (defun org-mcp--decode-file-path (encoded-path)
   "Decode special characters from ENCODED-PATH.
@@ -395,12 +394,9 @@ Point should be at the headline."
   "Get content for headline at HEADLINE-PATH in FILE-PATH.
 HEADLINE-PATH is a list of headline titles to traverse.
 Returns the content string or nil if not found."
-  (org-mcp--with-org-file
-   file-path
-   (when (org-mcp--navigate-to-headline headline-path)
-     (org-mcp--extract-headline-content))))
-
-;; Tool handlers
+  (org-mcp--with-org-file file-path
+    (when (org-mcp--navigate-to-headline headline-path)
+      (org-mcp--extract-headline-content))))
 
 (defun org-mcp--goto-headline-from-uri (headline-path is-id)
   "Navigate to headline based on HEADLINE-PATH and IS-ID flag.
@@ -408,13 +404,14 @@ If IS-ID is non-nil, treats HEADLINE-PATH as containing an ID.
 Otherwise, navigates using HEADLINE-PATH as title hierarchy."
   (if is-id
       ;; ID case - headline-path contains single ID
-      (let ((pos (org-find-property "ID" (car headline-path))))
-        (if pos
-            (goto-char pos)
-          (org-mcp--id-not-found-error (car headline-path))))
+      (if-let* ((pos (org-find-property "ID" (car headline-path))))
+        (goto-char pos)
+        (org-mcp--id-not-found-error (car headline-path)))
     ;; Path case - headline-path contains title hierarchy
     (unless (org-mcp--navigate-to-headline headline-path)
       (org-mcp--headline-not-found-error headline-path))))
+
+;; Tool handlers
 
 (defun org-mcp--tool-get-todo-config ()
   "Return the TODO keyword configuration."
@@ -524,13 +521,10 @@ PARAMS is an alist containing the uuid parameter."
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
 Returns the content string or nil if not found."
-  (org-mcp--with-org-file
-   file-path
-   ;; Find the headline with this ID
-   (let ((pos (org-find-property "ID" id)))
-     (when pos
-       (goto-char pos)
-       (org-mcp--extract-headline-content)))))
+  (org-mcp--with-org-file file-path
+    (when-let* ((pos (org-find-property "ID" id)))
+      (goto-char pos)
+      (org-mcp--extract-headline-content))))
 
 (defun org-mcp--get-valid-todo-states ()
   "Get list of valid TODO states without annotations or separators.
