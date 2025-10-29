@@ -1,18 +1,19 @@
 ;;; org-mcp.el --- MCP server for Org-mode -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2024 org-mcp contributors
+;; Copyright (C) 2025 Laurynas Biveinis
 
-;; Author: org-mcp contributors
-;; Keywords: tools, convenience
+;; Author: Laurynas Biveinis <laurynas.biveinis@gmail.com>
+;; Keywords: convenience, files, matching, outlines
 ;; Version: 0.9.0
 ;; Package-Requires: ((emacs "27.1") (mcp-server-lib "0.2.0"))
 ;; Homepage: https://github.com/laurynas-biveinis/org-mcp
 
+;; This file is NOT part of GNU Emacs.
+
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
 ;; published by the Free Software Foundation, either version 3 of the
-;; License, or
-;; (at your option) any later version.
+;; License, or (at your option) any later version.
 
 ;; This program is distributed in the hope that it will be useful,
 ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -20,14 +21,12 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see
-;; <https://www.gnu.org/licenses/>.
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
 ;; This package implements a Model Context Protocol (MCP) server for
-;; Org-mode, enabling AI assistants and other MCP clients to interact
-;; with Org files.
+;; Org-mode.
 
 ;;; Code:
 
@@ -42,17 +41,65 @@
   :type '(repeat file)
   :group 'org-mcp)
 
-;; Internal constants for URI prefixes
-(defconst org-mcp--org-headline-prefix "org-headline://"
-  "URI prefix for headline resources.")
-
-(defconst org-mcp--org-id-prefix "org-id://"
-  "URI prefix for ID-based resources.")
-
 (defconst org-mcp--server-id "org-mcp"
   "Server ID for org-mcp MCP server registration.")
 
-;; Helper macros
+(defconst org-mcp--uri-headline-prefix "org-headline://"
+  "URI prefix for headline resources.")
+
+(defconst org-mcp--uri-id-prefix "org-id://"
+  "URI prefix for ID-based resources.")
+
+;; Helpers
+
+(defun org-mcp--refresh-file-buffers (file-path)
+  "Refresh all buffers visiting FILE-PATH.
+Preserves narrowing state across the refresh operation."
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when-let* ((buf-file (buffer-file-name)))
+        (when (string= buf-file file-path)
+          (let ((was-narrowed (buffer-narrowed-p))
+                (narrow-start nil)
+                (narrow-end nil))
+            ;; Save narrowing markers if narrowed
+            (when was-narrowed
+              (setq narrow-start (point-min-marker))
+              (setq narrow-end (point-max-marker)))
+            (condition-case err
+                (unwind-protect
+                    (progn
+                      (revert-buffer t t t)
+                      ;; Check if buffer was modified by hooks
+                      (when (buffer-modified-p)
+                        (org-mcp--tool-validation-error
+                         "Buffer for file %s was modified during \
+refresh.  Check your `after-revert-hook' for functions that modify the \
+buffer"
+                         file-path)))
+                  ;; Restore narrowing even if revert fails
+                  (when was-narrowed
+                    (narrow-to-region narrow-start narrow-end)))
+              (error
+               (org-mcp--tool-validation-error
+                "Failed to refresh buffer for file %s: %s. Check your \
+Emacs hooks (`before-revert-hook', `after-revert-hook', \
+`revert-buffer-function')"
+                file-path (error-message-string err))))))))))
+
+(defun org-mcp--complete-and-save (file-path response-alist)
+  "Create ID if needed, save FILE-PATH, return JSON.
+Creates or gets an Org ID for the current headline and returns it.
+FILE-PATH is the path to save the buffer contents to.
+RESPONSE-ALIST is an alist of response fields."
+  (let ((id (org-id-get-create)))
+    (write-region (point-min) (point-max) file-path)
+    (org-mcp--refresh-file-buffers file-path)
+    (json-encode
+     (append
+      `((success . t))
+      response-alist
+      `((uri . ,(concat org-mcp--uri-id-prefix id)))))))
 
 (defmacro org-mcp--with-org-file-buffer
     (file-path response-alist &rest body)
@@ -135,17 +182,17 @@ denied access."
 URI is the URI string to dispatch on.
 HEADLINE-BODY is executed for org-headline:// URIs,
 with the URI after the prefix bound to `uri-without-prefix'.
-ID-BODY is executed when URI starts with `org-mcp--org-id-prefix',
+ID-BODY is executed when URI starts with `org-mcp--uri-id-prefix',
 with the URI after the prefix bound to `id'.
 Throws an error if neither prefix matches."
   (declare (indent 1))
   `(cond
-    ((string-prefix-p org-mcp--org-headline-prefix ,uri)
+    ((string-prefix-p org-mcp--uri-headline-prefix ,uri)
      (let ((uri-without-prefix
-            (substring ,uri (length org-mcp--org-headline-prefix))))
+            (substring ,uri (length org-mcp--uri-headline-prefix))))
        ,headline-body))
-    ((string-prefix-p org-mcp--org-id-prefix ,uri)
-     (let ((id (substring ,uri (length org-mcp--org-id-prefix))))
+    ((string-prefix-p org-mcp--uri-id-prefix ,uri)
+     (let ((id (substring ,uri (length org-mcp--uri-id-prefix))))
        ,id-body))
     (t
      (org-mcp--tool-validation-error "Invalid resource URI format: %s"
@@ -510,45 +557,6 @@ OPERATION is a string describing the operation for error messages."
          "Cannot %s: file has unsaved changes in buffer"
          operation)))))
 
-(defun org-mcp--refresh-file-buffers (file-path)
-  "Refresh all buffers visiting FILE-PATH.
-Preserves narrowing state across the refresh operation."
-  (dolist (buf (buffer-list))
-    (with-current-buffer buf
-      (when (and (buffer-file-name)
-                 (string= (buffer-file-name) file-path))
-        (let ((was-narrowed (buffer-narrowed-p))
-              (narrow-start nil)
-              (narrow-end nil))
-          ;; Save narrowing markers if narrowed
-          (when was-narrowed
-            (setq narrow-start (point-min-marker))
-            (setq narrow-end (point-max-marker)))
-          (condition-case err
-              (unwind-protect
-                  (progn
-                    (revert-buffer t t t)
-                    ;; Check if buffer was modified by hooks
-                    (when (buffer-modified-p)
-                      (org-mcp--tool-validation-error
-                       "Buffer for file %s was modified during \
-refresh.  Check your `after-revert-hook' for \
-functions that modify the buffer"
-                       file-path)))
-                ;; Restore narrowing even if revert fails
-                (when (and was-narrowed
-                           narrow-start
-                           narrow-end
-                           (marker-position narrow-start)
-                           (marker-position narrow-end))
-                  (narrow-to-region narrow-start narrow-end)))
-            (error
-             (org-mcp--tool-validation-error
-              "Failed to refresh buffer for file %s: %s. Check \
-your Emacs hooks (before-revert-hook, after-revert-hook, \
-revert-buffer-function)"
-              file-path (error-message-string err)))))))))
-
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
 Returns the content string or nil if not found."
@@ -561,20 +569,6 @@ Returns the content string or nil if not found."
       (when pos
         (goto-char pos)
         (org-mcp--extract-headline-content)))))
-
-(defun org-mcp--complete-and-save (file-path response-alist)
-  "Create ID if needed, save FILE-PATH, return JSON.
-Creates or gets an Org ID for the current headline and returns it.
-FILE-PATH is the path to save the buffer contents to.
-RESPONSE-ALIST is an alist of response fields."
-  (let ((id (org-id-get-create)))
-    (write-region (point-min) (point-max) file-path)
-    (org-mcp--refresh-file-buffers file-path)
-    (json-encode
-     (append
-      `((success . t))
-      response-alist
-      `((uri . ,(concat org-mcp--org-id-prefix id)))))))
 
 (defun org-mcp--get-valid-todo-states ()
   "Get list of valid TODO states without annotations or separators.
@@ -621,7 +615,7 @@ MCP Parameters:
         `((previous_state . ,(or current_state ""))
           (new_state . ,new_state))
       (org-mcp--goto-headline-from-uri
-       headline-path (string-prefix-p org-mcp--org-id-prefix uri))
+       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
 
       ;; Check current state matches
       (beginning-of-line)
@@ -1070,7 +1064,7 @@ MCP Parameters:
         `((previous_title . ,current_title) (new_title . ,new_title))
       ;; Navigate to the headline
       (org-mcp--goto-headline-from-uri
-       headline-path (string-prefix-p org-mcp--org-id-prefix uri))
+       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
 
       ;; Verify current title matches
       (beginning-of-line)
@@ -1130,7 +1124,7 @@ Special behavior:
         ;; Navigate to the headline
         (org-mcp--goto-headline-from-uri
          headline-path
-         (string-prefix-p org-mcp--org-id-prefix resource_uri))
+         (string-prefix-p org-mcp--uri-id-prefix resource_uri))
 
         ;; Validate headlines in newBody based on current level
         (org-mcp--validate-body-no-headlines
@@ -1724,7 +1718,7 @@ Error cases:
    :mime-type "application/json"
    :server-id org-mcp--server-id)
   (mcp-server-lib-register-resource
-   (concat org-mcp--org-headline-prefix "{filename}")
+   (concat org-mcp--uri-headline-prefix "{filename}")
    #'org-mcp--handle-headline-resource
    :name "Org headline content"
    :description
@@ -1790,7 +1784,7 @@ Error cases:
    :mime-type "text/plain"
    :server-id org-mcp--server-id)
   (mcp-server-lib-register-resource
-   (concat org-mcp--org-id-prefix "{uuid}")
+   (concat org-mcp--uri-id-prefix "{uuid}")
    #'org-mcp--handle-id-resource
    :name "Org node by ID"
    :description
@@ -1873,10 +1867,10 @@ Error cases:
    "org-outline://{filename}" org-mcp--server-id)
   (mcp-server-lib-unregister-resource
    (concat
-    org-mcp--org-headline-prefix "{filename}")
+    org-mcp--uri-headline-prefix "{filename}")
    org-mcp--server-id)
   (mcp-server-lib-unregister-resource
-   (concat org-mcp--org-id-prefix "{uuid}") org-mcp--server-id))
+   (concat org-mcp--uri-id-prefix "{uuid}") org-mcp--server-id))
 
 (provide 'org-mcp)
 ;;; org-mcp.el ends here

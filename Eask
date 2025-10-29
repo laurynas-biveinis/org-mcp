@@ -5,7 +5,7 @@
          "MCP server for Org-mode")
 
 (website-url "https://github.com/laurynas-biveinis/org-mcp")
-(keywords "tools" "convenience")
+(keywords "convenience" "files" "matching" "outlines")
 
 (source "melpa")
 
