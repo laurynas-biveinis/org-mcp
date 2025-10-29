@@ -126,6 +126,7 @@ RESPONSE-ALIST is an alist of response fields."
   "Execute BODY in a temp Org buffer with file at FILE-PATH."
   (declare (indent 1) (debug (form body)))
   `(with-temp-buffer
+     (set-visited-file-name ,file-path t)
      (insert-file-contents ,file-path)
      (org-mode)
      (goto-char (point-min))
@@ -134,20 +135,11 @@ RESPONSE-ALIST is an alist of response fields."
 (defmacro org-mcp--with-org-file-buffer
     (file-path response-alist &rest body)
   "Execute BODY in a temp buffer set up for Org file at FILE-PATH.
-Sets up the buffer with:
-- File name set for org-id functionality
-- File contents loaded
-- `org-mode' enabled
-- Point at beginning of buffer
 After BODY executes, saves the buffer and returns the result of
 `org-mcp--complete-and-save' with FILE-PATH and RESPONSE-ALIST.
 BODY can access FILE-PATH and RESPONSE-ALIST as variables."
   (declare (indent 2) (debug (form form body)))
-  `(with-temp-buffer
-     (set-visited-file-name ,file-path t)
-     (insert-file-contents ,file-path)
-     (org-mode)
-     (goto-char (point-min))
+  `(org-mcp--with-org-file ,file-path
      ,@body
      (org-mcp--complete-and-save ,file-path ,response-alist)))
 
