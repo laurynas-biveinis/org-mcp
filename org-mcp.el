@@ -648,6 +648,49 @@ Assumes point is in an Org buffer."
         (forward-line)))
     nil))
 
+(defun org-mcp--ensure-newline ()
+  "Ensure there is a newline or buffer start before point."
+  (unless (or (bobp) (looking-back "\n" 1))
+    (insert "\n")))
+
+(defun org-mcp--insert-heading (title parent-level)
+  "Insert a new Org heading at the appropriate level.
+TITLE is the headline text to insert.
+PARENT-LEVEL is the parent's heading level (integer) if inserting as a child,
+or nil if inserting at top-level.
+Assumes point is positioned where the heading should be inserted.
+After insertion, point is left on the heading line at end-of-line."
+  (if parent-level
+      ;; We're inside a parent
+      (progn
+        (org-mcp--ensure-newline)
+        ;; Insert heading manually at parent level + 1
+        ;; We don't use `org-insert-heading' because when parent has no
+        ;; children, it creates a sibling of the parent instead of a
+        ;; child
+        (let ((heading-start (point)))
+          (insert
+           (concat (make-string (1+ parent-level) ?*) " " title "\n"))
+          ;; Set point to heading for `org-todo' and `org-set-tags'
+          (goto-char heading-start)
+          (end-of-line)))
+    ;; Top-level heading
+    ;; Check if there are no headlines yet (empty buffer or only
+    ;; headers before us)
+    (let ((has-headline
+           (save-excursion
+             (goto-char (point-min))
+             (re-search-forward "^\\*+ " nil t))))
+      (if (not has-headline)
+          (progn
+            (org-mcp--ensure-newline)
+            (insert "* "))
+        ;; Has headlines - use `org-insert-heading'
+        ;; Ensure proper spacing before inserting
+        (org-mcp--ensure-newline)
+        (org-insert-heading nil nil t))
+      (insert title))))
+
 ;; Tool handlers
 
 (defun org-mcp--tool-get-todo-config ()
@@ -892,98 +935,59 @@ MCP Parameters:
         (setq parent-id id)))
 
     ;; Add the TODO item
-    (org-mcp--modify-and-save
-     file-path "add TODO"
-     `((file
-        .
-        ,(file-name-nondirectory file-path))
-       (title . ,title))
-     (let ((parent-level
-            (org-mcp--navigate-to-parent-or-top
-             parent-path parent-id)))
+    (org-mcp--modify-and-save file-path "add TODO"
+                              `((file
+                                 .
+                                 ,(file-name-nondirectory file-path))
+                                (title . ,title))
+      (let ((parent-level
+             (org-mcp--navigate-to-parent-or-top
+              parent-path parent-id)))
 
-       ;; Handle positioning after navigation to parent
-       (when (or parent-path parent-id)
-         (let ((parent-end
-                (save-excursion
-                  (org-end-of-subtree t t)
-                  (point))))
-           (org-mcp--position-for-new-child after_uri parent-end)))
+        ;; Handle positioning after navigation to parent
+        (when (or parent-path parent-id)
+          (let ((parent-end
+                 (save-excursion
+                   (org-end-of-subtree t t)
+                   (point))))
+            (org-mcp--position-for-new-child after_uri parent-end)))
 
-       ;; Validate body before inserting heading
-       ;; Calculate the target level for validation
-       (let ((target-level
-              (if (or parent-path parent-id)
-                  ;; Child heading - parent level + 1
-                  (1+ (or parent-level 0))
-                ;; Top-level heading
-                1)))
+        ;; Validate body before inserting heading
+        ;; Calculate the target level for validation
+        (let ((target-level
+               (if (or parent-path parent-id)
+                   ;; Child heading - parent level + 1
+                   (1+ (or parent-level 0))
+                 ;; Top-level heading
+                 1)))
 
-         ;; Validate body content if provided
-         (when body
-           (org-mcp--validate-body-no-headlines body target-level)
-           (org-mcp--validate-body-no-unbalanced-blocks body)))
+          ;; Validate body content if provided
+          (when body
+            (org-mcp--validate-body-no-headlines body target-level)
+            (org-mcp--validate-body-no-unbalanced-blocks body)))
 
-       ;; Insert the new heading
-       (if (or parent-path parent-id)
-           ;; We're inside a parent
-           (progn
-             ;; Ensure we have a newline before inserting
-             (unless (or (bobp) (looking-back "\n" 1))
-               (insert "\n"))
-             ;; Insert heading manually at parent level + 1
-             ;; We don't use org-insert-heading because when parent
-             ;; has no children, org-insert-heading creates a
-             ;; sibling of the parent instead of a child
-             (let ((heading-start (point)))
-               (insert
-                (concat
-                 (make-string (1+ parent-level) ?*) " " title "\n"))
-               ;; Set point to heading for org-todo and
-               ;; org-set-tags
-               (goto-char heading-start)
-               (end-of-line)))
-         ;; Top-level heading
-         (progn
-           ;; Check if there are no headlines yet
-           ;; (empty buffer or only headers before us)
-           (let ((has-headline
-                  (save-excursion
-                    (goto-char (point-min))
-                    (re-search-forward "^\\*+ " nil t))))
-             (if (not has-headline)
-                 (progn
-                   (unless (or (bobp) (looking-back "\n" 1))
-                     (insert "\n"))
-                   (insert "* "))
-               (progn
-                 ;; Has headlines - use org-insert-heading
-                 ;; Ensure proper spacing before inserting
-                 (unless (or (bobp) (looking-back "\n" 1))
-                   (insert "\n"))
-                 (org-insert-heading nil nil t)))
-             (insert title))))
-       ;; Set the TODO state using Org functions
-       (org-todo todo_state)
+        ;; Insert the new heading
+        (org-mcp--insert-heading title parent-level)
 
-       ;; Set tags using Org functions
-       (when tag-list
-         (org-set-tags tag-list))
+        (org-todo todo_state)
 
-       ;; Add body if provided
-       (if body
-           (progn
-             (end-of-line)
-             (insert "\n" body)
-             (unless (string-suffix-p "\n" body)
-               (insert "\n"))
-             ;; Move back to the heading for org-id-get-create
-             ;; org-id-get-create requires point to be on a heading
-             (org-back-to-heading t))
-         ;; No body - ensure newline after heading
-         (end-of-line)
-         (unless (looking-at "\n")
-           (insert "\n")))))))
+        (when tag-list
+          (org-set-tags tag-list))
+
+        ;; Add body if provided
+        (if body
+            (progn
+              (end-of-line)
+              (insert "\n" body)
+              (unless (string-suffix-p "\n" body)
+                (insert "\n"))
+              ;; Move back to the heading for org-id-get-create
+              ;; org-id-get-create requires point to be on a heading
+              (org-back-to-heading t))
+          ;; No body - ensure newline after heading
+          (end-of-line)
+          (unless (looking-at "\n")
+            (insert "\n")))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
