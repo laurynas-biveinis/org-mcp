@@ -622,6 +622,32 @@ Throws error for invalid types."
    (t
     (org-mcp--tool-validation-error "Invalid tags format: %s" tags))))
 
+(defun org-mcp--navigate-to-parent-or-top (parent-path parent-id)
+  "Navigate to parent headline or top of file.
+PARENT-PATH is a list of headline titles (or nil for top-level).
+PARENT-ID is an ID string (or nil).
+Returns parent level (integer) if parent exists, nil for top-level.
+Assumes point is in an Org buffer."
+  (if (or parent-path parent-id)
+      (progn
+        (org-mcp--goto-headline-from-uri
+         (or (and parent-id (list parent-id)) parent-path) parent-id)
+        ;; Save parent level before moving point
+        ;; Ensure we're at the beginning of headline
+        (org-back-to-heading t)
+        (org-current-level))
+    ;; No parent specified - top level
+    ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
+    (while (and (not (eobp)) (looking-at "^#\\+"))
+      (forward-line))
+    ;; Position correctly: if blank line after headers,
+    ;; skip it; if headline immediately after, stay
+    (when (and (not (eobp)) (looking-at "^[ \t]*$"))
+      ;; On blank line after headers, skip
+      (while (and (not (eobp)) (looking-at "^[ \t]*$"))
+        (forward-line)))
+    nil))
+
 ;; Tool handlers
 
 (defun org-mcp--tool-get-todo-config ()
@@ -842,148 +868,122 @@ MCP Parameters:
                 - org-id://{id}"
   (org-mcp--validate-headline-title title)
   (org-mcp--validate-todo-state todo_state)
-  (let ((tag-list (org-mcp--validate-and-normalize-tags tags))
-        file-path)
+  (let* ((tag-list (org-mcp--validate-and-normalize-tags tags))
+         file-path
+         parent-path
+         parent-id)
 
-    ;; Parse parent URI to get file path
+    ;; Parse parent URI once to extract file-path and parent location
     (org-mcp--with-uri-prefix-dispatch
         parent_uri
       ;; Handle org-headline:// URIs
       (let* ((split-result (org-mcp--split-headline-uri headline))
              (filename (car split-result))
+             (path-str (cdr split-result))
              (allowed-file (org-mcp--validate-file-access filename)))
-        (setq file-path (expand-file-name allowed-file)))
+        (setq file-path (expand-file-name allowed-file))
+        (when (and path-str (> (length path-str) 0))
+          (setq parent-path
+                (mapcar
+                 #'url-unhex-string (split-string path-str "/")))))
       ;; Handle org-id:// URIs
-      (setq file-path (org-mcp--find-allowed-file-with-id id)))
+      (progn
+        (setq file-path (org-mcp--find-allowed-file-with-id id))
+        (setq parent-id id)))
 
     ;; Add the TODO item
-    (org-mcp--modify-and-save file-path "add TODO"
-                              `((file
-                                 .
-                                 ,(file-name-nondirectory file-path))
-                                (title . ,title))
-      ;; Navigate to insertion point based on parentUri
-      (let ((parent-path nil)
-            (parent-id nil)
-            (parent-level nil))
-        ;; Parse parent URI (org-headline:// or org-id://)
-        (org-mcp--with-uri-prefix-dispatch
-            parent_uri
-          ;; org-headline:// format
-          (let* ((split-result (org-mcp--split-headline-uri headline))
-                 (path-str (cdr split-result)))
-            (when (and path-str (> (length path-str) 0))
-              (setq parent-path
-                    (mapcar
-                     #'url-unhex-string
-                     (split-string path-str "/")))))
-          ;; org-id:// format
-          (setq parent-id id))
+    (org-mcp--modify-and-save
+     file-path "add TODO"
+     `((file
+        .
+        ,(file-name-nondirectory file-path))
+       (title . ,title))
+     (let ((parent-level
+            (org-mcp--navigate-to-parent-or-top
+             parent-path parent-id)))
 
-        ;; Navigate to parent if specified
-        (if (or parent-path parent-id)
-            (progn
-              (org-mcp--goto-headline-from-uri
-               (or (and parent-id (list parent-id))
-                   parent-path)
-               parent-id)
-              ;; Save parent level before moving point
-              ;; Ensure we're at the beginning of headline
-              (org-back-to-heading t)
-              (setq parent-level (org-current-level)))
-          ;; No parent specified - top level
-          ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
-          (while (and (not (eobp)) (looking-at "^#\\+"))
-            (forward-line))
-          ;; Position correctly: if blank line after headers,
-          ;; skip it; if headline immediately after, stay
-          (when (and (not (eobp)) (looking-at "^[ \t]*$"))
-            ;; On blank line after headers, skip
-            (while (and (not (eobp)) (looking-at "^[ \t]*$"))
-              (forward-line))))
+       ;; Handle positioning after navigation to parent
+       (when (or parent-path parent-id)
+         (let ((parent-end
+                (save-excursion
+                  (org-end-of-subtree t t)
+                  (point))))
+           (org-mcp--position-for-new-child after_uri parent-end)))
 
-        ;; Handle positioning after navigation to parent
-        (when (or parent-path parent-id)
-          (let ((parent-end
-                 (save-excursion
-                   (org-end-of-subtree t t)
-                   (point))))
-            (org-mcp--position-for-new-child after_uri parent-end)))
+       ;; Validate body before inserting heading
+       ;; Calculate the target level for validation
+       (let ((target-level
+              (if (or parent-path parent-id)
+                  ;; Child heading - parent level + 1
+                  (1+ (or parent-level 0))
+                ;; Top-level heading
+                1)))
 
-        ;; Validate body before inserting heading
-        ;; Calculate the target level for validation
-        (let ((target-level
-               (if (or parent-path parent-id)
-                   ;; Child heading - parent level + 1
-                   (1+ (or parent-level 0))
-                 ;; Top-level heading
-                 1)))
+         ;; Validate body content if provided
+         (when body
+           (org-mcp--validate-body-no-headlines body target-level)
+           (org-mcp--validate-body-no-unbalanced-blocks body)))
 
-          ;; Validate body content if provided
-          (when body
-            (org-mcp--validate-body-no-headlines body target-level)
-            (org-mcp--validate-body-no-unbalanced-blocks body)))
+       ;; Insert the new heading
+       (if (or parent-path parent-id)
+           ;; We're inside a parent
+           (progn
+             ;; Ensure we have a newline before inserting
+             (unless (or (bobp) (looking-back "\n" 1))
+               (insert "\n"))
+             ;; Insert heading manually at parent level + 1
+             ;; We don't use org-insert-heading because when parent
+             ;; has no children, org-insert-heading creates a
+             ;; sibling of the parent instead of a child
+             (let ((heading-start (point)))
+               (insert
+                (concat
+                 (make-string (1+ parent-level) ?*) " " title "\n"))
+               ;; Set point to heading for org-todo and
+               ;; org-set-tags
+               (goto-char heading-start)
+               (end-of-line)))
+         ;; Top-level heading
+         (progn
+           ;; Check if there are no headlines yet
+           ;; (empty buffer or only headers before us)
+           (let ((has-headline
+                  (save-excursion
+                    (goto-char (point-min))
+                    (re-search-forward "^\\*+ " nil t))))
+             (if (not has-headline)
+                 (progn
+                   (unless (or (bobp) (looking-back "\n" 1))
+                     (insert "\n"))
+                   (insert "* "))
+               (progn
+                 ;; Has headlines - use org-insert-heading
+                 ;; Ensure proper spacing before inserting
+                 (unless (or (bobp) (looking-back "\n" 1))
+                   (insert "\n"))
+                 (org-insert-heading nil nil t)))
+             (insert title))))
+       ;; Set the TODO state using Org functions
+       (org-todo todo_state)
 
-        ;; Insert the new heading using Org functions
-        (if (or parent-path parent-id)
-            ;; We're inside a parent
-            (progn
-              ;; Ensure we have a newline before inserting
-              (unless (or (bobp) (looking-back "\n" 1))
-                (insert "\n"))
-              ;; Insert heading manually at parent level + 1
-              ;; We don't use org-insert-heading because when parent
-              ;; has no children, org-insert-heading creates a
-              ;; sibling of the parent instead of a child
-              (let ((heading-start (point)))
-                (insert
-                 (concat
-                  (make-string (1+ parent-level) ?*) " " title "\n"))
-                ;; Set point to heading for org-todo and
-                ;; org-set-tags
-                (goto-char heading-start)
-                (end-of-line)))
-          ;; Top-level heading
-          (progn
-            ;; Check if there are no headlines yet
-            ;; (empty buffer or only headers before us)
-            (let ((has-headline
-                   (save-excursion
-                     (goto-char (point-min))
-                     (re-search-forward "^\\*+ " nil t))))
-              (if (not has-headline)
-                  (progn
-                    (unless (or (bobp) (looking-back "\n" 1))
-                      (insert "\n"))
-                    (insert "* "))
-                (progn
-                  ;; Has headlines - use org-insert-heading
-                  ;; Ensure proper spacing before inserting
-                  (unless (or (bobp) (looking-back "\n" 1))
-                    (insert "\n"))
-                  (org-insert-heading nil nil t)))
-              (insert title))))
-        ;; Set the TODO state using Org functions
-        (org-todo todo_state)
+       ;; Set tags using Org functions
+       (when tag-list
+         (org-set-tags tag-list))
 
-        ;; Set tags using Org functions
-        (when tag-list
-          (org-set-tags tag-list))
-
-        ;; Add body if provided
-        (if body
-            (progn
-              (end-of-line)
-              (insert "\n" body)
-              (unless (string-suffix-p "\n" body)
-                (insert "\n"))
-              ;; Move back to the heading for org-id-get-create
-              ;; org-id-get-create requires point to be on a heading
-              (org-back-to-heading t))
-          ;; No body - ensure newline after heading
-          (end-of-line)
-          (unless (looking-at "\n")
-            (insert "\n")))))))
+       ;; Add body if provided
+       (if body
+           (progn
+             (end-of-line)
+             (insert "\n" body)
+             (unless (string-suffix-p "\n" body)
+               (insert "\n"))
+             ;; Move back to the heading for org-id-get-create
+             ;; org-id-get-create requires point to be on a heading
+             (org-back-to-heading t))
+         ;; No body - ensure newline after heading
+         (end-of-line)
+         (unless (looking-at "\n")
+           (insert "\n")))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
