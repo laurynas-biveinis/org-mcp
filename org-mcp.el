@@ -414,11 +414,10 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
 Returns the content string or nil if not found."
-  (org-mcp--with-org-file
-   file-path
-   (when-let* ((pos (org-find-property "ID" id)))
-     (goto-char pos)
-     (org-mcp--extract-headline-content))))
+  (org-mcp--with-org-file file-path
+    (when-let* ((pos (org-find-property "ID" id)))
+      (goto-char pos)
+      (org-mcp--extract-headline-content))))
 
 (defun org-mcp--validate-todo-state (state)
   "Validate STATE is a valid TODO keyword."
@@ -432,150 +431,47 @@ Returns the content string or nil if not found."
        "Invalid TODO state: '%s' - valid states: %s"
        state (mapconcat #'identity valid-states ", ")))))
 
-;; Tool handlers
-
-(defun org-mcp--tool-get-todo-config ()
-  "Return the TODO keyword configuration."
-  (let ((seq-list '())
-        (sem-list '()))
-    (dolist (seq org-todo-keywords)
-      (let* ((type (car seq))
-             (keywords (cdr seq))
-             (type-str (symbol-name type))
-             (keyword-vec [])
-             (before-bar t))
-        (dolist (kw keywords)
-          (if (string= kw "|")
-              (setq before-bar nil)
-            ;; Check if this is the last keyword and no "|" seen
-            (let ((is-last-no-bar
-                   (and before-bar (equal kw (car (last keywords))))))
-              (when is-last-no-bar
-                (setq keyword-vec (vconcat keyword-vec ["|"])))
-              (push `((state
-                       .
-                       ,(car (org-remove-keyword-keys (list kw))))
-                      (isFinal
-                       . ,(or is-last-no-bar (not before-bar)))
-                      (sequenceType . ,type-str))
-                    sem-list)))
-          (setq keyword-vec (vconcat keyword-vec (vector kw))))
-        (push
-         `((type . ,type-str) (keywords . ,keyword-vec)) seq-list)))
-    (json-encode
-     `((sequences . ,(vconcat (nreverse seq-list)))
-       (semantics . ,(vconcat (nreverse sem-list)))))))
-
-(defun org-mcp--tool-get-tag-config ()
-  "Return the tag configuration as literal Elisp strings."
-  (json-encode
-   `((org-use-tag-inheritance
-      .
-      ,(prin1-to-string org-use-tag-inheritance))
-     (org-tags-exclude-from-inheritance
-      . ,(prin1-to-string org-tags-exclude-from-inheritance))
-     (org-tag-alist . ,(prin1-to-string org-tag-alist))
-     (org-tag-persistent-alist
-      . ,(prin1-to-string org-tag-persistent-alist)))))
-
-(defun org-mcp--tool-get-allowed-files ()
-  "Return the list of allowed Org files."
-  (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
-
-(defun org-mcp--tool-update-todo-state (uri current_state new_state)
-  "Update the TODO state of a headline at URI.
-Creates an Org ID for the headline if one doesn't exist.
-Returns the ID-based URI for the updated headline.
-CURRENT_STATE is the current TODO state (empty string for no state).
-NEW_STATE is the new TODO state to set.
-
-MCP Parameters:
-  uri - URI of the headline
-        Formats:
-          - org-headline://{absolute-path}#{headline-path}
-          - org-id://{id}
-  current_state - Current TODO state (empty string for no state)
-  new_state - New TODO state (must be in `org-todo-keywords')"
-  (let* ((parsed (org-mcp--parse-resource-uri uri))
-         (file-path (car parsed))
-         (headline-path (cdr parsed)))
-    (org-mcp--validate-todo-state new_state)
-    (org-mcp--modify-and-save
-     file-path "update"
-     `((previous_state
-        .
-        ,(or current_state ""))
-       (new_state . ,new_state))
-     (org-mcp--goto-headline-from-uri
-      headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
-
-     ;; Check current state matches
-     (beginning-of-line)
-     (let ((actual-state (org-get-todo-state)))
-       (unless (string= actual-state current_state)
-         (org-mcp--state-mismatch-error
-          (or current_state "(no state)")
-          (or actual-state "(no state)") "State")))
-
-     ;; Update the state
-     (org-todo new_state))))
-
-;; Resource handlers
-
-(defun org-mcp--handle-outline-resource (params)
-  "Handler for org://{filename}/outline template.
-PARAMS is an alist containing the filename parameter."
-  (let* ((filename (alist-get "filename" params nil nil #'string=))
-         (allowed-file (org-mcp--validate-file-access filename))
-         (outline
-          (org-mcp--generate-outline
-           (expand-file-name allowed-file))))
-    (json-encode outline)))
-
-(defun org-mcp--handle-file-resource (params)
-  "Handler for org://{filename} template.
-PARAMS is an alist containing the filename parameter."
-  (let* ((filename (alist-get "filename" params nil nil #'string=))
-         (allowed-file (org-mcp--validate-file-access filename)))
-    (org-mcp--read-file (expand-file-name allowed-file))))
-
-(defun org-mcp--handle-headline-resource (params)
-  "Handler for org-headline://{filename} template.
-PARAMS is an alist containing the filename parameter.
-The filename parameter includes both file and headline path."
-  (let* ((full-path (alist-get "filename" params nil nil #'string=))
-         (split-result (org-mcp--split-headline-uri full-path))
-         (filename (car split-result))
-         (allowed-file (org-mcp--validate-file-access filename))
-         (headline-path-str (cdr split-result))
-         ;; Parse the path (URL-encoded headline path)
-         (headline-path
-          (when headline-path-str
-            (mapcar
-             #'url-unhex-string
-             (split-string headline-path-str "/")))))
-    (if headline-path
-        (let ((content
-               (org-mcp--get-headline-content
-                allowed-file headline-path)))
-          (unless content
-            (org-mcp--resource-not-found-error
-             "headline" (mapconcat #'identity headline-path "/")))
-          content)
-      ;; No headline path means get entire file
-      (org-mcp--read-file allowed-file))))
-
-(defun org-mcp--handle-id-resource (params)
-  "Handler for org-id://{uuid} template.
-PARAMS is an alist containing the uuid parameter."
-  (let* ((id (alist-get "uuid" params nil nil #'string=))
-         (file-path (org-id-find-id-file id)))
-    (unless file-path
-      (org-mcp--resource-not-found-error "ID" id))
-    (let ((allowed-file (org-mcp--find-allowed-file file-path)))
-      (unless allowed-file
-        (org-mcp--resource-file-access-error id))
-      (org-mcp--get-content-by-id allowed-file id))))
+(defun org-mcp--validate-and-normalize-tags (tags)
+  "Validate and normalize TAGS.
+TAGS can be a single tag string or list of tag strings.
+Returns normalized tag list.
+Validates:
+- Tag names follow Org rules (alphanumeric, underscore, at-sign)
+- Tags are in configured tag alist (if configured)
+- Tags don't violate mutual exclusivity groups
+Signals error for invalid tags."
+  (let ((tag-list (org-mcp--normalize-tags-to-list tags))
+        (allowed-tags
+         (append
+          (mapcar
+           #'org-mcp--extract-tag-from-alist-entry org-tag-alist)
+          (mapcar
+           #'org-mcp--extract-tag-from-alist-entry
+           org-tag-persistent-alist))))
+    ;; Remove special keywords like :startgroup
+    (setq allowed-tags
+          (cl-remove-if
+           #'org-mcp--is-tag-group-keyword-p allowed-tags))
+    ;; If tag alists are configured, validate against them
+    (when allowed-tags
+      (dolist (tag tag-list)
+        (unless (member tag allowed-tags)
+          (org-mcp--tool-validation-error
+           "Tag not in configured tag alist: %s"
+           tag))))
+    ;; Always validate tag names follow Org's rules
+    (dolist (tag tag-list)
+      (unless (string-match "^[[:alnum:]_@]+$" tag)
+        (org-mcp--tool-validation-error
+         "Invalid tag name (must be alphanumeric, _, or @): %s"
+         tag)))
+    ;; Validate mutual exclusivity if tag-alist is configured
+    (when org-tag-alist
+      (org-mcp--validate-mutex-tag-groups tag-list org-tag-alist))
+    (when org-tag-persistent-alist
+      (org-mcp--validate-mutex-tag-groups
+       tag-list org-tag-persistent-alist))
+    tag-list))
 
 (defun org-mcp--extract-tag-from-alist-entry (entry)
   "Extract tag name from an `org-tag-alist' ENTRY.
@@ -720,6 +616,150 @@ Throws error for invalid types."
    (t
     (org-mcp--tool-validation-error "Invalid tags format: %s" tags))))
 
+;; Tool handlers
+
+(defun org-mcp--tool-get-todo-config ()
+  "Return the TODO keyword configuration."
+  (let ((seq-list '())
+        (sem-list '()))
+    (dolist (seq org-todo-keywords)
+      (let* ((type (car seq))
+             (keywords (cdr seq))
+             (type-str (symbol-name type))
+             (keyword-vec [])
+             (before-bar t))
+        (dolist (kw keywords)
+          (if (string= kw "|")
+              (setq before-bar nil)
+            ;; Check if this is the last keyword and no "|" seen
+            (let ((is-last-no-bar
+                   (and before-bar (equal kw (car (last keywords))))))
+              (when is-last-no-bar
+                (setq keyword-vec (vconcat keyword-vec ["|"])))
+              (push `((state
+                       .
+                       ,(car (org-remove-keyword-keys (list kw))))
+                      (isFinal
+                       . ,(or is-last-no-bar (not before-bar)))
+                      (sequenceType . ,type-str))
+                    sem-list)))
+          (setq keyword-vec (vconcat keyword-vec (vector kw))))
+        (push
+         `((type . ,type-str) (keywords . ,keyword-vec)) seq-list)))
+    (json-encode
+     `((sequences . ,(vconcat (nreverse seq-list)))
+       (semantics . ,(vconcat (nreverse sem-list)))))))
+
+(defun org-mcp--tool-get-tag-config ()
+  "Return the tag configuration as literal Elisp strings."
+  (json-encode
+   `((org-use-tag-inheritance
+      .
+      ,(prin1-to-string org-use-tag-inheritance))
+     (org-tags-exclude-from-inheritance
+      . ,(prin1-to-string org-tags-exclude-from-inheritance))
+     (org-tag-alist . ,(prin1-to-string org-tag-alist))
+     (org-tag-persistent-alist
+      . ,(prin1-to-string org-tag-persistent-alist)))))
+
+(defun org-mcp--tool-get-allowed-files ()
+  "Return the list of allowed Org files."
+  (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
+
+(defun org-mcp--tool-update-todo-state (uri current_state new_state)
+  "Update the TODO state of a headline at URI.
+Creates an Org ID for the headline if one doesn't exist.
+Returns the ID-based URI for the updated headline.
+CURRENT_STATE is the current TODO state (empty string for no state).
+NEW_STATE is the new TODO state to set.
+
+MCP Parameters:
+  uri - URI of the headline
+        Formats:
+          - org-headline://{absolute-path}#{headline-path}
+          - org-id://{id}
+  current_state - Current TODO state (empty string for no state)
+  new_state - New TODO state (must be in `org-todo-keywords')"
+  (let* ((parsed (org-mcp--parse-resource-uri uri))
+         (file-path (car parsed))
+         (headline-path (cdr parsed)))
+    (org-mcp--validate-todo-state new_state)
+    (org-mcp--modify-and-save file-path "update"
+                              `((previous_state
+                                 .
+                                 ,(or current_state ""))
+                                (new_state . ,new_state))
+      (org-mcp--goto-headline-from-uri
+       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
+
+      ;; Check current state matches
+      (beginning-of-line)
+      (let ((actual-state (org-get-todo-state)))
+        (unless (string= actual-state current_state)
+          (org-mcp--state-mismatch-error
+           (or current_state "(no state)")
+           (or actual-state "(no state)") "State")))
+
+      ;; Update the state
+      (org-todo new_state))))
+
+;; Resource handlers
+
+(defun org-mcp--handle-outline-resource (params)
+  "Handler for org://{filename}/outline template.
+PARAMS is an alist containing the filename parameter."
+  (let* ((filename (alist-get "filename" params nil nil #'string=))
+         (allowed-file (org-mcp--validate-file-access filename))
+         (outline
+          (org-mcp--generate-outline
+           (expand-file-name allowed-file))))
+    (json-encode outline)))
+
+(defun org-mcp--handle-file-resource (params)
+  "Handler for org://{filename} template.
+PARAMS is an alist containing the filename parameter."
+  (let* ((filename (alist-get "filename" params nil nil #'string=))
+         (allowed-file (org-mcp--validate-file-access filename)))
+    (org-mcp--read-file (expand-file-name allowed-file))))
+
+(defun org-mcp--handle-headline-resource (params)
+  "Handler for org-headline://{filename} template.
+PARAMS is an alist containing the filename parameter.
+The filename parameter includes both file and headline path."
+  (let* ((full-path (alist-get "filename" params nil nil #'string=))
+         (split-result (org-mcp--split-headline-uri full-path))
+         (filename (car split-result))
+         (allowed-file (org-mcp--validate-file-access filename))
+         (headline-path-str (cdr split-result))
+         ;; Parse the path (URL-encoded headline path)
+         (headline-path
+          (when headline-path-str
+            (mapcar
+             #'url-unhex-string
+             (split-string headline-path-str "/")))))
+    (if headline-path
+        (let ((content
+               (org-mcp--get-headline-content
+                allowed-file headline-path)))
+          (unless content
+            (org-mcp--resource-not-found-error
+             "headline" (mapconcat #'identity headline-path "/")))
+          content)
+      ;; No headline path means get entire file
+      (org-mcp--read-file allowed-file))))
+
+(defun org-mcp--handle-id-resource (params)
+  "Handler for org-id://{uuid} template.
+PARAMS is an alist containing the uuid parameter."
+  (let* ((id (alist-get "uuid" params nil nil #'string=))
+         (file-path (org-id-find-id-file id)))
+    (unless file-path
+      (org-mcp--resource-not-found-error "ID" id))
+    (let ((allowed-file (org-mcp--find-allowed-file file-path)))
+      (unless allowed-file
+        (org-mcp--resource-file-access-error id))
+      (org-mcp--get-content-by-id allowed-file id))))
+
 (defun org-mcp--tool-add-todo
     (title todo_state tags body parent_uri &optional after_uri)
   "Add a new TODO item to an Org file.
@@ -745,233 +785,192 @@ MCP Parameters:
                 - org-headline://{absolute-path}#{headline-path}
                 - org-id://{id}"
   (org-mcp--validate-headline-title title)
-
-  ;; Normalize tags and validate TODO state
-  (let ((tag-list (org-mcp--normalize-tags-to-list tags)))
-    (org-mcp--validate-todo-state todo_state)
-
-    ;; Validate tags
-    ;; Get all allowed tags from tag alists
-    (let ((allowed-tags
-           (append
-            (mapcar
-             #'org-mcp--extract-tag-from-alist-entry org-tag-alist)
-            (mapcar
-             #'org-mcp--extract-tag-from-alist-entry
-             org-tag-persistent-alist))))
-      ;; Remove special keywords like :startgroup
-      (setq allowed-tags
-            (cl-remove-if
-             #'org-mcp--is-tag-group-keyword-p allowed-tags))
-      ;; If tag alists are configured, validate against them
-      (when allowed-tags
-        (dolist (tag tag-list)
-          (unless (member tag allowed-tags)
-            (org-mcp--tool-validation-error
-             "Tag not in configured tag alist: %s"
-             tag))))
-      ;; Always validate tag names follow Org's rules
-      (dolist (tag tag-list)
-        (unless (string-match "^[[:alnum:]_@]+$" tag)
-          (org-mcp--tool-validation-error
-           "Invalid tag name (must be alphanumeric, _, or @): %s"
-           tag)))
-      ;; Validate mutual exclusivity if tag-alist is configured
-      (when org-tag-alist
-        (org-mcp--validate-mutex-tag-groups tag-list org-tag-alist))
-      (when org-tag-persistent-alist
-        (org-mcp--validate-mutex-tag-groups
-         tag-list org-tag-persistent-alist)))
+  (org-mcp--validate-todo-state todo_state)
+  (let ((tag-list (org-mcp--validate-and-normalize-tags tags))
+        file-path)
 
     ;; Parse parent URI to get file path
-    (let (file-path)
-      (org-mcp--with-uri-prefix-dispatch
-          parent_uri
-        ;; Handle org-headline:// URIs
-        (let* ((split-result (org-mcp--split-headline-uri headline))
-               (filename (car split-result))
-               (allowed-file
-                (org-mcp--validate-file-access filename)))
-          (setq file-path (expand-file-name allowed-file)))
-        ;; Handle org-id:// URIs
-        (setq file-path (org-mcp--find-allowed-file-with-id id)))
+    (org-mcp--with-uri-prefix-dispatch
+        parent_uri
+      ;; Handle org-headline:// URIs
+      (let* ((split-result (org-mcp--split-headline-uri headline))
+             (filename (car split-result))
+             (allowed-file (org-mcp--validate-file-access filename)))
+        (setq file-path (expand-file-name allowed-file)))
+      ;; Handle org-id:// URIs
+      (setq file-path (org-mcp--find-allowed-file-with-id id)))
 
-      ;; Add the TODO item
-      (org-mcp--modify-and-save file-path "add TODO"
-                                `((file
-                                   .
-                                   ,(file-name-nondirectory
-                                     file-path))
-                                  (title . ,title))
-        ;; Navigate to insertion point based on parentUri
-        (let ((parent-path nil)
-              (parent-id nil)
-              (parent-level nil))
-          ;; Parse parent URI (org-headline:// or org-id://)
-          (org-mcp--with-uri-prefix-dispatch
-              parent_uri
-            ;; org-headline:// format
-            (let* ((split-result
-                    (org-mcp--split-headline-uri headline))
-                   (path-str (cdr split-result)))
-              (when (and path-str (> (length path-str) 0))
-                (setq parent-path
-                      (mapcar
-                       #'url-unhex-string
-                       (split-string path-str "/")))))
-            ;; org-id:// format
-            (setq parent-id id))
+    ;; Add the TODO item
+    (org-mcp--modify-and-save file-path "add TODO"
+                              `((file
+                                 .
+                                 ,(file-name-nondirectory file-path))
+                                (title . ,title))
+      ;; Navigate to insertion point based on parentUri
+      (let ((parent-path nil)
+            (parent-id nil)
+            (parent-level nil))
+        ;; Parse parent URI (org-headline:// or org-id://)
+        (org-mcp--with-uri-prefix-dispatch
+            parent_uri
+          ;; org-headline:// format
+          (let* ((split-result (org-mcp--split-headline-uri headline))
+                 (path-str (cdr split-result)))
+            (when (and path-str (> (length path-str) 0))
+              (setq parent-path
+                    (mapcar
+                     #'url-unhex-string
+                     (split-string path-str "/")))))
+          ;; org-id:// format
+          (setq parent-id id))
 
-          ;; Navigate to parent if specified
-          (if (or parent-path parent-id)
-              (progn
-                (org-mcp--goto-headline-from-uri
-                 (or (and parent-id (list parent-id))
-                     parent-path)
-                 parent-id)
-                ;; Save parent level before moving point
-                ;; Ensure we're at the beginning of headline
-                (org-back-to-heading t)
-                (setq parent-level (org-current-level)))
-            ;; No parent specified - top level
-            ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
-            (while (and (not (eobp)) (looking-at "^#\\+"))
-              (forward-line))
-            ;; Position correctly: if blank line after headers,
-            ;; skip it; if headline immediately after, stay
-            (when (and (not (eobp)) (looking-at "^[ \t]*$"))
-              ;; On blank line after headers, skip
-              (while (and (not (eobp)) (looking-at "^[ \t]*$"))
-                (forward-line))))
-
-          ;; Handle positioning after navigation to parent
-          (when (or parent-path parent-id)
-            ;; Handle after_uri positioning
-            (if (and after_uri (not (string-empty-p after_uri)))
-                (progn
-                  ;; Parse afterUri to get the ID
-                  (let ((after-id
-                         (if (string-match
-                              "^org-id://\\(.+\\)$" after_uri)
-                             (match-string 1 after_uri)
-                           (org-mcp--tool-validation-error
-                            "Field after_uri is not org-id://: %s"
-                            after_uri))))
-                    ;; Find the sibling with the specified ID
-                    (org-back-to-heading t) ;; At parent
-                    (let ((found nil)
-                          (parent-end
-                           (save-excursion
-                             (org-end-of-subtree t t)
-                             (point))))
-                      ;; Search sibling in parent's subtree
-                      ;; Move to first child
-                      (if (org-goto-first-child)
-                          (progn
-                            ;; Now search among siblings
-                            (while (and (not found)
-                                        (< (point) parent-end))
-                              (let ((current-id
-                                     (org-entry-get nil "ID")))
-                                (when (string= current-id after-id)
-                                  (setq found t)
-                                  ;; Move to sibling end
-                                  (org-end-of-subtree t t)))
-                              (unless found
-                                ;; Move to next sibling
-                                (unless (org-get-next-sibling)
-                                  ;; No more siblings
-                                  (goto-char parent-end)))))
-                        ;; No children
-                        (goto-char parent-end))
-                      (unless found
-                        (org-mcp--tool-validation-error
-                         "Sibling with ID %s not found under parent"
-                         after-id)))))
-              ;; No after_uri - insert at end of parent's subtree
-              (org-end-of-subtree t t)
-              ;; If we're at the start of a sibling, go back one char
-              ;; to be at the end of parent's content
-              (when (looking-at "^\\*+ ")
-                (backward-char 1))))
-
-          ;; Validate body before inserting heading
-          ;; Calculate the target level for validation
-          (let ((target-level
-                 (if (or parent-path parent-id)
-                     ;; Child heading - parent level + 1
-                     (1+ (or parent-level 0))
-                   ;; Top-level heading
-                   1)))
-
-            ;; Validate body content if provided
-            (when body
-              (org-mcp--validate-body-no-headlines body target-level)
-              (org-mcp--validate-body-no-unbalanced-blocks body)))
-
-          ;; Insert the new heading using Org functions
-          (if (or parent-path parent-id)
-              ;; We're inside a parent
-              (progn
-                ;; Ensure we have a newline before inserting
-                (unless (or (bobp) (looking-back "\n" 1))
-                  (insert "\n"))
-                ;; Insert heading manually at parent level + 1
-                ;; We don't use org-insert-heading because when parent
-                ;; has no children, org-insert-heading creates a
-                ;; sibling of the parent instead of a child
-                (let ((heading-start (point)))
-                  (insert
-                   (concat
-                    (make-string (1+ parent-level) ?*)
-                    " "
-                    title
-                    "\n"))
-                  ;; Set point to heading for org-todo and
-                  ;; org-set-tags
-                  (goto-char heading-start)
-                  (end-of-line)))
-            ;; Top-level heading
+        ;; Navigate to parent if specified
+        (if (or parent-path parent-id)
             (progn
-              ;; Check if there are no headlines yet
-              ;; (empty buffer or only headers before us)
-              (let ((has-headline
-                     (save-excursion
-                       (goto-char (point-min))
-                       (re-search-forward "^\\*+ " nil t))))
-                (if (not has-headline)
-                    (progn
-                      (unless (or (bobp) (looking-back "\n" 1))
-                        (insert "\n"))
-                      (insert "* "))
+              (org-mcp--goto-headline-from-uri
+               (or (and parent-id (list parent-id))
+                   parent-path)
+               parent-id)
+              ;; Save parent level before moving point
+              ;; Ensure we're at the beginning of headline
+              (org-back-to-heading t)
+              (setq parent-level (org-current-level)))
+          ;; No parent specified - top level
+          ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
+          (while (and (not (eobp)) (looking-at "^#\\+"))
+            (forward-line))
+          ;; Position correctly: if blank line after headers,
+          ;; skip it; if headline immediately after, stay
+          (when (and (not (eobp)) (looking-at "^[ \t]*$"))
+            ;; On blank line after headers, skip
+            (while (and (not (eobp)) (looking-at "^[ \t]*$"))
+              (forward-line))))
+
+        ;; Handle positioning after navigation to parent
+        (when (or parent-path parent-id)
+          ;; Handle after_uri positioning
+          (if (and after_uri (not (string-empty-p after_uri)))
+              (progn
+                ;; Parse afterUri to get the ID
+                (let ((after-id
+                       (if (string-match
+                            "^org-id://\\(.+\\)$" after_uri)
+                           (match-string 1 after_uri)
+                         (org-mcp--tool-validation-error
+                          "Field after_uri is not org-id://: %s"
+                          after_uri))))
+                  ;; Find the sibling with the specified ID
+                  (org-back-to-heading t) ;; At parent
+                  (let ((found nil)
+                        (parent-end
+                         (save-excursion
+                           (org-end-of-subtree t t)
+                           (point))))
+                    ;; Search sibling in parent's subtree
+                    ;; Move to first child
+                    (if (org-goto-first-child)
+                        (progn
+                          ;; Now search among siblings
+                          (while (and (not found)
+                                      (< (point) parent-end))
+                            (let ((current-id
+                                   (org-entry-get nil "ID")))
+                              (when (string= current-id after-id)
+                                (setq found t)
+                                ;; Move to sibling end
+                                (org-end-of-subtree t t)))
+                            (unless found
+                              ;; Move to next sibling
+                              (unless (org-get-next-sibling)
+                                ;; No more siblings
+                                (goto-char parent-end)))))
+                      ;; No children
+                      (goto-char parent-end))
+                    (unless found
+                      (org-mcp--tool-validation-error
+                       "Sibling with ID %s not found under parent"
+                       after-id)))))
+            ;; No after_uri - insert at end of parent's subtree
+            (org-end-of-subtree t t)
+            ;; If we're at the start of a sibling, go back one char
+            ;; to be at the end of parent's content
+            (when (looking-at "^\\*+ ")
+              (backward-char 1))))
+
+        ;; Validate body before inserting heading
+        ;; Calculate the target level for validation
+        (let ((target-level
+               (if (or parent-path parent-id)
+                   ;; Child heading - parent level + 1
+                   (1+ (or parent-level 0))
+                 ;; Top-level heading
+                 1)))
+
+          ;; Validate body content if provided
+          (when body
+            (org-mcp--validate-body-no-headlines body target-level)
+            (org-mcp--validate-body-no-unbalanced-blocks body)))
+
+        ;; Insert the new heading using Org functions
+        (if (or parent-path parent-id)
+            ;; We're inside a parent
+            (progn
+              ;; Ensure we have a newline before inserting
+              (unless (or (bobp) (looking-back "\n" 1))
+                (insert "\n"))
+              ;; Insert heading manually at parent level + 1
+              ;; We don't use org-insert-heading because when parent
+              ;; has no children, org-insert-heading creates a
+              ;; sibling of the parent instead of a child
+              (let ((heading-start (point)))
+                (insert
+                 (concat
+                  (make-string (1+ parent-level) ?*) " " title "\n"))
+                ;; Set point to heading for org-todo and
+                ;; org-set-tags
+                (goto-char heading-start)
+                (end-of-line)))
+          ;; Top-level heading
+          (progn
+            ;; Check if there are no headlines yet
+            ;; (empty buffer or only headers before us)
+            (let ((has-headline
+                   (save-excursion
+                     (goto-char (point-min))
+                     (re-search-forward "^\\*+ " nil t))))
+              (if (not has-headline)
                   (progn
-                    ;; Has headlines - use org-insert-heading
-                    ;; Ensure proper spacing before inserting
                     (unless (or (bobp) (looking-back "\n" 1))
                       (insert "\n"))
-                    (org-insert-heading nil nil t)))
-                (insert title))))
-          ;; Set the TODO state using Org functions
-          (org-todo todo_state)
+                    (insert "* "))
+                (progn
+                  ;; Has headlines - use org-insert-heading
+                  ;; Ensure proper spacing before inserting
+                  (unless (or (bobp) (looking-back "\n" 1))
+                    (insert "\n"))
+                  (org-insert-heading nil nil t)))
+              (insert title))))
+        ;; Set the TODO state using Org functions
+        (org-todo todo_state)
 
-          ;; Set tags using Org functions
-          (when tag-list
-            (org-set-tags tag-list))
+        ;; Set tags using Org functions
+        (when tag-list
+          (org-set-tags tag-list))
 
-          ;; Add body if provided
-          (if body
-              (progn
-                (end-of-line)
-                (insert "\n" body)
-                (unless (string-suffix-p "\n" body)
-                  (insert "\n"))
-                ;; Move back to the heading for org-id-get-create
-                ;; org-id-get-create requires point to be on a heading
-                (org-back-to-heading t))
-            ;; No body - ensure newline after heading
-            (end-of-line)
-            (unless (looking-at "\n")
-              (insert "\n"))))))))
+        ;; Add body if provided
+        (if body
+            (progn
+              (end-of-line)
+              (insert "\n" body)
+              (unless (string-suffix-p "\n" body)
+                (insert "\n"))
+              ;; Move back to the heading for org-id-get-create
+              ;; org-id-get-create requires point to be on a heading
+              (org-back-to-heading t))
+          ;; No body - ensure newline after heading
+          (end-of-line)
+          (unless (looking-at "\n")
+            (insert "\n")))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title, preserve TODO state and tags.
