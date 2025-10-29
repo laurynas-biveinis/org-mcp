@@ -411,6 +411,27 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
     (unless (org-mcp--navigate-to-headline headline-path)
       (org-mcp--headline-not-found-error headline-path))))
 
+(defun org-mcp--get-content-by-id (file-path id)
+  "Get content for org node with ID in FILE-PATH.
+Returns the content string or nil if not found."
+  (org-mcp--with-org-file
+   file-path
+   (when-let* ((pos (org-find-property "ID" id)))
+     (goto-char pos)
+     (org-mcp--extract-headline-content))))
+
+(defun org-mcp--validate-todo-state (state)
+  "Validate STATE is a valid TODO keyword."
+  (let ((valid-states
+         (delete
+          "|"
+          (org-remove-keyword-keys
+           (apply #'append (mapcar #'cdr org-todo-keywords))))))
+    (unless (member state valid-states)
+      (org-mcp--tool-validation-error
+       "Invalid TODO state: '%s' - valid states: %s"
+       state (mapconcat #'identity valid-states ", ")))))
+
 ;; Tool handlers
 
 (defun org-mcp--tool-get-todo-config ()
@@ -460,6 +481,44 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
 (defun org-mcp--tool-get-allowed-files ()
   "Return the list of allowed Org files."
   (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
+
+(defun org-mcp--tool-update-todo-state (uri current_state new_state)
+  "Update the TODO state of a headline at URI.
+Creates an Org ID for the headline if one doesn't exist.
+Returns the ID-based URI for the updated headline.
+CURRENT_STATE is the current TODO state (empty string for no state).
+NEW_STATE is the new TODO state to set.
+
+MCP Parameters:
+  uri - URI of the headline
+        Formats:
+          - org-headline://{absolute-path}#{headline-path}
+          - org-id://{id}
+  current_state - Current TODO state (empty string for no state)
+  new_state - New TODO state (must be in `org-todo-keywords')"
+  (let* ((parsed (org-mcp--parse-resource-uri uri))
+         (file-path (car parsed))
+         (headline-path (cdr parsed)))
+    (org-mcp--validate-todo-state new_state)
+    (org-mcp--modify-and-save
+     file-path "update"
+     `((previous_state
+        .
+        ,(or current_state ""))
+       (new_state . ,new_state))
+     (org-mcp--goto-headline-from-uri
+      headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
+
+     ;; Check current state matches
+     (beginning-of-line)
+     (let ((actual-state (org-get-todo-state)))
+       (unless (string= actual-state current_state)
+         (org-mcp--state-mismatch-error
+          (or current_state "(no state)")
+          (or actual-state "(no state)") "State")))
+
+     ;; Update the state
+     (org-todo new_state))))
 
 ;; Resource handlers
 
@@ -517,71 +576,6 @@ PARAMS is an alist containing the uuid parameter."
       (unless allowed-file
         (org-mcp--resource-file-access-error id))
       (org-mcp--get-content-by-id allowed-file id))))
-
-(defun org-mcp--get-content-by-id (file-path id)
-  "Get content for org node with ID in FILE-PATH.
-Returns the content string or nil if not found."
-  (org-mcp--with-org-file file-path
-    (when-let* ((pos (org-find-property "ID" id)))
-      (goto-char pos)
-      (org-mcp--extract-headline-content))))
-
-(defun org-mcp--get-valid-todo-states ()
-  "Get list of valid TODO states without annotations or separators.
-Processes `org-todo-keywords' by extracting all keywords,
-stripping annotations like \"(t!)\" using
-`org-remove-keyword-keys', and removing the \"|\" separator."
-  (delete
-   "|"
-   (org-remove-keyword-keys
-    (apply #'append (mapcar #'cdr org-todo-keywords)))))
-
-(defun org-mcp--tool-update-todo-state (uri current_state new_state)
-  "Update the TODO state of a headline.
-Creates an Org ID for the headline if one doesn't exist.
-Returns the ID-based URI for the updated headline.
-URI is the URI of the headline to update.
-CURRENT_STATE is the current TODO state (empty string for no state).
-NEW_STATE is the new TODO state to set.
-
-MCP Parameters:
-  uri - URI of the headline
-        Formats:
-          - org-headline://{absolute-path}#{headline-path}
-          - org-id://{id}
-  current_state - Current TODO state (empty string for no state)
-  new_state - New TODO state (must be in `org-todo-keywords')"
-  ;; Parse the resource URI
-  (let* ((parsed (org-mcp--parse-resource-uri uri))
-         (file-path (car parsed))
-         (headline-path (cdr parsed)))
-
-    ;; Validate new state is in org-todo-keywords
-    (let ((valid-states (org-mcp--get-valid-todo-states)))
-      (unless (member new_state valid-states)
-        (org-mcp--tool-validation-error
-         "Invalid TODO state: '%s' - valid states: %s"
-         new_state (mapconcat #'identity valid-states ", "))))
-
-    ;; Update the TODO state in the file
-    (org-mcp--modify-and-save file-path "update"
-                              `((previous_state
-                                 .
-                                 ,(or current_state ""))
-                                (new_state . ,new_state))
-      (org-mcp--goto-headline-from-uri
-       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
-
-      ;; Check current state matches
-      (beginning-of-line)
-      (let ((actual-state (org-get-todo-state)))
-        (unless (string= actual-state current_state)
-          (org-mcp--state-mismatch-error
-           (or current_state "(no state)")
-           (or actual-state "(no state)") "State")))
-
-      ;; Update the state
-      (org-todo new_state))))
 
 (defun org-mcp--extract-tag-from-alist-entry (entry)
   "Extract tag name from an `org-tag-alist' ENTRY.
@@ -752,15 +746,9 @@ MCP Parameters:
                 - org-id://{id}"
   (org-mcp--validate-headline-title title)
 
-  ;; Normalize tags and get valid TODO states
-  (let ((tag-list (org-mcp--normalize-tags-to-list tags))
-        (valid-states (org-mcp--get-valid-todo-states)))
-
-    ;; Validate TODO state
-    (unless (member todo_state valid-states)
-      (org-mcp--tool-validation-error
-       "Invalid TODO state: '%s' - valid states: %s"
-       todo_state (mapconcat #'identity valid-states ", ")))
+  ;; Normalize tags and validate TODO state
+  (let ((tag-list (org-mcp--normalize-tags-to-list tags)))
+    (org-mcp--validate-todo-state todo_state)
 
     ;; Validate tags
     ;; Get all allowed tags from tag alists
