@@ -258,6 +258,52 @@ Throws an error if neither prefix matches."
      (org-mcp--tool-validation-error "Invalid resource URI format: %s"
                                      ,uri))))
 
+(defun org-mcp--validate-file-access (filename)
+  "Validate that FILENAME is in the allowed list.
+FILENAME must be an absolute path.
+Returns the full path if allowed, signals an error otherwise."
+  (unless (file-name-absolute-p filename)
+    (org-mcp--resource-validation-error "Path must be absolute: %s"
+                                        filename))
+  (let ((allowed-file (org-mcp--find-allowed-file filename)))
+    (unless allowed-file
+      (org-mcp--resource-file-access-error filename))
+    allowed-file))
+
+(defun org-mcp--extract-children (target-level)
+  "Extract children at TARGET-LEVEL until next lower level heading."
+  (let ((children '()))
+    (save-excursion
+      (while (and (re-search-forward "^\\*+ " nil t)
+                  (>= (org-current-level) target-level))
+        (when (= (org-current-level) target-level)
+          (let* ((title (org-get-heading t t t t))
+                 (child
+                  `((title . ,title)
+                    (level . ,target-level)
+                    (children . []))))
+            (push child children)))))
+    (vconcat (nreverse children))))
+
+(defun org-mcp--extract-headings ()
+  "Extract heading structure from current org buffer."
+  (let ((result '()))
+    (goto-char (point-min))
+    (while (re-search-forward "^\\* " nil t) ; Find level 1 headings
+      (let* ((title (org-get-heading t t t t))
+             ;; Get level 2 children
+             (children (org-mcp--extract-children 2))
+             (heading
+              `((title . ,title) (level . 1) (children . ,children))))
+        (push heading result)))
+    (vconcat (nreverse result))))
+
+(defun org-mcp--generate-outline (file-path)
+  "Generate JSON outline structure for FILE-PATH."
+  (org-mcp--with-org-file file-path
+    (let ((headings (org-mcp--extract-headings)))
+      `((headings . ,headings)))))
+
 ;; Tool handlers
 
 (defun org-mcp--tool-get-todo-config ()
@@ -308,84 +354,17 @@ Throws an error if neither prefix matches."
   "Return the list of allowed Org files."
   (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
 
-(defun org-mcp--validate-file-access (filename)
-  "Validate that FILENAME is in the allowed list.
-FILENAME must be an absolute path.
-Returns the full path if allowed, signals an error otherwise."
-  (unless (file-name-absolute-p filename)
-    (org-mcp--resource-validation-error "Path must be absolute: %s"
-                                        filename))
-  (let ((allowed-file (org-mcp--find-allowed-file filename)))
-    (unless allowed-file
-      (org-mcp--resource-file-access-error filename))
-    allowed-file))
-
-(defun org-mcp--generate-outline (file-path)
-  "Generate JSON outline structure for FILE-PATH."
-  (org-mcp--with-org-file file-path
-    (let ((headings (org-mcp--extract-headings)))
-      `((headings . ,headings)))))
-
-(defun org-mcp--extract-headings ()
-  "Extract heading structure from current org buffer."
-  (let ((result '()))
-    (goto-char (point-min))
-    (while (re-search-forward "^\\* " nil t) ; Find level 1 headings
-      (let* ((title (org-get-heading t t t t))
-             ;; Get level 2 children
-             (children (org-mcp--extract-children 2))
-             (heading
-              `((title . ,title) (level . 1) (children . ,children))))
-        (push heading result)))
-    (vconcat (nreverse result))))
-
-(defun org-mcp--extract-children (target-level)
-  "Extract children at TARGET-LEVEL until next lower level heading."
-  (let ((children '()))
-    (save-excursion
-      (while (and (re-search-forward "^\\*+ " nil t)
-                  (>= (org-current-level) target-level))
-        (when (= (org-current-level) target-level)
-          (let* ((title (org-get-heading t t t t))
-                 (child
-                  `((title . ,title)
-                    (level . ,target-level)
-                    (children . []))))
-            (push child children)))))
-    (vconcat (nreverse children))))
-
-(defun org-mcp--build-heading-tree (flat-headings)
-  "Build hierarchical tree from FLAT-HEADINGS list."
-  (let ((result '())
-        (stack '()))
-    (dolist (heading flat-headings)
-      (let ((level (alist-get 'level heading)))
-        ;; Pop stack until we find the right parent level
-        (while (and stack (>= (car (car stack)) level))
-          (pop stack))
-        ;; If we have a parent, add to its children
-        (if stack
-            (let* ((parent-entry (car stack))
-                   (parent-heading (cdr parent-entry))
-                   (children (alist-get 'children parent-heading))
-                   (new-children (vconcat children (vector heading))))
-              (setcdr (assq 'children parent-heading) new-children))
-          ;; No parent, this is a top-level heading
-          (push heading result))
-        ;; Push this heading to stack as potential parent
-        ;; Store level and heading separately to avoid circular ref
-        (push (cons level heading) stack)))
-    (vconcat (nreverse result))))
+;; Resource handlers
 
 (defun org-mcp--handle-outline-resource (params)
   "Handler for org://{filename}/outline template.
 PARAMS is an alist containing the filename parameter."
   (let* ((filename (alist-get "filename" params nil nil #'string=))
-         (allowed-file (org-mcp--validate-file-access filename)))
-    (let ((outline
-           (org-mcp--generate-outline
-            (expand-file-name allowed-file))))
-      (json-encode outline))))
+         (allowed-file (org-mcp--validate-file-access filename))
+         (outline
+          (org-mcp--generate-outline
+           (expand-file-name allowed-file))))
+    (json-encode outline)))
 
 (defun org-mcp--handle-file-resource (params)
   "Handler for org://{filename} template.
@@ -393,11 +372,6 @@ PARAMS is an alist containing the filename parameter."
   (let* ((filename (alist-get "filename" params nil nil #'string=))
          (allowed-file (org-mcp--validate-file-access filename)))
     (org-mcp--read-file (expand-file-name allowed-file))))
-
-(defun org-mcp--encode-file-path (file-path)
-  "Encode special characters in FILE-PATH for URI.
-Encodes # as %23 to avoid fragment separator confusion."
-  (replace-regexp-in-string "#" "%23" file-path))
 
 (defun org-mcp--decode-file-path (encoded-path)
   "Decode special characters from ENCODED-PATH.
