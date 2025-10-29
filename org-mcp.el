@@ -52,6 +52,17 @@
 
 ;; Helpers
 
+(defun org-mcp--read-file (file-path)
+  "Read and return the contents of FILE-PATH."
+  (with-temp-buffer
+    (insert-file-contents file-path)
+    (buffer-string)))
+
+(defun org-mcp--paths-equal-p (path1 path2)
+  "Return t if PATH1 and PATH2 refer to the same file.
+Handles symlinks and path variations by normalizing both paths."
+  (string= (file-truename path1) (file-truename path2)))
+
 (defun org-mcp--refresh-file-buffers (file-path)
   "Refresh all buffers visiting FILE-PATH.
 Preserves narrowing state across the refresh operation."
@@ -186,13 +197,15 @@ Throws an error if neither prefix matches."
   (declare (indent 1))
   `(cond
     ((string-prefix-p org-mcp--uri-headline-prefix ,uri)
-     (let ((headline (substring ,uri (length org-mcp--uri-headline-prefix))))
+     (let ((headline
+            (substring ,uri (length org-mcp--uri-headline-prefix))))
        ,headline-body))
     ((string-prefix-p org-mcp--uri-id-prefix ,uri)
      (let ((id (substring ,uri (length org-mcp--uri-id-prefix))))
        ,id-body))
-    (t (org-mcp--tool-validation-error
-        "Invalid resource URI format: %s" ,uri))))
+    (t
+     (org-mcp--tool-validation-error "Invalid resource URI format: %s"
+                                     ,uri))))
 
 ;; Tool handlers
 
@@ -244,23 +257,10 @@ Throws an error if neither prefix matches."
   "Return the list of allowed Org files."
   (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
 
-(defun org-mcp--read-file-resource (file-path)
-  "Read and return the contents of FILE-PATH."
-  (with-temp-buffer
-    (insert-file-contents file-path)
-    (buffer-string)))
-
-
-(defun org-mcp--paths-equal-p (path1 path2)
-  "Return t if PATH1 and PATH2 refer to the same file.
-Handles symlinks and path variations by normalizing both paths."
-  (string= (file-truename path1) (file-truename path2)))
-
 (defun org-mcp--find-allowed-file (filename)
   "Find FILENAME in `org-mcp-allowed-files' and return the full path.
 FILENAME must be an absolute path.
 Returns nil if the file is not in the allowed list."
-  ;; Normalize the filename to handle symlinks and path variations
   (let ((normalized-filename (file-truename filename)))
     (cl-find
      normalized-filename
@@ -379,7 +379,7 @@ PARAMS is an alist containing the filename parameter."
 PARAMS is an alist containing the filename parameter."
   (let* ((filename (alist-get "filename" params nil nil #'string=))
          (allowed-file (org-mcp--validate-file-access filename)))
-    (org-mcp--read-file-resource (expand-file-name allowed-file))))
+    (org-mcp--read-file (expand-file-name allowed-file))))
 
 (defun org-mcp--encode-file-path (file-path)
   "Encode special characters in FILE-PATH for URI.
@@ -428,7 +428,7 @@ The filename parameter includes both file and headline path."
              "headline" (mapconcat #'identity headline-path "/")))
           content)
       ;; No headline path means get entire file
-      (org-mcp--read-file-resource (expand-file-name allowed-file)))))
+      (org-mcp--read-file (expand-file-name allowed-file)))))
 
 (defun org-mcp--navigate-to-headline (headline-path)
   "Navigate to headline in HEADLINE-PATH.
