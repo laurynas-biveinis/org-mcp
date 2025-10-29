@@ -217,9 +217,9 @@ BODY can access FILE-PATH, OPERATION, and RESPONSE-ALIST as variables."
   "Find an allowed file containing the Org ID.
 First looks up in the org-id database, then validates the file is in
 the allowed list.
-Returns the expanded file path if found and allowed,
-nil otherwise.
-Throws a tool error if ID exists but file is not allowed."
+Returns the expanded file path if found and allowed.
+Throws a tool error if ID exists but file is not allowed, or if ID
+is not found."
   (if-let* ((id-file (org-id-find-id-file id)))
     ;; ID found in database, check if file is allowed
     (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
@@ -234,7 +234,7 @@ Throws a tool error if ID exists but file is not allowed."
             (org-mcp--with-org-file allowed-file
               (when (org-find-property "ID" id)
                 (setq found-file (expand-file-name allowed-file)))))))
-      found-file)))
+      (or found-file (org-mcp--id-not-found-error id)))))
 
 (defmacro org-mcp--with-uri-prefix-dispatch
     (uri headline-body id-body)
@@ -532,8 +532,6 @@ Validates file access and returns expanded file path."
       ;; Handle org-id:// URIs
       (progn
         (setq file-path (org-mcp--find-allowed-file-with-id id))
-        (unless file-path
-          (org-mcp--id-not-found-error id))
         (setq headline-path (list id))))
     (cons file-path headline-path)))
 
@@ -841,10 +839,7 @@ MCP Parameters:
                 (org-mcp--validate-file-access filename)))
           (setq file-path (expand-file-name allowed-file)))
         ;; Handle org-id:// URIs
-        (let ((allowed-file (org-mcp--find-allowed-file-with-id id)))
-          (unless allowed-file
-            (org-mcp--id-not-found-error id))
-          (setq file-path allowed-file)))
+        (setq file-path (org-mcp--find-allowed-file-with-id id)))
 
       ;; Add the TODO item
       (org-mcp--modify-and-save file-path "add TODO"
