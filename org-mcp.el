@@ -50,6 +50,12 @@
 (defconst org-mcp--uri-id-prefix "org-id://"
   "URI prefix for ID-based resources.")
 
+(defun org-mcp--extract-uri-suffix (uri prefix)
+  "Extract suffix from URI after PREFIX.
+Returns the suffix string if URI starts with PREFIX, nil otherwise."
+  (when (string-prefix-p prefix uri)
+    (substring uri (length prefix))))
+
 ;; Error handling helpers
 
 (defun org-mcp--headline-not-found-error (headline-path)
@@ -246,17 +252,20 @@ ID-BODY is executed when URI starts with `org-mcp--uri-id-prefix',
 with the URI after the prefix bound to `id'.
 Throws an error if neither prefix matches."
   (declare (indent 1))
-  `(cond
-    ((string-prefix-p org-mcp--uri-headline-prefix ,uri)
-     (let ((headline
-            (substring ,uri (length org-mcp--uri-headline-prefix))))
-       ,headline-body))
-    ((string-prefix-p org-mcp--uri-id-prefix ,uri)
-     (let ((id (substring ,uri (length org-mcp--uri-id-prefix))))
-       ,id-body))
-    (t
-     (org-mcp--tool-validation-error "Invalid resource URI format: %s"
-                                     ,uri))))
+  `(let ((headline
+          (org-mcp--extract-uri-suffix
+           ,uri org-mcp--uri-headline-prefix))
+         (id
+          (org-mcp--extract-uri-suffix ,uri org-mcp--uri-id-prefix)))
+     (cond
+      (headline
+       ,headline-body)
+      (id
+       ,id-body)
+      (t
+       (org-mcp--tool-validation-error
+        "Invalid resource URI format: %s"
+        ,uri)))))
 
 (defun org-mcp--validate-file-access (filename)
   "Validate that FILENAME is in the allowed list.
@@ -760,6 +769,56 @@ PARAMS is an alist containing the uuid parameter."
         (org-mcp--resource-file-access-error id))
       (org-mcp--get-content-by-id allowed-file id))))
 
+(defun org-mcp--position-for-new-child (after-uri parent-end)
+  "Position point for inserting a new child under current heading.
+AFTER-URI is an optional org-id:// URI of a sibling to insert after.
+PARENT-END is the end position of the parent's subtree.
+Assumes point is at parent heading.
+If AFTER-URI is non-nil, positions after that sibling.
+If nil, positions at end of parent's subtree.
+Throws validation error if AFTER-URI is invalid or sibling not found."
+  (if (and after-uri (not (string-empty-p after-uri)))
+      (progn
+        ;; Parse afterUri to get the ID
+        (let ((after-id
+               (org-mcp--extract-uri-suffix
+                after-uri org-mcp--uri-id-prefix)))
+          (unless after-id
+            (org-mcp--tool-validation-error
+             "Field after_uri is not %s: %s"
+             org-mcp--uri-id-prefix after-uri))
+          ;; Find the sibling with the specified ID
+          (org-back-to-heading t) ;; At parent
+          (let ((found nil))
+            ;; Search sibling in parent's subtree
+            ;; Move to first child
+            (if (org-goto-first-child)
+                (progn
+                  ;; Now search among siblings
+                  (while (and (not found) (< (point) parent-end))
+                    (let ((current-id (org-entry-get nil "ID")))
+                      (when (string= current-id after-id)
+                        (setq found t)
+                        ;; Move to sibling end
+                        (org-end-of-subtree t t)))
+                    (unless found
+                      ;; Move to next sibling
+                      (unless (org-get-next-sibling)
+                        ;; No more siblings
+                        (goto-char parent-end)))))
+              ;; No children
+              (goto-char parent-end))
+            (unless found
+              (org-mcp--tool-validation-error
+               "Sibling with ID %s not found under parent"
+               after-id)))))
+    ;; No after_uri - insert at end of parent's subtree
+    (org-end-of-subtree t t)
+    ;; If we're at the start of a sibling, go back one char
+    ;; to be at the end of parent's content
+    (when (looking-at "^\\*+ ")
+      (backward-char 1))))
+
 (defun org-mcp--tool-add-todo
     (title todo_state tags body parent_uri &optional after_uri)
   "Add a new TODO item to an Org file.
@@ -848,54 +907,11 @@ MCP Parameters:
 
         ;; Handle positioning after navigation to parent
         (when (or parent-path parent-id)
-          ;; Handle after_uri positioning
-          (if (and after_uri (not (string-empty-p after_uri)))
-              (progn
-                ;; Parse afterUri to get the ID
-                (let ((after-id
-                       (if (string-match
-                            "^org-id://\\(.+\\)$" after_uri)
-                           (match-string 1 after_uri)
-                         (org-mcp--tool-validation-error
-                          "Field after_uri is not org-id://: %s"
-                          after_uri))))
-                  ;; Find the sibling with the specified ID
-                  (org-back-to-heading t) ;; At parent
-                  (let ((found nil)
-                        (parent-end
-                         (save-excursion
-                           (org-end-of-subtree t t)
-                           (point))))
-                    ;; Search sibling in parent's subtree
-                    ;; Move to first child
-                    (if (org-goto-first-child)
-                        (progn
-                          ;; Now search among siblings
-                          (while (and (not found)
-                                      (< (point) parent-end))
-                            (let ((current-id
-                                   (org-entry-get nil "ID")))
-                              (when (string= current-id after-id)
-                                (setq found t)
-                                ;; Move to sibling end
-                                (org-end-of-subtree t t)))
-                            (unless found
-                              ;; Move to next sibling
-                              (unless (org-get-next-sibling)
-                                ;; No more siblings
-                                (goto-char parent-end)))))
-                      ;; No children
-                      (goto-char parent-end))
-                    (unless found
-                      (org-mcp--tool-validation-error
-                       "Sibling with ID %s not found under parent"
-                       after-id)))))
-            ;; No after_uri - insert at end of parent's subtree
-            (org-end-of-subtree t t)
-            ;; If we're at the start of a sibling, go back one char
-            ;; to be at the end of parent's content
-            (when (looking-at "^\\*+ ")
-              (backward-char 1))))
+          (let ((parent-end
+                 (save-excursion
+                   (org-end-of-subtree t t)
+                   (point))))
+            (org-mcp--position-for-new-child after_uri parent-end)))
 
         ;; Validate body before inserting heading
         ;; Calculate the target level for validation
