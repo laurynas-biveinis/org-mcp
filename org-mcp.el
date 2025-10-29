@@ -134,13 +134,11 @@ BODY can access FILE-PATH and RESPONSE-ALIST as variables."
   (mcp-server-lib-tool-throw (format "Cannot find ID '%s'" id)))
 
 (defun org-mcp--tool-validation-error (message &rest args)
-  "Throw validation error for tool operations.
-MESSAGE is the format string, ARGS are format arguments."
+  "Throw validation error MESSAGE with ARGS for tool operations."
   (mcp-server-lib-tool-throw (apply #'format message args)))
 
 (defun org-mcp--resource-validation-error (message &rest args)
-  "Signal validation error for resource operations.
-MESSAGE is the format string, ARGS are format arguments."
+  "Signal validation error MESSAGE with ARGS for resource operations."
   (mcp-server-lib-resource-signal-error
    mcp-server-lib-jsonrpc-error-invalid-params
    (apply #'format message args)))
@@ -180,23 +178,23 @@ denied access."
     (uri headline-body id-body)
   "Dispatch tool URI handling based on prefix.
 URI is the URI string to dispatch on.
-HEADLINE-BODY is executed for org-headline:// URIs,
-with the URI after the prefix bound to `uri-without-prefix'.
+HEADLINE-BODY is executed when URI starts with `org-mcp--uri-headline-prefix',
+with the URI after the prefix bound to `headline'.
 ID-BODY is executed when URI starts with `org-mcp--uri-id-prefix',
 with the URI after the prefix bound to `id'.
 Throws an error if neither prefix matches."
   (declare (indent 1))
   `(cond
     ((string-prefix-p org-mcp--uri-headline-prefix ,uri)
-     (let ((uri-without-prefix
-            (substring ,uri (length org-mcp--uri-headline-prefix))))
+     (let ((headline (substring ,uri (length org-mcp--uri-headline-prefix))))
        ,headline-body))
     ((string-prefix-p org-mcp--uri-id-prefix ,uri)
      (let ((id (substring ,uri (length org-mcp--uri-id-prefix))))
        ,id-body))
-    (t
-     (org-mcp--tool-validation-error "Invalid resource URI format: %s"
-                                     ,uri))))
+    (t (org-mcp--tool-validation-error
+        "Invalid resource URI format: %s" ,uri))))
+
+;; Tool handlers
 
 (defun org-mcp--tool-get-todo-config ()
   "Return the TODO keyword configuration."
@@ -512,8 +510,7 @@ Validates file access and returns expanded file path."
     (org-mcp--with-uri-prefix-dispatch
         uri
       ;; Handle org-headline:// URIs
-      (let* ((split-result
-              (org-mcp--split-headline-uri uri-without-prefix))
+      (let* ((split-result (org-mcp--split-headline-uri headline))
              (filename (car split-result))
              (headline-path-str (cdr split-result))
              (allowed-file (org-mcp--validate-file-access filename)))
@@ -845,8 +842,7 @@ MCP Parameters:
       (org-mcp--with-uri-prefix-dispatch
           parent_uri
         ;; Handle org-headline:// URIs
-        (let* ((split-result
-                (org-mcp--split-headline-uri uri-without-prefix))
+        (let* ((split-result (org-mcp--split-headline-uri headline))
                (filename (car split-result))
                (allowed-file
                 (org-mcp--validate-file-access filename)))
@@ -873,7 +869,7 @@ MCP Parameters:
               parent_uri
             ;; org-headline:// format
             (let* ((split-result
-                    (org-mcp--split-headline-uri uri-without-prefix))
+                    (org-mcp--split-headline-uri headline))
                    (path-str (cdr split-result)))
               (when (and path-str (> (length path-str) 0))
                 (setq parent-path
