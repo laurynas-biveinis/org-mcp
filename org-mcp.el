@@ -122,6 +122,15 @@ RESPONSE-ALIST is an alist of response fields."
       response-alist
       `((uri . ,(concat org-mcp--uri-id-prefix id)))))))
 
+(defmacro org-mcp--with-org-file (file-path &rest body)
+  "Execute BODY in a temp Org buffer with file at FILE-PATH."
+  (declare (indent 1) (debug (form body)))
+  `(with-temp-buffer
+     (insert-file-contents ,file-path)
+     (org-mode)
+     (goto-char (point-min))
+     ,@body))
+
 (defmacro org-mcp--with-org-file-buffer
     (file-path response-alist &rest body)
   "Execute BODY in a temp buffer set up for Org file at FILE-PATH.
@@ -285,10 +294,7 @@ Throws a tool error if ID exists but file is not allowed."
       (dolist (allowed-file org-mcp-allowed-files)
         (unless found-file
           (when (file-exists-p allowed-file)
-            (with-temp-buffer
-              (insert-file-contents allowed-file)
-              (org-mode)
-              (goto-char (point-min))
+            (org-mcp--with-org-file allowed-file
               (when (org-find-property "ID" id)
                 (setq found-file (expand-file-name allowed-file)))))))
       found-file)))
@@ -307,9 +313,7 @@ Returns the full path if allowed, signals an error otherwise."
 
 (defun org-mcp--generate-outline (file-path)
   "Generate JSON outline structure for FILE-PATH."
-  (with-temp-buffer
-    (insert-file-contents file-path)
-    (org-mode)
+  (org-mcp--with-org-file file-path
     (let ((headings (org-mcp--extract-headings)))
       `((headings . ,headings)))))
 
@@ -468,10 +472,7 @@ Returns t if found, nil otherwise.  Point is left at the headline."
   "Get content for headline at HEADLINE-PATH in FILE-PATH.
 HEADLINE-PATH is a list of headline titles to traverse.
 Returns the content string or nil if not found."
-  (with-temp-buffer
-    (insert-file-contents file-path)
-    (org-mode)
-    (goto-char (point-min))
+  (org-mcp--with-org-file file-path
     (when (org-mcp--navigate-to-headline headline-path)
       (org-mcp--extract-headline-content))))
 
@@ -556,10 +557,7 @@ OPERATION is a string describing the operation for error messages."
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
 Returns the content string or nil if not found."
-  (with-temp-buffer
-    (insert-file-contents file-path)
-    (org-mode)
-    (goto-char (point-min))
+  (org-mcp--with-org-file file-path
     ;; Find the headline with this ID
     (let ((pos (org-find-property "ID" id)))
       (when pos
