@@ -648,6 +648,56 @@ Assumes point is in an Org buffer."
         (forward-line)))
     nil))
 
+(defun org-mcp--position-for-new-child (after-uri parent-end)
+  "Position point for inserting a new child under current heading.
+AFTER-URI is an optional org-id:// URI of a sibling to insert after.
+PARENT-END is the end position of the parent's subtree.
+Assumes point is at parent heading.
+If AFTER-URI is non-nil, positions after that sibling.
+If nil, positions at end of parent's subtree.
+Throws validation error if AFTER-URI is invalid or sibling not found."
+  (if (and after-uri (not (string-empty-p after-uri)))
+      (progn
+        ;; Parse afterUri to get the ID
+        (let ((after-id
+               (org-mcp--extract-uri-suffix
+                after-uri org-mcp--uri-id-prefix))
+              (found nil))
+          (unless after-id
+            (org-mcp--tool-validation-error
+             "Field after_uri is not %s: %s"
+             org-mcp--uri-id-prefix after-uri))
+          ;; Find the sibling with the specified ID
+          (org-back-to-heading t) ;; At parent
+          ;; Search sibling in parent's subtree
+          ;; Move to first child
+          (if (org-goto-first-child)
+              (progn
+                ;; Now search among siblings
+                (while (and (not found) (< (point) parent-end))
+                  (let ((current-id (org-entry-get nil "ID")))
+                    (when (string= current-id after-id)
+                      (setq found t)
+                      ;; Move to sibling end
+                      (org-end-of-subtree t t)))
+                  (unless found
+                    ;; Move to next sibling
+                    (unless (org-get-next-sibling)
+                      ;; No more siblings
+                      (goto-char parent-end)))))
+            ;; No children
+            (goto-char parent-end))
+          (unless found
+            (org-mcp--tool-validation-error
+             "Sibling with ID %s not found under parent"
+             after-id))))
+    ;; No after_uri - insert at end of parent's subtree
+    (org-end-of-subtree t t)
+    ;; If we're at the start of a sibling, go back one char
+    ;; to be at the end of parent's content
+    (when (looking-at "^\\*+ ")
+      (backward-char 1))))
+
 (defun org-mcp--ensure-newline ()
   "Ensure there is a newline or buffer start before point."
   (unless (or (bobp) (looking-back "\n" 1))
@@ -778,113 +828,6 @@ MCP Parameters:
       ;; Update the state
       (org-todo new_state))))
 
-;; Resource handlers
-
-(defun org-mcp--handle-outline-resource (params)
-  "Handler for org://{filename}/outline template.
-PARAMS is an alist containing the filename parameter."
-  (let* ((filename (alist-get "filename" params nil nil #'string=))
-         (allowed-file (org-mcp--validate-file-access filename))
-         (outline
-          (org-mcp--generate-outline
-           (expand-file-name allowed-file))))
-    (json-encode outline)))
-
-(defun org-mcp--handle-file-resource (params)
-  "Handler for org://{filename} template.
-PARAMS is an alist containing the filename parameter."
-  (let* ((filename (alist-get "filename" params nil nil #'string=))
-         (allowed-file (org-mcp--validate-file-access filename)))
-    (org-mcp--read-file (expand-file-name allowed-file))))
-
-(defun org-mcp--handle-headline-resource (params)
-  "Handler for org-headline://{filename} template.
-PARAMS is an alist containing the filename parameter.
-The filename parameter includes both file and headline path."
-  (let* ((full-path (alist-get "filename" params nil nil #'string=))
-         (split-result (org-mcp--split-headline-uri full-path))
-         (filename (car split-result))
-         (allowed-file (org-mcp--validate-file-access filename))
-         (headline-path-str (cdr split-result))
-         ;; Parse the path (URL-encoded headline path)
-         (headline-path
-          (when headline-path-str
-            (mapcar
-             #'url-unhex-string
-             (split-string headline-path-str "/")))))
-    (if headline-path
-        (let ((content
-               (org-mcp--get-headline-content
-                allowed-file headline-path)))
-          (unless content
-            (org-mcp--resource-not-found-error
-             "headline" (mapconcat #'identity headline-path "/")))
-          content)
-      ;; No headline path means get entire file
-      (org-mcp--read-file allowed-file))))
-
-(defun org-mcp--handle-id-resource (params)
-  "Handler for org-id://{uuid} template.
-PARAMS is an alist containing the uuid parameter."
-  (let* ((id (alist-get "uuid" params nil nil #'string=))
-         (file-path (org-id-find-id-file id)))
-    (unless file-path
-      (org-mcp--resource-not-found-error "ID" id))
-    (let ((allowed-file (org-mcp--find-allowed-file file-path)))
-      (unless allowed-file
-        (org-mcp--resource-file-access-error id))
-      (org-mcp--get-content-by-id allowed-file id))))
-
-(defun org-mcp--position-for-new-child (after-uri parent-end)
-  "Position point for inserting a new child under current heading.
-AFTER-URI is an optional org-id:// URI of a sibling to insert after.
-PARENT-END is the end position of the parent's subtree.
-Assumes point is at parent heading.
-If AFTER-URI is non-nil, positions after that sibling.
-If nil, positions at end of parent's subtree.
-Throws validation error if AFTER-URI is invalid or sibling not found."
-  (if (and after-uri (not (string-empty-p after-uri)))
-      (progn
-        ;; Parse afterUri to get the ID
-        (let ((after-id
-               (org-mcp--extract-uri-suffix
-                after-uri org-mcp--uri-id-prefix))
-              (found nil))
-          (unless after-id
-            (org-mcp--tool-validation-error
-             "Field after_uri is not %s: %s"
-             org-mcp--uri-id-prefix after-uri))
-          ;; Find the sibling with the specified ID
-          (org-back-to-heading t) ;; At parent
-          ;; Search sibling in parent's subtree
-          ;; Move to first child
-          (if (org-goto-first-child)
-              (progn
-                ;; Now search among siblings
-                (while (and (not found) (< (point) parent-end))
-                  (let ((current-id (org-entry-get nil "ID")))
-                    (when (string= current-id after-id)
-                      (setq found t)
-                      ;; Move to sibling end
-                      (org-end-of-subtree t t)))
-                  (unless found
-                    ;; Move to next sibling
-                    (unless (org-get-next-sibling)
-                      ;; No more siblings
-                      (goto-char parent-end)))))
-            ;; No children
-            (goto-char parent-end))
-          (unless found
-            (org-mcp--tool-validation-error
-             "Sibling with ID %s not found under parent"
-             after-id))))
-    ;; No after_uri - insert at end of parent's subtree
-    (org-end-of-subtree t t)
-    ;; If we're at the start of a sibling, go back one char
-    ;; to be at the end of parent's content
-    (when (looking-at "^\\*+ ")
-      (backward-char 1))))
-
 (defun org-mcp--tool-add-todo
     (title todo_state tags body parent_uri &optional after_uri)
   "Add a new TODO item to an Org file.
@@ -989,13 +932,68 @@ MCP Parameters:
           (unless (looking-at "\n")
             (insert "\n")))))))
 
+;; Resource handlers
+
+(defun org-mcp--handle-outline-resource (params)
+  "Handler for org://{filename}/outline template.
+PARAMS is an alist containing the filename parameter."
+  (let* ((filename (alist-get "filename" params nil nil #'string=))
+         (allowed-file (org-mcp--validate-file-access filename))
+         (outline
+          (org-mcp--generate-outline
+           (expand-file-name allowed-file))))
+    (json-encode outline)))
+
+(defun org-mcp--handle-file-resource (params)
+  "Handler for org://{filename} template.
+PARAMS is an alist containing the filename parameter."
+  (let* ((filename (alist-get "filename" params nil nil #'string=))
+         (allowed-file (org-mcp--validate-file-access filename)))
+    (org-mcp--read-file (expand-file-name allowed-file))))
+
+(defun org-mcp--handle-headline-resource (params)
+  "Handler for org-headline://{filename} template.
+PARAMS is an alist containing the filename parameter.
+The filename parameter includes both file and headline path."
+  (let* ((full-path (alist-get "filename" params nil nil #'string=))
+         (split-result (org-mcp--split-headline-uri full-path))
+         (filename (car split-result))
+         (allowed-file (org-mcp--validate-file-access filename))
+         (headline-path-str (cdr split-result))
+         ;; Parse the path (URL-encoded headline path)
+         (headline-path
+          (when headline-path-str
+            (mapcar
+             #'url-unhex-string
+             (split-string headline-path-str "/")))))
+    (if headline-path
+        (let ((content
+               (org-mcp--get-headline-content
+                allowed-file headline-path)))
+          (unless content
+            (org-mcp--resource-not-found-error
+             "headline" (mapconcat #'identity headline-path "/")))
+          content)
+      ;; No headline path means get entire file
+      (org-mcp--read-file allowed-file))))
+
+(defun org-mcp--handle-id-resource (params)
+  "Handler for org-id://{uuid} template.
+PARAMS is an alist containing the uuid parameter."
+  (let* ((id (alist-get "uuid" params nil nil #'string=))
+         (file-path (org-id-find-id-file id)))
+    (unless file-path
+      (org-mcp--resource-not-found-error "ID" id))
+    (let ((allowed-file (org-mcp--find-allowed-file file-path)))
+      (unless allowed-file
+        (org-mcp--resource-file-access-error id))
+      (org-mcp--get-content-by-id allowed-file id))))
+
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
-  "Rename headline title, preserve TODO state and tags.
-Creates an Org ID for the headline if one doesn't exist.
+  "Rename headline title at URI from CURRENT_TITLE to NEW_TITLE.
+Preserves the current TODO state and tags, creates an Org ID for the
+headline if one doesn't exist.
 Returns the ID-based URI for the renamed headline.
-URI is the URI of the headline to rename.
-CURRENT_TITLE is the current title (without TODO/tags) for validation.
-NEW_TITLE is the new title to set (without TODO/tags).
 
 MCP Parameters:
   uri - URI of the headline
@@ -1006,7 +1004,6 @@ MCP Parameters:
   new_title - New title without TODO state or tags"
   (org-mcp--validate-headline-title new_title)
 
-  ;; Parse the resource URI
   (let* ((parsed (org-mcp--parse-resource-uri uri))
          (file-path (car parsed))
          (headline-path (cdr parsed)))
