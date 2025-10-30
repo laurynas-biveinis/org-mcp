@@ -741,6 +741,45 @@ After insertion, point is left on the heading line at end-of-line."
         (org-insert-heading nil nil t))
       (insert title))))
 
+(defun org-mcp--replace-body-content
+    (old-body new-body body-content replace-all body-begin body-end)
+  "Replace body content in the current buffer.
+OLD-BODY is the substring to replace.
+NEW-BODY is the replacement text.
+BODY-CONTENT is the current body content string.
+REPLACE-ALL if non-nil, replace all occurrences.
+BODY-BEGIN is the buffer position where body starts.
+BODY-END is the buffer position where body ends."
+  (let ((new-body-content
+         (cond
+          ;; Special case: empty oldBody with empty body
+          ((and (string= old-body "")
+                (string-match-p "\\`[[:space:]]*\\'" body-content))
+           new-body)
+          ;; Normal replacement with replaceAll
+          (replace-all
+           (replace-regexp-in-string
+            (regexp-quote old-body) new-body body-content
+            t t))
+          ;; Normal single replacement
+          (t
+           (let ((pos
+                  (string-match
+                   (regexp-quote old-body) body-content)))
+             (if pos
+                 (concat
+                  (substring body-content 0 pos)
+                  new-body
+                  (substring body-content (+ pos (length old-body))))
+               body-content))))))
+
+    ;; Replace the body content
+    (if (< body-begin body-end)
+        (delete-region body-begin body-end)
+      ;; Empty body - ensure we're at the right position
+      (goto-char body-begin))
+    (insert new-body-content)))
+
 ;; Tool handlers
 
 (defun org-mcp--tool-get-todo-config ()
@@ -1042,12 +1081,7 @@ MCP Parameters:
   old_body - Substring to replace within the body (must be unique
              unless replace_all).  Use \"\" to add to empty nodes
   new_body - Replacement text
-  replace_all - Replace all occurrences (optional, default false)
-
-Special behavior:
-  When old_body is an empty string (\"\"), the tool will only work if
-  the node has no body content, allowing you to add initial content
-  to empty nodes."
+  replace_all - Replace all occurrences (optional, default false)"
   ;; Normalize JSON false to nil for proper boolean handling
   ;; JSON false can arrive as :false (keyword) or "false" (string)
   (let ((replace_all
@@ -1058,22 +1092,17 @@ Special behavior:
            nil)
           (t
            replace_all))))
-    ;; Check for unbalanced blocks in new_body
     (org-mcp--validate-body-no-unbalanced-blocks new_body)
 
-    ;; Parse the resource URI
     (let* ((parsed (org-mcp--parse-resource-uri resource_uri))
            (file-path (car parsed))
            (headline-path (cdr parsed)))
 
-      ;; Process the file
       (org-mcp--modify-and-save file-path "edit body" nil
-        ;; Navigate to the headline
         (org-mcp--goto-headline-from-uri
          headline-path
          (string-prefix-p org-mcp--uri-id-prefix resource_uri))
 
-        ;; Validate headlines in newBody based on current level
         (org-mcp--validate-body-no-headlines
          new_body (org-current-level))
 
@@ -1100,7 +1129,7 @@ Special behavior:
                 (buffer-substring-no-properties body-begin body-end))
 
           ;; Trim leading newline if present
-          ;; (org-end-of-meta-data includes it)
+          ;; (`org-end-of-meta-data' includes it)
           (when (and (> (length body-content) 0)
                      (= (aref body-content 0) ?\n))
             (setq body-content (substring body-content 1))
@@ -1116,7 +1145,7 @@ Special behavior:
                "Node has no body content")))
 
           ;; Count occurrences (unless already handled above)
-          (unless (= occurrence-count 1) ; Skip if already set above
+          (unless (= occurrence-count 1)
             ;; Empty oldBody with non-empty body is an error
             (if (and (string= old_body "")
                      (not
@@ -1144,36 +1173,13 @@ Special behavior:
              occurrence-count)))
 
           ;; Perform replacement
-          (let ((new-body-content
-                 (cond
-                  ;; Special case: empty oldBody with empty body
-                  ((and (string= old_body "")
-                        (string-match-p
-                         "\\`[[:space:]]*\\'" body-content))
-                   new_body)
-                  ;; Normal replacement with replaceAll
-                  (replace_all
-                   (replace-regexp-in-string
-                    (regexp-quote old_body) new_body body-content
-                    t t))
-                  ;; Normal single replacement
-                  (t
-                   (let ((pos
-                          (string-match
-                           (regexp-quote old_body) body-content)))
-                     (if pos
-                         (concat
-                          (substring body-content 0 pos) new_body
-                          (substring body-content
-                                     (+ pos (length old_body))))
-                       body-content))))))
-
-            ;; Replace the body content
-            (if (< body-begin body-end)
-                (delete-region body-begin body-end)
-              ;; Empty body - ensure we're at the right position
-              (goto-char body-begin))
-            (insert new-body-content)))))))
+          (org-mcp--replace-body-content
+           old_body
+           new_body
+           body-content
+           replace_all
+           body-begin
+           body-end))))))
 
 ;;; Resource template workaround tools
 
