@@ -5,7 +5,7 @@
 
 * Overview
 
-org-mcp is an Emacs package that implements a Model Context Protocol (MCP) server for Org-mode. It enables AI assistants and other MCP clients to interact with your Org files through a secure, structured API.
+org-mcp is an Emacs package that implements a Model Context Protocol (MCP) server for Org-mode. It enables AI assistants and other MCP clients to interact with your Org files through a structured API.
 
 * Installation
 
@@ -52,18 +52,6 @@ Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib
 - *URI Pattern:* =org://{filename}= where filename is the absolute path to the file
 - *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
 - *Returns:* Plain text content of the Org file
-
-Example:
-#+begin_example
-# Configure allowed files in Emacs (absolute paths required):
-(setq org-mcp-allowed-files
-      '("/home/user/org/projects.org"
-        "/home/user/org/tasks.org"))
-
-# Access via MCP:
-URI: org:///home/user/org/projects.org
-Returns: Full content of /home/user/org/projects.org
-#+end_example
 
 *** org-outline://{filename}
 - *Description:* Get the hierarchical structure of an Org file
@@ -343,24 +331,9 @@ Example:
   "oldBody": "",
   "newBody": "Initial task description."
 }
-
-# Error when text not found:
-{
-  "error": "Body text not found: This is a placeholder."
-}
-
-# Error when multiple occurrences without replaceAll:
-{
-  "error": "Body text appears 3 times (use replaceAll for multiple)"
-}
-
-# Error when using empty oldBody on non-empty content:
-{
-  "error": "Cannot use empty oldBody with non-empty body content"
-}
 #+end_src
 
-** Workaround Tools (Temporary)
+** Workaround Tools Duplicating Resource Templates
 
 *Note:* The following tools are temporary workarounds that duplicate the resource template functionality as tools. They exist because Claude Code currently doesn't discover resource templates.
 
@@ -371,41 +344,12 @@ Example:
 - *Returns:* Plain text content of the entire Org file
 - *Configuration:* File must be in =org-mcp-allowed-files=
 
-Example:
-#+begin_src json
-# Request:
-{
-  "file": "/home/user/org/projects.org"
-}
-
-# Returns: Full raw content of the file
-#+end_src
-
 *** org-read-outline
 - *Description:* Get hierarchical structure of an Org file as JSON outline
 - *Parameters:*
   - =file= (string, required): Absolute path to an Org file
 - *Returns:* JSON object with hierarchical outline structure
 - *Configuration:* File must be in =org-mcp-allowed-files=
-
-Example:
-#+begin_src json
-# Request:
-{
-  "file": "/home/user/org/projects.org"
-}
-
-# Returns: JSON structure with all headline titles and nesting
-{
-  "headings": [
-    {
-      "title": "Project Alpha",
-      "level": 1,
-      "children": [...]
-    }
-  ]
-}
-#+end_src
 
 *** org-read-headline
 - *Description:* Read specific Org headline by hierarchical path
@@ -415,15 +359,6 @@ Example:
 - *Returns:* Plain text content of the headline and its subtree
 - *Configuration:* File must be in =org-mcp-allowed-files=
 
-Example:
-#+begin_src json
-# Request for nested headline:
-{
-  "file": "/home/user/org/projects.org",
-  "headlinePath": "Project%20Alpha/Requirements"
-}
-#+end_src
-
 *** org-read-by-id
 - *Description:* Read Org headline by its unique ID property
 - *Parameters:*
@@ -432,20 +367,6 @@ Example:
 - *Configuration:* File containing the ID must be in =org-mcp-allowed-files=
 - *Note:* More stable than path-based access since IDs don't change when headlines are renamed or moved
 
-Example:
-#+begin_src json
-# Request:
-{
-  "uuid": "550e8400-e29b-41d4-a716-446655440000"
-}
-
-# Returns: Content of the headline with that ID
-#+end_src
-
-* Contributing
-
-TODO: Contribution guidelines
-
 * License
 
-GPLv3
+This project is licensed under the GNU General Public License v3.0 (GPLv3) - see the LICENSE file for details.
