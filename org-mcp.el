@@ -1408,6 +1408,7 @@ sibling
   - Top-level (parent_uri with no fragment): Adds at end of file."
    :read-only nil
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-rename-headline
    :id "org-rename-headline"
@@ -1433,25 +1434,10 @@ Returns JSON object:
   success - Always true on success (boolean)
   previous_title - The previous headline title (string)
   new_title - The new title that was set (string)
-  uri - ID-based URI (org-id://{uuid}) for the renamed headline
-
-Error cases:
-  - Title mismatch: current_title doesn't match actual headline title
-  - Invalid new title: Empty, whitespace-only, or contains newlines
-  - File access denied: Referenced file not in org-mcp-allowed-files
-  - Headline not found: URI path doesn't resolve to a headline
-  - Unsaved changes: File has unsaved modifications in a buffer
-
-Preservation guarantees:
-  - TODO state remains unchanged
-  - All tags remain unchanged
-  - All properties (including custom IDs) remain unchanged
-  - Body content and child headlines remain unchanged
-
-Security: Only files in org-mcp-allowed-files can be modified.  The
-tool validates the current title to prevent race conditions."
+  uri - ID-based URI (org-id://{uuid}) for the renamed headline"
    :read-only nil
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-edit-body
    :id "org-edit-body"
@@ -1484,18 +1470,10 @@ Special behavior - Empty old_body:
   When old_body is \"\", the tool adds content to empty nodes:
   - Only works if node body is empty or whitespace-only
   - Error if node already has content
-  - Useful for adding initial content to newly created headlines
-
-Content validation:
-  - Prevents introducing headlines that would break document structure
-  - Ensures all #+BEGIN_* blocks have matching #+END_* markers
-  - Block validation handles nested literal content correctly
-
-Security: Only files in org-mcp-allowed-files can be modified."
+  - Useful for adding initial content to newly created headlines"
    :read-only nil
    :server-id org-mcp--server-id)
-  ;; Workaround tools for resource templates (until Claude Code
-  ;; supports templates)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-read-file
    :id "org-read-file"
@@ -1510,6 +1488,7 @@ Parameters:
 Returns: Plain text content of the entire Org file"
    :read-only t
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-read-outline
    :id "org-read-outline"
@@ -1524,6 +1503,7 @@ Parameters:
 Returns: JSON object with hierarchical outline structure"
    :read-only t
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-read-headline
    :id "org-read-headline"
@@ -1545,6 +1525,7 @@ Parameters:
 Returns: Plain text content of the headline and its subtree"
    :read-only t
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-read-by-id
    :id "org-read-by-id"
@@ -1559,6 +1540,7 @@ Parameters:
 Returns: Plain text content of the headline and its subtree"
    :read-only t
    :server-id org-mcp--server-id)
+
   ;; Register template resources for org files
   (mcp-server-lib-register-resource
    "org://{filename}" #'org-mcp--handle-file-resource
@@ -1571,28 +1553,10 @@ structure.
 URI format: org://{filename}
   filename - Absolute path to the Org file (required)
 
-Security and access:
-  - File must be in org-mcp-allowed-files list
-  - Only absolute paths are accepted
-  - Path validation includes symlink resolution
-
-Returns: Plain text content of the entire Org file
-
-Example URIs:
-  org:///home/user/notes/tasks.org
-  org:///Users/name/Documents/projects.org
-
-Use this resource to:
-  - Read complete Org file contents
-  - Access files for processing or analysis
-  - Get raw Org markup including all metadata
-
-Error cases:
-  - File access denied: File not in org-mcp-allowed-files
-  - Invalid path: Relative paths not accepted
-  - File not found: Path doesn't exist"
+Returns: Plain text content of the entire Org file"
    :mime-type "text/plain"
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-resource
    "org-outline://{filename}" #'org-mcp--handle-outline-resource
    :name "Org file outline"
@@ -1603,10 +1567,6 @@ to 2 levels deep.
 
 URI format: org-outline://{filename}
   filename - Absolute path to the Org file (required)
-
-Security and access:
-  - File must be in org-mcp-allowed-files list
-  - Only absolute paths are accepted
 
 Returns: JSON object with structure:
   {
@@ -1636,15 +1596,10 @@ Example URIs:
 
 Use this resource to:
   - Get document structure overview
-  - Build navigation interfaces
-  - Understand file organization without reading full content
-
-Error cases:
-  - File access denied: File not in org-mcp-allowed-files
-  - Invalid path: Relative paths not accepted
-  - File not found: Path doesn't exist"
+  - Understand file organization without reading full content"
    :mime-type "application/json"
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-resource
    (concat org-mcp--uri-headline-prefix "{filename}")
    #'org-mcp--handle-headline-resource
@@ -1673,10 +1628,6 @@ Encoding limitations:
   - For such files, rename them or use org-id:// URIs instead
   - Headline paths use full URL encoding (all special chars encoded)
 
-Security and access:
-  - File must be in org-mcp-allowed-files list
-  - Only absolute file paths are accepted
-
 Returns: Plain text content including:
   - The headline itself with TODO state and tags
   - All properties drawer content
@@ -1702,15 +1653,10 @@ Example URIs:
 Use this resource to:
   - Read specific sections of an Org file
   - Access headline content by hierarchical path
-  - Get complete subtree including all children
-
-Error cases:
-  - File access denied: File not in org-mcp-allowed-files
-  - Invalid path: Relative file paths not accepted
-  - Headline not found: Path doesn't match any headline hierarchy
-  - File not found: Path doesn't exist"
+  - Get complete subtree including all children"
    :mime-type "text/plain"
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-resource
    (concat org-mcp--uri-id-prefix "{uuid}")
    #'org-mcp--handle-id-resource
@@ -1753,17 +1699,7 @@ Example URIs:
 Use this resource to:
   - Access headlines by stable identifier
   - Reference content that may be renamed or moved
-  - Build cross-references between Org nodes
-
-Advantages over path-based access:
-  - Survives headline renames
-  - Survives headline moves within file
-  - Survives file moves (if org-id database is updated)
-
-Error cases:
-  - ID not found: No headline with that ID exists in allowed files
-  - File access denied: File with ID is not in org-mcp-allowed-files
-  - File not found: org-id database points to non-existent file"
+  - Build cross-references between Org nodes"
    :mime-type "text/plain"
    :server-id org-mcp--server-id))
 
