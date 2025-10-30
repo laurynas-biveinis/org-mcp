@@ -1098,90 +1098,91 @@ MCP Parameters:
            (file-path (car parsed))
            (headline-path (cdr parsed)))
 
-      (org-mcp--modify-and-save file-path "edit body" nil
-        (org-mcp--goto-headline-from-uri
-         headline-path
-         (string-prefix-p org-mcp--uri-id-prefix resource_uri))
+      (org-mcp--modify-and-save
+       file-path "edit body" nil
+       (org-mcp--goto-headline-from-uri
+        headline-path
+        (string-prefix-p org-mcp--uri-id-prefix resource_uri))
 
-        (org-mcp--validate-body-no-headlines
-         new_body (org-current-level))
+       (org-mcp--validate-body-no-headlines
+        new_body (org-current-level))
 
-        ;; Skip past headline and properties
-        (org-end-of-meta-data t)
+       ;; Skip past headline and properties
+       (org-end-of-meta-data t)
 
-        ;; Get body boundaries
-        (let ((body-begin (point))
-              (body-end nil)
-              (body-content nil)
-              (occurrence-count 0))
+       ;; Get body boundaries
+       (let ((body-begin (point))
+             (body-end nil)
+             (body-content nil)
+             (occurrence-count 0))
 
-          ;; Find end of body (before next headline or end of subtree)
-          (save-excursion
-            (if (org-goto-first-child)
-                ;; Has children - body ends before first child
-                (setq body-end (point))
-              ;; No children - body extends to end of subtree
-              (org-end-of-subtree t)
-              (setq body-end (point))))
+         ;; Find end of body (before next headline or end of subtree)
+         (save-excursion
+           (if (org-goto-first-child)
+               ;; Has children - body ends before first child
+               (setq body-end (point))
+             ;; No children - body extends to end of subtree
+             (org-end-of-subtree t)
+             (setq body-end (point))))
 
-          ;; Extract body content
-          (setq body-content
-                (buffer-substring-no-properties body-begin body-end))
+         ;; Extract body content
+         (setq body-content
+               (buffer-substring-no-properties body-begin body-end))
 
-          ;; Trim leading newline if present
-          ;; (`org-end-of-meta-data' includes it)
-          (when (and (> (length body-content) 0)
-                     (= (aref body-content 0) ?\n))
-            (setq body-content (substring body-content 1))
-            (setq body-begin (1+ body-begin)))
+         ;; Trim leading newline if present
+         ;; (`org-end-of-meta-data' includes it)
+         (when (and (> (length body-content) 0)
+                    (= (aref body-content 0) ?\n))
+           (setq body-content (substring body-content 1))
+           (setq body-begin (1+ body-begin)))
 
-          ;; Check if body is empty
-          (when (string-match-p "\\`[[:space:]]*\\'" body-content)
-            ;; Empty oldBody + empty body -> add content
-            (if (string= old_body "")
-                ;; Treat as single replacement
-                (setq occurrence-count 1)
-              (org-mcp--tool-validation-error
-               "Node has no body content")))
+         ;; Check if body is empty
+         (when (string-match-p "\\`[[:space:]]*\\'" body-content)
+           ;; Empty oldBody + empty body -> add content
+           (if (string= old_body "")
+               ;; Treat as single replacement
+               (setq occurrence-count 1)
+             (org-mcp--tool-validation-error
+              "Node has no body content")))
 
-          ;; Count occurrences (unless already handled above)
-          (unless (= occurrence-count 1)
-            ;; Empty oldBody with non-empty body is an error
-            (if (and (string= old_body "")
-                     (not
-                      (string-match-p
-                       "\\`[[:space:]]*\\'" body-content)))
-                (org-mcp--tool-validation-error
-                 "Cannot use empty old_body with non-empty body")
-              ;; Normal occurrence counting
-              (let ((case-fold-search nil)
-                    (search-pos 0))
-                (while (string-match
-                        (regexp-quote old_body) body-content
-                        search-pos)
-                  (setq occurrence-count (1+ occurrence-count))
-                  (setq search-pos (match-end 0))))))
+         ;; Count occurrences (unless already handled above)
+         (unless (= occurrence-count 1)
+           ;; Empty oldBody with non-empty body is an error
+           (if (and (string= old_body "")
+                    (not
+                     (string-match-p
+                      "\\`[[:space:]]*\\'" body-content)))
+               (org-mcp--tool-validation-error
+                "Cannot use empty old_body with non-empty body")
+             ;; Normal occurrence counting
+             (let ((case-fold-search nil)
+                   (search-pos 0))
+               (while (string-match
+                       (regexp-quote old_body) body-content
+                       search-pos)
+                 (setq occurrence-count (1+ occurrence-count))
+                 (setq search-pos (match-end 0))))))
 
-          ;; Validate occurrences
-          (cond
-           ((= occurrence-count 0)
-            (org-mcp--tool-validation-error "Body text not found: %s"
-                                            old_body))
-           ((and (> occurrence-count 1) (not replace_all))
-            (org-mcp--tool-validation-error
-             (concat "Text appears %d times (use replace_all)")
-             occurrence-count)))
+         ;; Validate occurrences
+         (cond
+          ((= occurrence-count 0)
+           (org-mcp--tool-validation-error "Body text not found: %s"
+                                           old_body))
+          ((and (> occurrence-count 1) (not replace_all))
+           (org-mcp--tool-validation-error
+            (concat "Text appears %d times (use replace_all)")
+            occurrence-count)))
 
-          ;; Perform replacement
-          (org-mcp--replace-body-content
-           old_body
-           new_body
-           body-content
-           replace_all
-           body-begin
-           body-end))))))
+         ;; Perform replacement
+         (org-mcp--replace-body-content
+          old_body
+          new_body
+          body-content
+          replace_all
+          body-begin
+          body-end))))))
 
-;;; Resource template workaround tools
+;; Tools duplicating resource templates
 
 (defun org-mcp--tool-read-file (file)
   "Tool wrapper for org://{filename} resource template.
@@ -1218,8 +1219,7 @@ MCP Parameters:
                   instead"
   (unless (stringp headline_path)
     (org-mcp--tool-validation-error
-     "Parameter headline_path must be a string, got: %S \
-(type: %s)"
+     "Parameter headline_path must be a string, got: %S (type: %s)"
      headline_path (type-of headline_path)))
   (when (string-empty-p headline_path)
     (org-mcp--tool-validation-error
@@ -1266,6 +1266,7 @@ Use this tool to understand the available task states in the Org
 configuration before creating or updating TODO items."
    :read-only t
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-get-tag-config
    :id "org-get-tag-config"
@@ -1299,6 +1300,7 @@ This helps validate tag usage and understand tag semantics before
 adding or modifying tags on TODO items."
    :read-only t
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-get-allowed-files
    :id "org-get-allowed-files"
@@ -1332,15 +1334,10 @@ Use cases:
     the exact path?
   - Access Troubleshooting: Why is my file access failing?
   - Configuration Verification: Did my org-mcp-allowed-files setting
-    work correctly?
-
-Behavior:
-  - Returns configured paths exactly as-is (no validation or
-    normalization)
-  - Always succeeds (returns empty array if no files configured)
-  - No metadata included (only file paths)"
+    work correctly?"
    :read-only t
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-update-todo-state
    :id "org-update-todo-state"
@@ -1364,19 +1361,10 @@ Returns JSON object:
   success - Always true on success (boolean)
   previous_state - The previous TODO state (string, empty for none)
   new_state - The new TODO state that was set (string)
-  uri - ID-based URI (org-id://{uuid}) for the updated headline
-
-Error cases:
-  - State mismatch: current_state doesn't match actual headline state
-  - Invalid TODO state: new_state not in org-todo-keywords
-  - File access denied: Referenced file not in org-mcp-allowed-files
-  - Headline not found: URI path doesn't resolve to a headline
-  - Unsaved changes: File has unsaved modifications in a buffer
-
-Security: Only files in org-mcp-allowed-files can be modified.  The
-tool validates the current state to prevent race conditions."
+  uri - ID-based URI (org-id://{uuid}) for the updated headline"
    :read-only nil
    :server-id org-mcp--server-id)
+
   (mcp-server-lib-register-tool
    #'org-mcp--tool-add-todo
    :id "org-add-todo"
@@ -1398,7 +1386,7 @@ Parameters:
          Respects mutually exclusive tag groups
   body - Body content under the headline (string, optional)
          Cannot contain headlines at same or higher level as new item
-         Must have balanced #+BEGIN/#+END blocks
+         If #+BEGIN/#+END blocks are present, they must be balanced
   parent_uri - Parent location (string, required)
                For top-level: org-headline://{absolute-path}
                For child: org-headline://{path}#{parent-path}
@@ -1413,24 +1401,11 @@ Returns JSON object:
   file - Filename (not full path) where item was added
   title - The headline title that was created
 
-Error cases:
-  - Invalid title: Empty, whitespace-only, or contains newlines
-  - Invalid TODO state: Not in org-todo-keywords
-  - Invalid tags: Not in org-tag-alist, invalid characters, or
-violates mutex groups
-  - Invalid body: Contains conflicting headlines or unbalanced blocks
-  - File access denied: Referenced file not in org-mcp-allowed-files
-  - Parent not found: parent_uri doesn't resolve to a headline
-  - Sibling not found: after_uri doesn't match a child of parent
-  - Unsaved changes: File has unsaved modifications in a buffer
-
 Positioning behavior:
   - With parent_uri only: Appends as last child of parent
   - With parent_uri + after_uri: Inserts immediately after specified
 sibling
-  - Top-level (parent_uri with no fragment): Adds at end of file
-
-Security: Only files in org-mcp-allowed-files can be modified."
+  - Top-level (parent_uri with no fragment): Adds at end of file."
    :read-only nil
    :server-id org-mcp--server-id)
   (mcp-server-lib-register-tool
