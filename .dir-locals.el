@@ -5,6 +5,7 @@
                      (indent-tabs-mode . nil)
                      (elisp-lint-indent-specs . ((org-mcp--modify-and-save . 3)
                                                  (org-mcp--with-uri-prefix-dispatch . 1)
+                                                 (org-mcp--with-org-file . 1)
                                                  (org-mcp-test--assert-error-and-file . 1)
                                                  (org-mcp-test--with-enabled . defun)
                                                  (org-mcp-test--with-config . 1)
