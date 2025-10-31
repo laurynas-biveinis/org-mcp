@@ -21,7 +21,8 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+;; along with this program.  If not, see
+;; <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -123,8 +124,8 @@ Handles symlinks and path variations by normalizing both paths."
   (string= (file-truename path1) (file-truename path2)))
 
 (defun org-mcp--find-allowed-file (filename)
-  "Find FILENAME in `org-mcp-allowed-files' and return the expanded path.
-Returns nil if the file is not in the allowed list."
+  "Find FILENAME in `org-mcp-allowed-files'.
+Returns the expanded path if found, nil if not in the allowed list."
   (when-let* ((found
                (cl-find
                 (file-truename filename)
@@ -154,17 +155,17 @@ Preserves narrowing state across the refresh operation."
                       (when (buffer-modified-p)
                         (org-mcp--tool-validation-error
                          "Buffer for file %s was modified during \
-refresh.  Check your `after-revert-hook' for functions that modify the \
-buffer"
+refresh.  Check your `after-revert-hook' for functions that modify \
+the buffer"
                          file-path)))
                   ;; Restore narrowing even if revert fails
                   (when was-narrowed
                     (narrow-to-region narrow-start narrow-end)))
               (error
                (org-mcp--tool-validation-error
-                "Failed to refresh buffer for file %s: %s. Check your \
-Emacs hooks (`before-revert-hook', `after-revert-hook', \
-`revert-buffer-function')"
+                "Failed to refresh buffer for file %s: %s. \
+Check your Emacs hooks (`before-revert-hook', \
+`after-revert-hook', `revert-buffer-function')"
                 file-path (error-message-string err))))))))))
 
 (defun org-mcp--complete-and-save (file-path response-alist)
@@ -182,7 +183,7 @@ RESPONSE-ALIST is an alist of response fields."
       `((uri . ,(concat org-mcp--uri-id-prefix id)))))))
 
 (defun org-mcp--fail-if-modified (file-path operation)
-  "Error if FILE-PATH has unsaved changes in any buffer.
+  "Check if FILE-PATH has unsaved change in any buffer.
 OPERATION is a string describing the operation for error messages."
   (dolist (buf (buffer-list))
     (with-current-buffer buf
@@ -204,13 +205,15 @@ OPERATION is a string describing the operation for error messages."
 
 (defmacro org-mcp--modify-and-save
     (file-path operation response-alist &rest body)
-  "Execute BODY to modify Org file at FILE-PATH, then save and return response.
-First validates that FILE-PATH has no unsaved changes (using OPERATION for
-error messages).  Then executes BODY in a temp buffer set up for the Org file.
-After BODY executes, creates an Org ID if needed, saves the buffer, refreshes
-any visiting buffers, and returns the result of `org-mcp--complete-and-save'
-with FILE-PATH and RESPONSE-ALIST.
-BODY can access FILE-PATH, OPERATION, and RESPONSE-ALIST as variables."
+  "Execute BODY to modify Org file at FILE-PATH, then save result.
+First validates that FILE-PATH has no unsaved changes (using
+OPERATION for error messages).  Then executes BODY in a temp buffer
+set up for the Org file.  After BODY executes, creates an Org ID if
+needed, saves the buffer, refreshes any visiting buffers, and
+returns the result of `org-mcp--complete-and-save' with FILE-PATH
+and RESPONSE-ALIST.
+BODY can access FILE-PATH, OPERATION, and RESPONSE-ALIST as
+variables."
   (declare (indent 3) (debug (form form form body)))
   `(progn
      (org-mcp--fail-if-modified ,file-path ,operation)
@@ -249,8 +252,9 @@ is not found."
     (uri headline-body id-body)
   "Dispatch tool URI handling based on prefix.
 URI is the URI string to dispatch on.
-HEADLINE-BODY is executed when URI starts with `org-mcp--uri-headline-prefix',
-with the URI after the prefix bound to `headline'.
+HEADLINE-BODY is executed when URI starts with
+`org-mcp--uri-headline-prefix', with the URI after the prefix bound
+to `headline'.
 ID-BODY is executed when URI starts with `org-mcp--uri-id-prefix',
 with the URI after the prefix bound to `id'.
 Throws an error if neither prefix matches."
@@ -709,8 +713,8 @@ Throws validation error if AFTER-URI is invalid or sibling not found."
 (defun org-mcp--insert-heading (title parent-level)
   "Insert a new Org heading at the appropriate level.
 TITLE is the headline text to insert.
-PARENT-LEVEL is the parent's heading level (integer) if inserting as a child,
-or nil if inserting at top-level.
+PARENT-LEVEL is the parent's heading level (integer) if inserting
+as a child, or nil if inserting at top-level.
 Assumes point is positioned where the heading should be inserted.
 After insertion, point is left on the heading line at end-of-line."
   (if parent-level
@@ -718,9 +722,9 @@ After insertion, point is left on the heading line at end-of-line."
       (progn
         (org-mcp--ensure-newline)
         ;; Insert heading manually at parent level + 1
-        ;; We don't use `org-insert-heading' because when parent has no
-        ;; children, it creates a sibling of the parent instead of a
-        ;; child
+        ;; We don't use `org-insert-heading' because when parent has
+        ;; no children, it creates a sibling of the parent instead of
+        ;; a child
         (let ((heading-start (point)))
           (insert
            (concat (make-string (1+ parent-level) ?*) " " title "\n"))
