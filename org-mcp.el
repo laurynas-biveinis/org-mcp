@@ -726,8 +726,7 @@ After insertion, point is left on the heading line at end-of-line."
         ;; no children, it creates a sibling of the parent instead of
         ;; a child
         (let ((heading-start (point)))
-          (insert
-           (concat (make-string (1+ parent-level) ?*) " " title "\n"))
+          (insert (make-string (1+ parent-level) ?*) " " title "\n")
           ;; Set point to heading for `org-todo' and `org-set-tags'
           (goto-char heading-start)
           (end-of-line)))
