@@ -21,6 +21,12 @@
 (defconst org-mcp-test--content-empty ""
   "Empty org file content.")
 
+(defconst org-mcp-test--agenda-basic-content
+  "* TODO Test agenda line
+SCHEDULED: <2026-04-26>
+"
+  "Content with a task on 2026-04-26 for org-get-agenda tests.")
+
 (defconst org-mcp-test--content-with-id-id
   "550e8400-e29b-41d4-a716-446655440000"
   "ID value for org-mcp-test--content-with-id.")
@@ -1609,6 +1615,88 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
    '("/home/user/tasks.org"
      "/home/user/projects.org"
      "/home/user/notes.org")))
+
+;; org-get-agenda tests
+
+(ert-deftest org-mcp-test-tool-get-agenda-day ()
+  "Test org-get-agenda with day view."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "day") (date . "2026-04-26")))))
+          (agenda (alist-get 'agenda result))
+          (view (alist-get 'view result))
+          (date (alist-get 'date result)))
+     (should (string= view "day"))
+     (should (string= date "2026-04-26"))
+     (should (string-match "26 April 2026" agenda))
+     (should (string-match "Test agenda line" agenda)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-week ()
+  "Test org-get-agenda with week view."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "week") (date . "2026-04-26")))))
+          (agenda (alist-get 'agenda result))
+          (view (alist-get 'view result)))
+     (should (string= view "week"))
+     (should (string-match "Test agenda line" agenda)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-month ()
+  "Test org-get-agenda with month view."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "month") (date . "2026-04-26")))))
+          (agenda (alist-get 'agenda result))
+          (view (alist-get 'view result)))
+     (should (string= view "month"))
+     (should (string-match "April" agenda))
+     (should (string-match "Test agenda line" agenda)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-view-case-insensitive ()
+  "Test org-get-agenda accepts mixed-case view name."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "DaY") (date . "2026-04-26")))))
+          (view (alist-get 'view result)))
+     (should (string= view "day")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-no-existing-files ()
+  "Test org-get-agenda errors when no allowed files exist on disk."
+  (let ((org-mcp-allowed-files '("/no/such/org-mcp-agenda-test-file.org")))
+    (org-mcp-test--with-enabled
+     (let* ((params '((view . "day") (date . "2026-04-26")))
+            (request (mcp-server-lib-create-tools-call-request
+                      "org-get-agenda" nil params))
+            (response (mcp-server-lib-process-jsonrpc-parsed
+                       request mcp-server-lib-ert-server-id)))
+       (should-error
+        (mcp-server-lib-ert-process-tool-response response)
+        :type 'mcp-server-lib-tool-error)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-bad-view ()
+  "Test org-get-agenda errors on invalid view."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((params '((view . "fortnight") (date . "2026-04-26")))
+          (request (mcp-server-lib-create-tools-call-request
+                    "org-get-agenda" nil params))
+          (response (mcp-server-lib-process-jsonrpc-parsed
+                     request mcp-server-lib-ert-server-id)))
+     (should-error
+      (mcp-server-lib-ert-process-tool-response response)
+      :type 'mcp-server-lib-tool-error))))
 
 (ert-deftest org-mcp-test-file-not-in-allowed-list-returns-error ()
   "Test that reading a file not in allowed list returns an error."
