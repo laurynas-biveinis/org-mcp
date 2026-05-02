@@ -149,6 +149,7 @@ uses a private agenda buffer name so the user window layout is not
 disturbed.  The caller must ensure AGENDA-FILES is non-nil."
   (let ((org-agenda-files agenda-files)
         (org-agenda-buffer-tmp-name " *org-mcp agenda*")
+        (org-agenda-buffer-name " *org-mcp agenda*")
         (org-agenda-window-setup 'current-window)
         (org-agenda-sticky nil))
     (save-window-excursion
