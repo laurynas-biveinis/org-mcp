@@ -78,7 +78,7 @@ jobs:
           comment_mode: off
 
       - name: Publish Test Results (macOS)
-        uses: dorny/test-reporter@v1 # zizmor: ignore[unpinned-uses]
+        uses: dorny/test-reporter@v3 # zizmor: ignore[unpinned-uses]
         if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2' && matrix.os == 'macos-latest')
         with:
           name: Test Results (macOS, Emacs ${{ matrix.emacs_version }})
