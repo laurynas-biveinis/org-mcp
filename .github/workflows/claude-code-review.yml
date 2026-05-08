@@ -21,6 +21,7 @@ jobs:
     #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
 
     runs-on: ubuntu-latest
+    environment: claude
     permissions:
       contents: read
       pull-requests: read
@@ -29,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6 # zizmor: ignore[unpinned-uses]
         with:
           fetch-depth: 1
           persist-credentials: false

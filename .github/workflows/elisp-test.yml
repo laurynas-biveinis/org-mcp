@@ -34,7 +34,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6 # zizmor: ignore[unpinned-uses]
         with:
           persist-credentials: false
 
@@ -62,7 +62,7 @@ jobs:
           eask run script test
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4 # zizmor: ignore[unpinned-uses]
         if: matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2'
         with:
           name: test-results-${{ matrix.os }}-emacs-${{ matrix.emacs_version }}
