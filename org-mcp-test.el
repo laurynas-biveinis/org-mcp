@@ -786,6 +786,29 @@ Very deep content."
    "Content of subsection 1.1.")
   "Expected content when reading 'First Section/Subsection 1.1' nested headline.")
 
+(defconst org-mcp-test--content-archive-simple
+  "* TODO Task to Archive
+Some content here."
+  "Simple task for archive subtree tests.")
+
+(defconst org-mcp-test--expected-archive-source-regex
+  "\\`\\s-*\\'"
+  "Regex matching source file after its only headline has been archived.")
+
+(defconst org-mcp-test--expected-archive-file-regex
+  (concat
+   "\\`#[^\n]*\n"                       ; mode line
+   "\\(?:\n\\)*"                        ; blank lines
+   "Archived entries from file[^\n]*\n" ; section header
+   "\\(?:\n\\)*"                        ; blank lines
+   "\\* TODO Task to Archive\n"
+   ":PROPERTIES:\n"
+   "\\(?::[A-Z_]+:[ \t]+[^\n]*\n\\)+"
+   ":END:\n"
+   "Some content here\\.\n?"
+   "\\'")
+  "Regex matching archive file after archiving 'Task to Archive'.")
+
 ;; Test helpers
 
 (defun org-mcp-test--read-file (file)
@@ -2560,6 +2583,81 @@ Without BEGIN_SRC"
 Some quote
 #+END_EXAMPLE"
     nil)))
+
+;; org-archive-subtree tests
+
+(ert-deftest org-mcp-test-archive-subtree-success ()
+  "Test successful subtree archiving by headline URI."
+  (org-mcp-test--with-temp-org-files
+   ((test-file org-mcp-test--content-archive-simple))
+   (let* ((archive-file
+           (concat test-file "_archive"))
+          (uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file)))
+     (unwind-protect
+         (let* ((result-text
+                 (mcp-server-lib-ert-call-tool
+                  "org-archive-subtree" `((uri . ,uri))))
+                (result (json-read-from-string result-text)))
+           (should (equal (alist-get 'success result) t))
+           (should (string= archive-file
+                            (alist-get 'archive_file result)))
+           (org-mcp-test--verify-file-matches
+            test-file
+            org-mcp-test--expected-archive-source-regex)
+           (should (file-exists-p archive-file))
+           (should
+            (string-match-p
+             org-mcp-test--expected-archive-file-regex
+             (org-mcp-test--read-file archive-file))))
+       (when (file-exists-p archive-file)
+         (delete-file archive-file))))))
+
+(ert-deftest org-mcp-test-archive-subtree-by-id ()
+  "Test successful subtree archiving by ID URI."
+  (org-mcp-test--with-id-setup
+   test-file org-mcp-test--content-with-id-todo
+   `(,org-mcp-test--content-with-id-id)
+   (let* ((archive-file
+           (concat test-file "_archive"))
+          (uri (format "org-id://%s" org-mcp-test--content-with-id-id)))
+     (unwind-protect
+         (let* ((result-text
+                 (mcp-server-lib-ert-call-tool
+                  "org-archive-subtree" `((uri . ,uri))))
+                (result (json-read-from-string result-text)))
+           (should (equal (alist-get 'success result) t))
+           (should (string= archive-file
+                            (alist-get 'archive_file result)))
+           (org-mcp-test--verify-file-matches
+            test-file
+            org-mcp-test--expected-archive-source-regex)
+           (should (file-exists-p archive-file)))
+       (when (file-exists-p archive-file)
+         (delete-file archive-file))))))
+
+(ert-deftest org-mcp-test-archive-subtree-modified-buffer-error ()
+  "Test archive fails when file has unsaved changes."
+  (org-mcp-test--with-temp-org-files
+   ((test-file org-mcp-test--content-archive-simple))
+   (org-mcp-test--with-file-buffer buffer test-file
+     (with-current-buffer buffer
+       (goto-char (point-max))
+       (insert "\n* TODO Another Task")
+       (should (buffer-modified-p)))
+     (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                        test-file)))
+       (org-mcp-test--assert-error-and-file
+        test-file
+        (let* ((request
+                (mcp-server-lib-create-tools-call-request
+                 "org-archive-subtree" 1 `((uri . ,uri))))
+               (response
+                (mcp-server-lib-process-jsonrpc-parsed
+                 request mcp-server-lib-ert-server-id))
+               (result
+                (mcp-server-lib-ert-process-tool-response response)))
+          (error "Expected error but got success: %s" result)))))))
 
 ;; org-read-file tests
 

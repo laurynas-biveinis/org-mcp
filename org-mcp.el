@@ -34,6 +34,7 @@
 (require 'cl-lib)
 (require 'mcp-server-lib)
 (require 'org)
+(require 'org-archive)
 (require 'org-id)
 (require 'url-util)
 
@@ -233,10 +234,10 @@ Returns the expanded file path if found and allowed.
 Throws a tool error if ID exists but file is not allowed, or if ID
 is not found."
   (if-let* ((id-file (org-id-find-id-file id)))
-    ;; ID found in database, check if file is allowed
-    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-      allowed-file
-      (org-mcp--tool-file-access-error id))
+      ;; ID found in database, check if file is allowed
+      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+          allowed-file
+        (org-mcp--tool-file-access-error id))
     ;; ID not in database - might not exist or DB is stale
     ;; Fall back to searching allowed files manually
     (let ((found-file nil))
@@ -262,11 +263,11 @@ Throws an error if neither prefix matches."
   `(if-let* ((id
               (org-mcp--extract-uri-suffix
                ,uri org-mcp--uri-id-prefix)))
-     ,id-body
+       ,id-body
      (if-let* ((headline
                 (org-mcp--extract-uri-suffix
                  ,uri org-mcp--uri-headline-prefix)))
-       ,headline-body
+         ,headline-body
        (org-mcp--tool-validation-error
         "Invalid resource URI format: %s"
         ,uri))))
@@ -329,10 +330,10 @@ Returns (FILE . HEADLINE) where FILE is the decoded file path and
 HEADLINE is the part after the fragment separator.
 File paths with # characters should be encoded as %23."
   (if-let* ((hash-pos (string-match "#" path-after-protocol)))
-    (cons
-     (org-mcp--decode-file-path
-      (substring path-after-protocol 0 hash-pos))
-     (substring path-after-protocol (1+ hash-pos)))
+      (cons
+       (org-mcp--decode-file-path
+        (substring path-after-protocol 0 hash-pos))
+       (substring path-after-protocol (1+ hash-pos)))
     (cons (org-mcp--decode-file-path path-after-protocol) nil)))
 
 (defun org-mcp--parse-resource-uri (uri)
@@ -418,7 +419,7 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
   (if is-id
       ;; ID case - headline-path contains single ID
       (if-let* ((pos (org-find-property "ID" (car headline-path))))
-        (goto-char pos)
+          (goto-char pos)
         (org-mcp--id-not-found-error (car headline-path)))
     ;; Path case - headline-path contains title hierarchy
     (unless (org-mcp--navigate-to-headline headline-path)
@@ -1187,6 +1188,39 @@ MCP Parameters:
            body-begin
            body-end))))))
 
+(defun org-mcp--tool-archive-subtree (uri)
+  "Archive the subtree at URI using `org-archive-subtree-default'.
+Creates an Org ID for the headline if one doesn't exist.
+Returns the archive file path.
+
+MCP Parameters:
+  uri - URI of the headline to archive
+        Formats:
+          - org-headline://{absolute-path}#{headline-path}
+          - org-id://{id}"
+  (let* ((parsed (org-mcp--parse-resource-uri uri))
+         (file-path (car parsed))
+         (headline-path (cdr parsed)))
+    (org-mcp--fail-if-modified file-path "archive")
+    (with-temp-buffer
+      (set-visited-file-name file-path t)
+      (insert-file-contents file-path)
+      (org-mode)
+      (goto-char (point-min))
+      (org-mcp--goto-headline-from-uri
+       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
+      (let ((archive-file
+             (expand-file-name
+              (car
+               (org-archive--compute-location
+                (or (org-entry-get nil "ARCHIVE" 'inherit)
+                    org-archive-location))))))
+        (org-archive-subtree-default)
+        (write-region (point-min) (point-max) file-path)
+        (org-mcp--refresh-file-buffers file-path)
+        (json-encode
+         `((success . t) (archive_file . ,archive-file)))))))
+
 ;; Tools duplicating resource templates
 
 (defun org-mcp--tool-read-file (file)
@@ -1480,6 +1514,28 @@ Special behavior - Empty old_body:
    :server-id org-mcp--server-id)
 
   (mcp-server-lib-register-tool
+   #'org-mcp--tool-archive-subtree
+   :id "org-archive-subtree"
+   :description
+   "Archive an Org headline subtree to its configured archive
+location using `org-archive-subtree-default'.  Respects the
+headline's ARCHIVE property, the file's #+ARCHIVE: setting, and
+the global `org-archive-location' (in that order).  Creates an
+Org ID property for the headline if one doesn't exist.
+
+Parameters:
+  uri - URI of the headline to archive (string, required)
+        Formats:
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
+
+Returns JSON object:
+  success - Always true on success (boolean)
+  archive_file - Absolute path to the archive file (string)"
+   :read-only nil
+   :server-id org-mcp--server-id)
+
+  (mcp-server-lib-register-tool
    #'org-mcp--tool-read-file
    :id "org-read-file"
    :description
@@ -1722,6 +1778,8 @@ Use this resource to:
   (mcp-server-lib-unregister-tool
    "org-rename-headline" org-mcp--server-id)
   (mcp-server-lib-unregister-tool "org-edit-body" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool
+   "org-archive-subtree" org-mcp--server-id)
   ;; Unregister workaround tools
   (mcp-server-lib-unregister-tool "org-read-file" org-mcp--server-id)
   (mcp-server-lib-unregister-tool
