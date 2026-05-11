@@ -1660,6 +1660,144 @@ Very deep content."
    "Content of subsection 1.1.")
   "Expected content when reading 'First Section/Subsection 1.1' nested headline.")
 
+(defconst org-mcp-test--content-archive-simple
+  "* TODO Task to Archive
+Some content here."
+  "Org task: a single TODO headline with one body line.")
+
+(defconst org-mcp-test--content-archive-custom-location
+  "* TODO Task to Archive
+:PROPERTIES:
+:ARCHIVE:  %s_custom::
+:END:
+Some content here."
+  "Task with an `:ARCHIVE:' property selecting a non-default location.
+The literal `%s' is org-archive's placeholder for the source file name
+without its directory (`file-name-nondirectory', extension kept), so
+the archive file becomes `<source>_custom'.")
+
+(defconst org-mcp-test--content-archive-keyword-location
+  "#+ARCHIVE: %s_fromkeyword::
+* TODO Task to Archive
+Some content here."
+  "Task under a file-level `#+ARCHIVE:' keyword with no per-headline
+`:ARCHIVE:' property.  The literal `%s' is org-archive's placeholder
+for the source file's base name, so the archive file becomes
+`<source>_fromkeyword'.")
+
+(defconst org-mcp-test--content-archive-infile-location
+  "* TODO Task to Archive
+:PROPERTIES:
+:ARCHIVE:  ::* Archived Tasks
+:END:
+Some content here."
+  "Task whose `:ARCHIVE:' property selects an in-file location (the
+file part before `::' is empty), so archiving moves the subtree under
+a heading within the source file itself rather than to a separate
+file.")
+
+(defconst org-mcp-test--content-archive-nested
+  "* Parent
+Parent body.
+** TODO Child to Archive
+Child content here."
+  "Two-level Org tree: a `Parent' headline with body and a nested
+`Child to Archive' TODO subheading carrying its own body.")
+
+(defconst org-mcp-test--expected-archive-nested-source-regex
+  "\\`\\* Parent\nParent body\\.\\s-*\\'"
+  "Regex matching an Org file with a single top-level `Parent' headline
+followed by its body line and no sub-headings.")
+
+(defconst org-mcp-test--content-archive-malformed-location
+  "* TODO Task to Archive
+:PROPERTIES:
+:ARCHIVE:  no-separator-here
+:END:
+Some content here."
+  "Task whose `:ARCHIVE:' property omits the `::' separator, so
+org-archive's location parser rejects the spec as malformed.")
+
+(defconst org-mcp-test--expected-archive-source-regex
+  "\\`\\s-*\\'"
+  "Regex matching an Org file whose content is empty or whitespace only.")
+
+(defconst org-mcp-test--expected-archive-simple-unchanged-source-regex
+  (concat "\\`"
+          (regexp-quote org-mcp-test--content-archive-simple)
+          "\\'")
+  "Regex matching the exact content of
+`org-mcp-test--content-archive-simple', byte for byte.")
+
+(defconst org-mcp-test--expected-archive-infile-source-regex
+  (concat
+   "\\`\\* Archived Tasks\n"
+   "\\(?:\n\\)*"                        ; blank lines
+   "\\*\\* TODO Task to Archive\n"
+   ":PROPERTIES:\n"
+   "\\(?::[A-Z_]+:[ \t]+[^\n]*\n\\)+"
+   ":END:\n"
+   "Some content here\\.\n?"
+   "\\'")
+  "Regex matching an Org file with a top-level `Archived Tasks' heading,
+under it a level-2 `TODO Task to Archive' entry with a PROPERTIES
+drawer, and a single body line.")
+
+(defun org-mcp-test--archive-file-regex (&optional id heading body)
+  "Regex matching an Org archive file with one archived TODO entry.
+The file has a mode-line comment, an \"Archived entries from file\"
+section header, and a single `* TODO HEADING' entry with a PROPERTIES
+drawer followed by BODY.  HEADING defaults to \"Task to Archive\" and
+BODY to \"Some content here.\", the shape produced by the
+`org-mcp-test--content-archive-simple' fixture.  When ID is non-nil,
+the drawer must contain an `:ID:' line with that exact value, so a
+single whole-file match also pins the archived entry's identity."
+  (let ((heading (or heading "Task to Archive"))
+        (body (or body "Some content here.")))
+    (concat
+     "\\`#[^\n]*\n"                       ; mode line
+     "\\(?:\n\\)*"                        ; blank lines
+     "Archived entries from file[^\n]*\n" ; section header
+     "\\(?:\n\\)*"                        ; blank lines
+     "\\* TODO " (regexp-quote heading) "\n"
+     ":PROPERTIES:\n"
+     (if id
+         (concat
+          "\\(?::[A-Z_]+:[ \t]+[^\n]*\n\\)*" ; properties before :ID:
+          ":ID:[ \t]+" (regexp-quote id) "\n"
+          "\\(?::[A-Z_]+:[ \t]+[^\n]*\n\\)*") ; properties after :ID:
+       "\\(?::[A-Z_]+:[ \t]+[^\n]*\n\\)+")
+     ":END:\n"
+     (regexp-quote body) "\n?"
+     "\\'")))
+
+(defconst org-mcp-test--expected-archive-simple-file-regex
+  (org-mcp-test--archive-file-regex)
+  "Regex matching an Org archive file with a mode-line comment, an
+\"Archived entries from file\" section header, and a single
+`* TODO Task to Archive' entry with a PROPERTIES drawer and a
+\"Some content here.\" body.")
+
+(defconst org-mcp-test--expected-archive-with-id-file-regex
+  (org-mcp-test--archive-file-regex
+   org-mcp-test--content-with-id-id
+   "Task with ID"
+   "First line of content.\nSecond line of content.\nThird line of content.")
+  "Regex matching an Org archive file with a mode-line comment, an
+\"Archived entries from file\" section header, and a single `Task with
+ID' TODO entry whose original `:ID:' is preserved among the ARCHIVE_*
+properties in its PROPERTIES drawer, followed by three body lines.")
+
+(defconst org-mcp-test--content-preexisting-archive-entry
+  "* TODO Pre-existing archived entry\n"
+  "A single TODO headline line with no body or properties.")
+
+(defconst org-mcp-test--archive-unsaved-error-regex
+  (concat "Cannot archive: an Emacs buffer visiting this "
+          "file has unsaved")
+  "Partial error string for the unsaved-changes guard, up to but not
+including the recovery-hint suffix.")
+
 ;; Test helpers
 
 (defun org-mcp-test--read-file (file)
@@ -1671,6 +1809,63 @@ Very deep content."
 (defun org-mcp-test--verify-file-matches (test-file expected-pattern)
   "Verify TEST-FILE content matches EXPECTED-PATTERN regexp."
   (should (string-match-p expected-pattern (org-mcp-test--read-file test-file))))
+
+(defun org-mcp-test--verify-buffer-matches (buffer expected-pattern)
+  "Verify BUFFER content matches EXPECTED-PATTERN regexp."
+  (should
+   (string-match-p
+    expected-pattern
+    (with-current-buffer buffer (buffer-string)))))
+
+(defun org-mcp-test--discard-buffer-visiting (file)
+  "Kill every buffer visiting FILE, discarding unsaved changes."
+  (dolist (buf (buffer-list))
+    (when-let* ((buf-file (buffer-file-name buf))
+                ((string= (expand-file-name buf-file)
+                          (expand-file-name file))))
+      (with-current-buffer buf
+        (set-buffer-modified-p nil))
+      (kill-buffer buf))))
+
+(defmacro org-mcp-test--with-archive-file (archive-file path &rest body)
+  "Bind ARCHIVE-FILE to PATH and evaluate BODY in an `unwind-protect'.
+On exit, kill any buffer visiting ARCHIVE-FILE (discarding unsaved
+changes) and delete the file if it exists."
+  (declare (indent 2) (debug (symbolp form body)))
+  `(let ((,archive-file ,path))
+     (unwind-protect
+         (progn ,@body)
+       (org-mcp-test--discard-buffer-visiting ,archive-file)
+       (when (file-exists-p ,archive-file)
+         (delete-file ,archive-file)))))
+
+(defun org-mcp-test--archive-tool-response (uri)
+  "Call the org-archive-subtree tool with URI; return the parsed response."
+  (mcp-server-lib-process-jsonrpc-parsed
+   (mcp-server-lib-create-tools-call-request
+    "org-archive-subtree" 1 `((uri . ,uri)))
+   mcp-server-lib-ert-server-id))
+
+(defun org-mcp-test--archive-subtree (uri archive-file)
+  "Archive subtree at URI; assert success and landing in ARCHIVE-FILE.
+Return the parsed tool result alist."
+  (let ((result (json-read-from-string
+                 (mcp-server-lib-ert-call-tool
+                  "org-archive-subtree" `((uri . ,uri))))))
+    (should (equal (alist-get 'success result) t))
+    (should (string= archive-file (alist-get 'archive_file result)))
+    result))
+
+(defun org-mcp-test--archive-subtree-id (uri archive-file)
+  "Archive subtree at URI to ARCHIVE-FILE; return its Org ID.
+Wrap `org-mcp-test--archive-subtree', assert the result URI is an
+`org-id://' URI, and return its ID -- freshly created when the
+headline lacked one, or the existing ID otherwise."
+  (let ((returned-uri
+         (alist-get 'uri
+                    (org-mcp-test--archive-subtree uri archive-file))))
+    (should (string-match "\\`org-id://\\(.+\\)\\'" returned-uri))
+    (match-string 1 returned-uri)))
 
 (defmacro org-mcp-test--assert-error-and-file
     (test-file error-form &optional error-message-regex)
@@ -1689,6 +1884,19 @@ the wire-protocol error text."
        (should
         (string-match-p ,error-message-regex
                         (error-message-string err))))))
+
+(defmacro org-mcp-test--assert-archive-error
+    (test-file uri &optional error-message-regex)
+  "Assert archiving URI errors and TEST-FILE stays unchanged.
+ERROR-MESSAGE-REGEX, if non-nil, must match the signalled error's
+message string."
+  (declare (indent 1) (debug (form form &optional form)))
+  `(org-mcp-test--assert-error-and-file ,test-file
+     (let* ((response (org-mcp-test--archive-tool-response ,uri))
+            (result
+             (mcp-server-lib-ert-process-tool-response response)))
+       (error "Expected error but got success: %s" result))
+     ,error-message-regex))
 
 (defmacro org-mcp-test--with-enabled (&rest body)
   "Run BODY with org-mcp enabled, ensuring cleanup."
@@ -1776,6 +1984,37 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
      (list ,file-var)
      (mapcar (lambda (id) (cons id ,file-var)) ,ids)
      ,@body)))
+
+(defmacro org-mcp-test--with-archive-setup
+    (file-var initial-content ids &rest body)
+  "Like `org-mcp-test--with-id-setup' with org-archive options pinned.
+Binds `org-archive-location', `org-archive-default-command',
+`org-archive-subtree-save-file-p', `org-archive-file-header-format',
+and `org-archive-mark-done' to their stock defaults so archive
+assertions exercise org-archive's documented default behavior rather
+than the developer's or CI's global configuration.  Also binds
+`org-adapt-indentation' to nil so the archived property drawer and body
+land at column 0 regardless of Org version: its default flipped from t
+to nil in Org 9.5, and the t default (Org bundled with Emacs 27.2)
+indents drawer and body, which the archive assertions do not expect.
+A test needing a non-default value rebinds it inside BODY.
+Finally binds `default-archive-file' to the source file's default
+archive path (its name with `_archive' appended) via
+`org-mcp-test--with-archive-file', discarding any buffer visiting that
+file and deleting it on exit.  A test archiving to a non-default
+location wraps BODY in its own `org-mcp-test--with-archive-file'."
+  (declare (indent 3) (debug (symbolp form form body)))
+  `(let ((org-archive-location "%s_archive::")
+         (org-archive-default-command 'org-archive-subtree)
+         (org-archive-subtree-save-file-p 'from-org)
+         (org-archive-file-header-format
+          "\nArchived entries from file %s\n\n")
+         (org-archive-mark-done nil)
+         (org-adapt-indentation nil))
+     (org-mcp-test--with-id-setup ,file-var ,initial-content ,ids
+       (org-mcp-test--with-archive-file default-archive-file
+           (concat ,file-var "_archive")
+         ,@body))))
 
 (defmacro org-mcp-test--with-file-buffer (buffer file &rest body)
   "Open FILE in BUFFER and execute BODY, ensuring buffer is killed.
@@ -2479,6 +2718,20 @@ EXPECTED-PATTERN is a regex pattern the result should match."
      response
      mcp-server-lib-jsonrpc-error-invalid-params
      expected-error-message)))
+
+(defun org-mcp-test--verify-resource-text-matches (uri expected-pattern)
+  "Read resource at URI, assert success and text matches EXPECTED-PATTERN."
+  (let* ((request (mcp-server-lib-create-resources-read-request uri))
+         (response-json
+          (mcp-server-lib-process-jsonrpc
+           request mcp-server-lib-ert-server-id))
+         (response
+          (json-parse-string response-json :object-type 'alist)))
+    (should-not (alist-get 'error response))
+    (let ((contents (alist-get 'contents (alist-get 'result response))))
+      (should
+       (string-match-p
+        expected-pattern (alist-get 'text (aref contents 0)))))))
 
 (defun org-mcp-test--test-headline-resource-with-extension (extension)
   "Test headline resource with file having EXTENSION.
@@ -5944,6 +6197,475 @@ Without BEGIN_SRC"
 Some quote
 #+END_EXAMPLE"
     nil)))
+
+;; org-archive-subtree tests
+
+(ert-deftest org-mcp-test-archive-subtree-success ()
+  "Test successful subtree archiving by headline URI.
+Archiving a headline that lacks an Org ID creates one, returns it as
+an `org-id://' URI, and the new ID travels into the archive file with
+the subtree."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let* ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                        test-file))
+           (id (org-mcp-test--archive-subtree-id uri default-archive-file)))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-source-regex)
+      (org-mcp-test--verify-file-matches
+       default-archive-file
+       (org-mcp-test--archive-file-regex id)))))
+
+(ert-deftest org-mcp-test-archive-subtree-nested-child ()
+  "Archive a nested (level-2) subtree reached via a `Parent/Child' path.
+The child is navigated through its parent, archived to the separate
+file with a freshly created ID, and removed from the source while the
+parent and its body remain -- exercising the navigation/archive
+composition the all-top-level fixtures cannot."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-nested nil
+    (let* ((uri
+            (format "org-headline://%s#Parent/Child%%20to%%20Archive"
+                    test-file))
+           (id (org-mcp-test--archive-subtree-id uri default-archive-file)))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-nested-source-regex)
+      (org-mcp-test--verify-file-matches
+       default-archive-file
+       (org-mcp-test--archive-file-regex
+        id "Child to Archive" "Child content here.")))))
+
+(ert-deftest org-mcp-test-archive-subtree-by-id ()
+  "Test successful subtree archiving by ID URI.
+A headline that already has an ID keeps it, and the tool returns that
+same ID as the `org-id://' URI."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-with-id-todo
+      `(,org-mcp-test--content-with-id-id)
+    (let* ((uri (format "org-id://%s" org-mcp-test--content-with-id-id))
+           (id (org-mcp-test--archive-subtree-id uri default-archive-file)))
+      (should (string= org-mcp-test--content-with-id-id id))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-source-regex)
+      (org-mcp-test--verify-file-matches
+       default-archive-file
+       org-mcp-test--expected-archive-with-id-file-regex))))
+
+(ert-deftest org-mcp-test-archive-subtree-modified-buffer-error ()
+  "Test archive fails when file has unsaved changes."
+  ;; No archive bindings needed: this aborts before any archive logic runs.
+  (org-mcp-test--with-temp-org-files
+   ((test-file org-mcp-test--content-archive-simple))
+   (org-mcp-test--with-file-buffer buffer test-file
+     (with-current-buffer buffer
+       (goto-char (point-max))
+       (insert "\n* TODO Another Task")
+       (should (buffer-modified-p)))
+     (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                        test-file)))
+       (org-mcp-test--assert-archive-error test-file uri
+         org-mcp-test--archive-unsaved-error-regex)))))
+
+(ert-deftest org-mcp-test-archive-subtree-honors-archive-property ()
+  "Pin that a headline `:ARCHIVE:' property selects the archive location.
+The returned `archive_file' and the file actually written follow the
+per-headline `:ARCHIVE:' property in preference to the default
+`org-archive-location', so the default `_archive' file is never
+created."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-custom-location nil
+    (org-mcp-test--with-archive-file custom-archive-file
+        (concat test-file "_custom")
+      (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                         test-file)))
+        (org-mcp-test--archive-subtree uri custom-archive-file)
+        (should (file-exists-p custom-archive-file))
+        (should-not (file-exists-p default-archive-file))))))
+
+(ert-deftest org-mcp-test-archive-subtree-guard-fires-on-custom-location ()
+  "Pin that the unsaved-changes guard checks the resolved archive file,
+not the default `_archive', when a per-headline `:ARCHIVE:' property
+redirects the destination.  This catches drift between the tool's
+pre-flight `org-archive--compute-location' call and the file
+`org-archive-subtree' actually opens: the guard must fire on the
+`_custom' file a modified buffer is visiting."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-custom-location nil
+    (org-mcp-test--with-archive-file custom-archive-file
+        (concat test-file "_custom")
+      (org-mcp-test--with-file-buffer buffer custom-archive-file
+        (with-current-buffer buffer
+          (insert org-mcp-test--content-preexisting-archive-entry)
+          (should (buffer-modified-p)))
+        (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                           test-file)))
+          (org-mcp-test--assert-archive-error test-file uri
+            org-mcp-test--archive-unsaved-error-regex))))))
+
+(ert-deftest org-mcp-test-archive-subtree-honors-archive-keyword ()
+  "Pin that a file-level `#+ARCHIVE:' keyword selects the archive location.
+With no per-headline `:ARCHIVE:' property, the returned `archive_file'
+and the file actually written follow the `#+ARCHIVE:' keyword in
+preference to the default `org-archive-location', so the default
+`_archive' file is never created."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-keyword-location nil
+    (org-mcp-test--with-archive-file custom-archive-file
+        (concat test-file "_fromkeyword")
+      (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                         test-file)))
+        (org-mcp-test--archive-subtree uri custom-archive-file)
+        (should (file-exists-p custom-archive-file))
+        (should-not (file-exists-p default-archive-file))))))
+
+(ert-deftest org-mcp-test-archive-subtree-non-string-uri ()
+  "Pin that non-string `uri' is rejected at the tool boundary.
+`org-mcp--validate-string-field' fires before any downstream URI
+parsing runs."
+  ;; No archive bindings needed: this aborts before any archive logic runs.
+  (org-mcp-test--with-temp-org-files
+   ((test-file org-mcp-test--content-archive-simple))
+   (org-mcp-test--assert-archive-error test-file 42
+     (org-mcp-test--field-non-string-regex "uri" 42))))
+
+(ert-deftest org-mcp-test-archive-subtree-nonexistent-headline ()
+  "Pin that archiving a headline absent from the file errors and leaves
+the source unchanged.  `org-mcp--goto-headline-from-uri' runs before
+any archive logic, so a missing headline aborts the tool with no
+write."
+  ;; No archive bindings needed: this aborts before any archive logic runs.
+  (org-mcp-test--with-temp-org-files
+   ((test-file org-mcp-test--content-archive-simple))
+   (let ((uri (format "org-headline://%s#Nonexistent%%20Task"
+                      test-file)))
+     (org-mcp-test--assert-archive-error test-file uri
+       "Cannot find headline: Nonexistent Task"))))
+
+(ert-deftest org-mcp-test-archive-subtree-file-level-uri ()
+  "Pin that a fragment-less `org-headline://' URI errors and leaves the
+source unchanged.  Such a URI identifies a file but no headline, so the
+tool must reject it through the `mcp-server-lib-tool-error' channel
+rather than archive at point-min before the first heading."
+  ;; No archive bindings needed: this aborts before any archive logic runs.
+  (org-mcp-test--with-temp-org-files
+   ((test-file org-mcp-test--content-archive-simple))
+   (let ((uri (format "org-headline://%s/" test-file)))
+     (org-mcp-test--assert-archive-error test-file uri
+       "URI must identify a headline to archive"))))
+
+(ert-deftest org-mcp-test-archive-subtree-malformed-location-error ()
+  "Pin that a malformed `:ARCHIVE:' location surfaces as a tool error.
+A spec missing the `::' separator is user-controlled input, so it must
+be reported through the same `mcp-server-lib-tool-error' channel as the
+tool's other input validation -- not escape as a JSON-RPC internal
+error -- and leave the source file unchanged."
+  ;; No archive bindings needed: this aborts at archive-location
+  ;; computation, before any archive logic runs.
+  (org-mcp-test--with-temp-org-files
+   ((test-file org-mcp-test--content-archive-malformed-location))
+   (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                      test-file)))
+     (org-mcp-test--assert-archive-error test-file uri
+       "Invalid archive location"))))
+
+(ert-deftest org-mcp-test-archive-subtree-returned-uri-resolution ()
+  "Pin resolvability of the `org-id://' URI returned by archiving.
+After archiving, the returned `org-id://' URI is unresolvable when
+the archive file is outside `org-mcp-allowed-files', and resolves to
+the archived headline once the archive file is added to the allowed
+list."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let* ((archive-uri
+            (format "org-headline://%s#Task%%20to%%20Archive"
+                    test-file))
+           (id (org-mcp-test--archive-subtree-id
+                archive-uri default-archive-file))
+           (returned-uri (concat "org-id://" id)))
+      ;; Archive file not allowed: the returned URI is unresolvable.
+      (org-mcp-test--read-resource-expecting-error
+       returned-uri
+       (format
+        "ID '%s' resolves to a file not in the allowed list" id))
+      ;; Archive file allowed: the URI resolves to the moved entry.
+      (let ((org-mcp-allowed-files (list test-file default-archive-file)))
+        (org-mcp-test--verify-resource-text-matches
+         returned-uri
+         (concat ":ID:[ \t]+" (regexp-quote id)))))))
+
+(ert-deftest org-mcp-test-archive-subtree-in-file-location ()
+  "Pin in-file archiving: when the `:ARCHIVE:' location has an empty
+file part, the subtree moves under a heading within the source file
+itself, the returned `archive_file' is the source path, and no
+separate archive file is created.  Because the entry stays in the
+source file, which is already allowed, the returned `org-id://' URI
+resolves via `resources/read' immediately -- with no change to
+`org-mcp-allowed-files', unlike the separate-file case in
+`org-mcp-test-archive-subtree-returned-uri-resolution'."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-infile-location nil
+    (let* ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                        test-file))
+           (id (org-mcp-test--archive-subtree-id uri test-file))
+           (returned-uri (concat "org-id://" id)))
+      (org-mcp-test--verify-resource-text-matches
+       returned-uri
+       (concat ":ID:[ \t]+" (regexp-quote id)))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-infile-source-regex)
+      (should-not (file-exists-p default-archive-file)))))
+
+(ert-deftest org-mcp-test-archive-subtree-kills-opened-archive-buffer ()
+  "Pin that archiving leaves no buffer visiting the archive file when
+the tool itself opened it.  `org-archive-subtree' opens the archive
+file via `find-file-noselect'; the tool kills that buffer so a
+long-running server does not accumulate buffers visiting archive
+files."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file)))
+      (org-mcp-test--archive-subtree uri default-archive-file)
+      (should-not (find-buffer-visiting default-archive-file)))))
+
+(ert-deftest org-mcp-test-archive-subtree-keeps-preexisting-archive-buffer ()
+  "Pin that archiving preserves a buffer the user already had open on
+the archive file, killing only buffers the tool opened itself."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file))
+          (buffer (find-file-noselect default-archive-file)))
+      (org-mcp-test--archive-subtree uri default-archive-file)
+      (should (buffer-live-p buffer)))))
+
+(ert-deftest org-mcp-test-archive-subtree-refreshes-other-archive-buffers ()
+  "Pin that archiving reverts *every* buffer visiting the archive file
+to the freshly written on-disk content, not only the one
+`org-archive-subtree' filled and the tool saved.  When two buffers
+visit the archive file, the second would otherwise keep its stale
+pre-archive content while disk holds the archived subtree."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file))
+          (buffer-a (find-file-noselect default-archive-file))
+          (buffer-b (generate-new-buffer "second-archive-visitor")))
+      (with-current-buffer buffer-b
+        (set-visited-file-name default-archive-file t)
+        (set-buffer-modified-p nil))
+      (org-mcp-test--archive-subtree uri default-archive-file)
+      (org-mcp-test--verify-buffer-matches
+       buffer-a org-mcp-test--expected-archive-simple-file-regex)
+      (org-mcp-test--verify-buffer-matches
+       buffer-b org-mcp-test--expected-archive-simple-file-regex))))
+
+(ert-deftest org-mcp-test-archive-subtree-saves-archive-when-save-disabled ()
+  "Pin that the archive file is written to disk even when
+`org-archive-subtree-save-file-p' is nil.  The tool persists the
+archive itself rather than relying on org-archive's save policy, so a
+user setting that disables org-archive's own save cannot silently
+drop the archived entry while the source is emptied."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((org-archive-subtree-save-file-p nil)
+          (uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file)))
+      (org-mcp-test--archive-subtree uri default-archive-file)
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-source-regex)
+      (org-mcp-test--verify-file-matches
+       default-archive-file
+       org-mcp-test--expected-archive-simple-file-regex))))
+
+(ert-deftest org-mcp-test-archive-subtree-modified-archive-buffer-error ()
+  "Pin that archiving fails when the destination archive file has
+unsaved changes in a visiting buffer, mirroring the source-file
+guard.  Without this guard `org-archive-subtree' would force-save the
+archive buffer, flushing the user's unsaved edits to disk."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (org-mcp-test--with-file-buffer buffer default-archive-file
+      (with-current-buffer buffer
+        (insert org-mcp-test--content-preexisting-archive-entry)
+        (should (buffer-modified-p)))
+      (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                         test-file)))
+        (org-mcp-test--assert-archive-error test-file uri
+          org-mcp-test--archive-unsaved-error-regex)))))
+
+(ert-deftest org-mcp-test-archive-subtree-ignores-default-command ()
+  "Pin that archiving moves the subtree to a file regardless of
+`org-archive-default-command'.  With the command customized to
+`org-archive-set-tag' (which would otherwise tag the entry in place
+without moving it), the tool still empties the source and writes the
+archive file."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((org-archive-default-command 'org-archive-set-tag)
+          (uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file)))
+      (org-mcp-test--archive-subtree uri default-archive-file)
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-source-regex)
+      (should (file-exists-p default-archive-file)))))
+
+(ert-deftest org-mcp-test-archive-subtree-no-id-leak-on-archive-guard ()
+  "Pin that a failed archive-file guard registers no Org ID.
+When the destination archive file has unsaved changes the guard
+aborts before `org-id-get-create' runs, so nothing is added to the
+global `org-id-locations' for an archive that never happened.  Were
+the ID created first it would point at the source file, which on the
+aborted path never receives it on disk -- a stale location entry."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (org-mcp-test--with-file-buffer buffer default-archive-file
+      (with-current-buffer buffer
+        (insert org-mcp-test--content-preexisting-archive-entry)
+        (should (buffer-modified-p)))
+      (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                         test-file)))
+        (org-mcp-test--assert-archive-error test-file uri
+          org-mcp-test--archive-unsaved-error-regex)
+        ;; `org-mcp-test--with-id-tracking' let-binds `org-id-locations'
+        ;; to nil; with the guard aborting before `org-id-get-create'
+        ;; nothing converts it to a populated hash table, so nil is the
+        ;; positive signal that no ID leaked.  A non-nil value here
+        ;; would mean the ID was created before the guard fired.
+        (should (null org-id-locations))))))
+
+(ert-deftest org-mcp-test-archive-subtree-persists-archive-before-source ()
+  "Pin that the archive is saved to disk before the source is emptied.
+With `org-archive-subtree-save-file-p' nil the tool is the only thing
+that persists the archive.  Simulating a failure of the source write
+leaves the archive file already on disk with the entry (a recoverable
+duplicate) and the source still holding it, rather than dropping the
+entry from both files."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((org-archive-subtree-save-file-p nil)
+          (uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file))
+          (orig-write-region (symbol-function 'write-region)))
+      (cl-letf (((symbol-function 'write-region)
+                 (lambda (start end filename &rest args)
+                   (if (string= (expand-file-name filename)
+                                (expand-file-name test-file))
+                       (error "Simulated source write failure")
+                     (apply orig-write-region
+                            start end filename args)))))
+        (should
+         (alist-get 'error (org-mcp-test--archive-tool-response uri))))
+      (should (file-exists-p default-archive-file))
+      (org-mcp-test--verify-file-matches
+       default-archive-file
+       org-mcp-test--expected-archive-simple-file-regex)
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-simple-unchanged-source-regex))))
+
+(ert-deftest org-mcp-test-archive-subtree-kills-opened-buffer-on-error ()
+  "Pin buffer cleanup and entry survival when the source refresh fails.
+`org-mcp--refresh-file-buffers' is stubbed to signal only for the
+source file, so it fires after both the archive and source files have
+been written -- the archive refresh runs normally first.  The tool's
+cleanup still kills the buffer it opened (no leaked buffer visiting the
+archive file), the source is emptied on disk, and the archived entry
+survives on disk in the archive file rather than being lost."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file))
+          (orig-refresh (symbol-function 'org-mcp--refresh-file-buffers)))
+      (cl-letf (((symbol-function 'org-mcp--refresh-file-buffers)
+                 (lambda (file &rest args)
+                   (if (string= (expand-file-name file)
+                                (expand-file-name test-file))
+                       (error "Simulated refresh failure")
+                     (apply orig-refresh file args)))))
+        (should
+         (alist-get 'error (org-mcp-test--archive-tool-response uri))))
+      (should-not (find-buffer-visiting default-archive-file))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-source-regex)
+      (org-mcp-test--verify-file-matches
+       default-archive-file
+       org-mcp-test--expected-archive-simple-file-regex))))
+
+(ert-deftest org-mcp-test-archive-subtree-kills-opened-buffer-on-save-failure ()
+  "Pin cleanup and source safety when the archive `save-buffer' fails.
+With `org-archive-subtree-save-file-p' nil the tool performs the only
+save of the tool-opened archive buffer, so stubbing `save-buffer' to
+signal exercises a failure before the source is emptied on disk.  The
+cleanup still reclaims the buffer, the source file keeps the subtree,
+and no archive file is written -- so the entry is never lost."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((org-archive-subtree-save-file-p nil)
+          (uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file)))
+      (cl-letf (((symbol-function 'save-buffer)
+                 (lambda (&rest _)
+                   (error "Simulated save failure"))))
+        (should
+         (alist-get 'error (org-mcp-test--archive-tool-response uri))))
+      (should-not (find-buffer-visiting default-archive-file))
+      (should-not (file-exists-p default-archive-file))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-simple-unchanged-source-regex))))
+
+(ert-deftest org-mcp-test-archive-subtree-tolerates-killed-archive-buffer ()
+  "Pin that cleanup tolerates a tool-opened archive buffer already killed.
+If a hook kills the archive buffer after it is saved but before the
+unwind cleanup runs, the liveness guard keeps `with-current-buffer'
+from erroring on a dead buffer, so the archive still succeeds.  The
+source `write-region' is stubbed to kill the archive buffer first,
+reproducing that ordering deterministically."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file))
+          (orig-write-region (symbol-function 'write-region)))
+      (cl-letf (((symbol-function 'write-region)
+                 (lambda (start end filename &rest args)
+                   (when (string= (expand-file-name filename)
+                                  (expand-file-name test-file))
+                     (org-mcp-test--discard-buffer-visiting
+                      default-archive-file))
+                   (apply orig-write-region start end filename args))))
+        (org-mcp-test--archive-subtree uri default-archive-file)
+        (should-not (find-buffer-visiting default-archive-file))))))
+
+(ert-deftest org-mcp-test-archive-subtree-kills-opened-buffer-on-archive-throw ()
+  "Pin buffer cleanup when `org-archive-subtree' itself throws mid-move.
+`org-archive-subtree' opens the archive buffer with `find-file-noselect'
+and only later pastes into it; stubbing `org-paste-subtree' to signal
+reproduces a throw after the buffer is opened but before the tool's own
+persistence runs.  Cleanup must still reclaim the tool-opened archive
+buffer, leave no archive file on disk, and keep the subtree in the
+source so the entry is never lost."
+  (org-mcp-test--with-archive-setup
+      test-file org-mcp-test--content-archive-simple nil
+    (let ((uri (format "org-headline://%s#Task%%20to%%20Archive"
+                       test-file)))
+      (cl-letf (((symbol-function 'org-paste-subtree)
+                 (lambda (&rest _)
+                   (error "Simulated archive paste failure"))))
+        (should
+         (alist-get 'error (org-mcp-test--archive-tool-response uri))))
+      (should-not (find-buffer-visiting default-archive-file))
+      (should-not (file-exists-p default-archive-file))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-archive-simple-unchanged-source-regex))))
 
 ;;; org-read-file tests
 

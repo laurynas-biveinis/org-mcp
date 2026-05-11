@@ -374,6 +374,30 @@ Example:
 }
 #+end_example
 
+*** org-archive-subtree
+- *Description:* Archive an Org headline subtree to its configured archive location
+- *Parameters:*
+  - =uri= (string, required): URI of the headline to archive (supports =org-headline://= or =org-id://=)
+- *Returns:* Success status, the absolute archive file path, and the archived headline's =org-id://= URI. The archive file path equals the source file's own path when the archive location is in-file (empty file part before =::=)
+- *URI resolvability:* The returned =org-id://= URI identifies the archived headline but is resolvable via =resources/read= only if the archive file is itself a member of =org-mcp-allowed-files=; otherwise it is informational only
+- *Archive location:* Honors the headline's =ARCHIVE= property, then the file's =#+ARCHIVE:= setting, then the global =org-archive-location=, in that order. The subtree is always moved to that archive file regardless of =org-archive-default-command=.
+- *Buffer behavior:* Modifies the source and archive files on disk; fails if an Emacs buffer visiting either has unsaved changes; ask the user to save the buffer and retry.
+
+Example:
+#+begin_example
+# Request (headline lacks an ID; the tool mints one):
+{
+  "uri": "org-headline:///home/user/org/projects.org#Project%20Alpha/Old%20Task"
+}
+
+# Success response (returns the freshly minted org-id:// URI):
+{
+  "success": true,
+  "archive_file": "/home/user/org/projects.org_archive",
+  "uri": "org-id://550e8400-e29b-41d4-a716-446655440003"
+}
+#+end_example
+
 ** Workaround Tools Duplicating Resource Templates
 
 *Note:* The following tools are temporary workarounds that duplicate the resource template functionality as tools. They exist because Claude Code currently doesn't discover resource templates.
