@@ -35,6 +35,7 @@
 (require 'mcp-server-lib)
 (require 'org)
 (require 'org-id)
+(require 'org-agenda)
 (require 'url-util)
 
 (defcustom org-mcp-allowed-files nil
@@ -132,6 +133,34 @@ Returns the expanded path if found, nil if not in the allowed list."
                 org-mcp-allowed-files
                 :test #'org-mcp--paths-equal-p)))
     (expand-file-name found)))
+
+(defun org-mcp--agenda-allowed-file-list ()
+  "Return a list of existing, absolute file paths for `org-mcp-allowed-files'."
+  (let (out)
+    (dolist (f org-mcp-allowed-files)
+      (when (and f (stringp f) (file-exists-p f))
+        (push (file-truename f) out)))
+    (nreverse out)))
+
+(defun org-mcp--agenda-buffer-text (agenda-files start-day span)
+  "Build `org-agenda-list' for AGENDA-FILES, period START-DAY and SPAN.
+Returns the agenda buffer as a plain string.  Binds `org-agenda-files' and
+uses a private agenda buffer name so the user window layout is not
+disturbed.  The caller must ensure AGENDA-FILES is non-nil."
+  (let ((org-agenda-files agenda-files)
+        (org-agenda-buffer-tmp-name " *org-mcp agenda*")
+        (org-agenda-buffer-name " *org-mcp agenda*")
+        (org-agenda-window-setup 'current-window)
+        (org-agenda-sticky nil))
+    (save-window-excursion
+      (org-agenda-list nil start-day span)
+      (let* ((buf (get-buffer org-agenda-buffer-name))
+             (s (and buf
+                     (with-current-buffer buf
+                       (buffer-substring-no-properties
+                        (point-min) (point-max))))))
+        (when buf (kill-buffer buf))
+        s))))
 
 (defun org-mcp--refresh-file-buffers (file-path)
   "Refresh all buffers visiting FILE-PATH.
@@ -838,6 +867,56 @@ BODY-END is the buffer position where body ends."
   "Return the list of allowed Org files."
   (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
 
+(defun org-mcp--tool-get-agenda (view &optional date)
+  "Build an `org-agenda' buffer for the given view and return its text.
+The agenda includes only non-missing files from `org-mcp-allowed-files' —
+
+MCP Parameters:
+  view - Agenda span (string, required): \"day\", \"week\", or
+         \"month\" (case-insensitive), matching
+         `org-agenda-day-view', `org-agenda-week-view', and
+         `org-agenda-month-view' respectively
+  date - Reference day (string, optional).  A string like
+         org-read-date accepts (e.g. \"2026-04-26\" or \"+2d\");
+         if omitted, today is used"
+  (unless (stringp view)
+    (org-mcp--tool-validation-error
+     "Parameter view must be a string, got: %S (type: %s)"
+     view (type-of view)))
+  (let ((span
+         (cond
+          ((string= (downcase view) "day") 'day)
+          ((string= (downcase view) "week") 'week)
+          ((string= (downcase view) "month") 'month)
+          (t
+           (org-mcp--tool-validation-error
+            "view must be \"day\", \"week\", or \"month\", got: %S" view))))
+        (start-day
+         (cond
+          ((or (null date) (and (stringp date) (string-empty-p date)))
+           nil)
+          ((stringp date)
+           (condition-case err
+               (progn
+                 (org-read-date nil t date)
+                 date)
+             (error
+              (org-mcp--tool-validation-error
+               "Invalid date: %S (%s)" date (error-message-string err)))))
+          (t
+           (org-mcp--tool-validation-error
+            "Parameter date must be a string or omitted, got: %S (type: %s)"
+            date (type-of date)))))
+        (agenda-files (org-mcp--agenda-allowed-file-list)))
+    (unless agenda-files
+      (org-mcp--tool-validation-error
+       "No existing files in org-mcp-allowed-files; cannot build agenda"))
+    (let ((text (org-mcp--agenda-buffer-text agenda-files start-day span)))
+      (json-encode
+       `((view . ,(symbol-name span))
+         (date . ,(if start-day start-day "today"))
+         (agenda . ,text))))))
+
 (defun org-mcp--tool-update-todo-state (uri current_state new_state)
   "Update the TODO state of a headline at URI.
 Creates an Org ID for the headline if one doesn't exist.
@@ -1346,6 +1425,34 @@ Use cases:
    :server-id org-mcp--server-id)
 
   (mcp-server-lib-register-tool
+   #'org-mcp--tool-get-agenda
+   :id "org-get-agenda"
+   :description
+   "Return the plain-text contents of a standard Org daily, weekly, or
+monthly agenda, as produced by `org-agenda-list' with span day, week, or
+month.  The agenda is built only from non-missing files in
+`org-mcp-allowed-files' (it does not use other `org-agenda-files'
+configuration).
+
+Parameters:
+  view - (string, required) One of: \"day\", \"week\", \"month\"
+         (case-insensitive).  Same idea as the Org agenda key bindings
+         for daily / weekly / monthly view.
+  date - (string, optional) Day that determines which period is shown
+         and (for a month) which calendar month.  Any string accepted
+         by `org-read-date' (e.g. \"2026-04-26\", \"+1d\").  Omit to use
+         today.
+
+Returns JSON object:
+  view - The span name (\"day\", \"week\", or \"month\")
+  date - The date argument you passed, or the string \"today\"
+  agenda - The full agenda buffer text, including day/week/month
+           headers and lines for scheduled, deadlines, and other
+           agenda material from the allowed files"
+   :read-only t
+   :server-id org-mcp--server-id)
+
+  (mcp-server-lib-register-tool
    #'org-mcp--tool-update-todo-state
    :id "org-update-todo-state"
    :description
@@ -1738,6 +1845,8 @@ Use this resource to:
    "org-get-tag-config" org-mcp--server-id)
   (mcp-server-lib-unregister-tool
    "org-get-allowed-files" org-mcp--server-id)
+  (mcp-server-lib-unregister-tool
+   "org-get-agenda" org-mcp--server-id)
   (mcp-server-lib-unregister-tool
    "org-update-todo-state" org-mcp--server-id)
   (mcp-server-lib-unregister-tool "org-add-todo" org-mcp--server-id)
