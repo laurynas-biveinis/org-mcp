@@ -17,7 +17,7 @@ From [[https://melpa.org/#/org-mcp][MELPA]] or [[https://stable.melpa.org/#/org-
 
 * Usage
 
-**WARNING:** some of the tools in this package give LLMs WRITE access to your Org
+*WARNING:* some of the tools in this package give LLMs WRITE access to your Org
 files, and, once in a thousand invocations, LLMs *will* try to delete everything,
 because they are like that. Backups and automatic versioning on every change are
 strongly advised.
@@ -144,7 +144,7 @@ them originally. The IDs will be returned in the tool response.
 - *Returns:* JSON object with =sequences= and =semantics=
 
 Example response:
-#+begin_src json
+#+begin_example
 {
   "sequences": [
     {
@@ -159,7 +159,7 @@ Example response:
     {"state": "CANCELLED", "isFinal": true, "sequenceType": "sequence"}
   ]
 }
-#+end_src
+#+end_example
 
 *** org-get-tag-config
 - *Description:* Get tag configuration as literal Elisp variable values
@@ -167,14 +167,14 @@ Example response:
 - *Returns:* JSON object with literal Elisp strings for all tag-related variables
 
 Example return value:
-#+begin_src json
+#+begin_example
 {
   "org-use-tag-inheritance": "t",
   "org-tags-exclude-from-inheritance": "(\"urgent\")",
   "org-tag-alist": "((\"work\" . 119) (\"urgent\" . 117) (:startgroup) (\"@office\" . 111) (\"@home\" . 104) (\"@errand\" . 101) (:endgroup) (:startgrouptag) (\"project\") (:grouptags) (\"proj_a\") (\"proj_b\") (:endgrouptag))",
   "org-tag-persistent-alist": "nil"
 }
-#+end_src
+#+end_example
 
 *** org-get-allowed-files
 - *Description:* Get the list of Org files accessible through the org-mcp server
@@ -188,7 +188,7 @@ Use cases:
 - Configuration Verification: "Did my org-mcp-allowed-files setting work correctly?"
 
 Example response:
-#+begin_src json
+#+begin_example
 {
   "files": [
     "/home/user/org/tasks.org",
@@ -196,14 +196,14 @@ Example response:
     "/home/user/notes/daily.org"
   ]
 }
-#+end_src
+#+end_example
 
 Empty configuration returns:
-#+begin_src json
+#+begin_example
 {
   "files": []
 }
-#+end_src
+#+end_example
 
 *** org-update-todo-state
 - *Description:* Update the TODO state of a specific headline
@@ -214,7 +214,7 @@ Empty configuration returns:
 - *Returns:* Success status with previous and new states, and ID-based URI of the updated headline
 
 Example:
-#+begin_src json
+#+begin_example
 # Request:
 {
   "uri": "org-headline:///home/user/org/projects.org/Project%20Alpha",
@@ -234,7 +234,7 @@ Example:
 {
   "error": "State mismatch: expected TODO, found IN-PROGRESS"
 }
-#+end_src
+#+end_example
 
 *** org-rename-headline
 - *Description:* Rename the title of an existing headline while preserving its TODO state, tags, and properties
@@ -245,7 +245,7 @@ Example:
 - *Returns:* Success status with previous and new titles
 
 Example:
-#+begin_src json
+#+begin_example
 # Request:
 {
   "uri": "org-headline:///home/user/org/projects.org/Original%20Task",
@@ -265,7 +265,7 @@ Example:
 {
   "error": "Title mismatch: expected 'Original Task', found 'Different Task'"
 }
-#+end_src
+#+end_example
 
 *** org-add-todo
 - *Description:* Add a new TODO item to an Org file
@@ -279,7 +279,7 @@ Example:
 - *Returns:* Object with success status, new item URI, file name, and title
 
 Example:
-#+begin_src json
+#+begin_example
 # Request:
 {
   "title": "Implement new feature",
@@ -296,7 +296,7 @@ Example:
   "file": "projects.org",
   "title": "Implement new feature"
 }
-#+end_src
+#+end_example
 
 *** org-edit-body
 - *Description:* Edit body content of an Org node using partial string replacement
@@ -309,7 +309,7 @@ Example:
 - *Special behavior:* When =oldBody= is an empty string (""), the tool will only work if the node has no body content, allowing you to add initial content to empty nodes
 
 Example:
-#+begin_src json
+#+begin_example
 # Request:
 {
   "resourceUri": "org-id://abc-123",
@@ -329,7 +329,7 @@ Example:
   "oldBody": "",
   "newBody": "Initial task description."
 }
-#+end_src
+#+end_example
 
 ** Workaround Tools Duplicating Resource Templates
 

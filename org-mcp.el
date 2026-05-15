@@ -93,7 +93,7 @@ RESOURCE-TYPE is the type of resource,
 IDENTIFIER is the resource identifier."
   (mcp-server-lib-resource-signal-error
    mcp-server-lib-jsonrpc-error-invalid-params
-   (format "Cannot find %s: '%s'" resource-type identifier)))
+   (format "%s not found: '%s'" resource-type identifier)))
 
 (defun org-mcp--tool-file-access-error (locator)
   "Throw file access error for tool operations.
@@ -233,10 +233,10 @@ Returns the expanded file path if found and allowed.
 Throws a tool error if ID exists but file is not allowed, or if ID
 is not found."
   (if-let* ((id-file (org-id-find-id-file id)))
-    ;; ID found in database, check if file is allowed
-    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-      allowed-file
-      (org-mcp--tool-file-access-error id))
+      ;; ID found in database, check if file is allowed
+      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+          allowed-file
+        (org-mcp--tool-file-access-error id))
     ;; ID not in database - might not exist or DB is stale
     ;; Fall back to searching allowed files manually
     (let ((found-file nil))
@@ -262,11 +262,11 @@ Throws an error if neither prefix matches."
   `(if-let* ((id
               (org-mcp--extract-uri-suffix
                ,uri org-mcp--uri-id-prefix)))
-     ,id-body
+       ,id-body
      (if-let* ((headline
                 (org-mcp--extract-uri-suffix
                  ,uri org-mcp--uri-headline-prefix)))
-       ,headline-body
+         ,headline-body
        (org-mcp--tool-validation-error
         "Invalid resource URI format: %s"
         ,uri))))
@@ -329,10 +329,10 @@ Returns (FILE . HEADLINE) where FILE is the decoded file path and
 HEADLINE is the part after the fragment separator.
 File paths with # characters should be encoded as %23."
   (if-let* ((hash-pos (string-match "#" path-after-protocol)))
-    (cons
-     (org-mcp--decode-file-path
-      (substring path-after-protocol 0 hash-pos))
-     (substring path-after-protocol (1+ hash-pos)))
+      (cons
+       (org-mcp--decode-file-path
+        (substring path-after-protocol 0 hash-pos))
+       (substring path-after-protocol (1+ hash-pos)))
     (cons (org-mcp--decode-file-path path-after-protocol) nil)))
 
 (defun org-mcp--parse-resource-uri (uri)
@@ -418,7 +418,7 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
   (if is-id
       ;; ID case - headline-path contains single ID
       (if-let* ((pos (org-find-property "ID" (car headline-path))))
-        (goto-char pos)
+          (goto-char pos)
         (org-mcp--id-not-found-error (car headline-path)))
     ;; Path case - headline-path contains title hierarchy
     (unless (org-mcp--navigate-to-headline headline-path)
@@ -1017,7 +1017,7 @@ The filename parameter includes both file and headline path."
                 allowed-file headline-path)))
           (unless content
             (org-mcp--resource-not-found-error
-             "headline" (mapconcat #'identity headline-path "/")))
+             "Headline" (mapconcat #'identity headline-path "/")))
           content)
       ;; No headline path means get entire file
       (org-mcp--read-file allowed-file))))

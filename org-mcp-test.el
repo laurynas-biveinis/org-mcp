@@ -2740,7 +2740,7 @@ Some quote
      (let ((uri
             (format "org-headline://%s#Nonexistent" test-file)))
        (org-mcp-test--read-resource-expecting-error
-        uri "Cannot find headline: 'Nonexistent'")))))
+        uri "Headline not found: 'Nonexistent'")))))
 
 (ert-deftest org-mcp-test-headline-resource-file-with-hash ()
   "Test headline resource with # in filename."
@@ -2832,7 +2832,7 @@ Some quote
      ;; But the bug causes it to return the wrong headline
      (org-mcp-test--read-resource-expecting-error
       uri
-      "Cannot find headline: 'First Parent/Target Headline'"))))
+      "Headline not found: 'First Parent/Target Headline'"))))
 
 (ert-deftest org-mcp-test-id-resource-returns-content ()
   "Test that ID resource returns content for valid ID."
@@ -2850,7 +2850,7 @@ Some quote
     (org-mcp-test--with-id-setup test-file test-content '()
                                  (let ((uri "org-id://nonexistent-id-12345"))
                                    (org-mcp-test--read-resource-expecting-error
-                                    uri "Cannot find ID: 'nonexistent-id-12345'")))))
+                                    uri "ID not found: 'nonexistent-id-12345'")))))
 
 (ert-deftest org-mcp-test-id-resource-file-not-allowed ()
   "Test ID resource validates file is in allowed list."
