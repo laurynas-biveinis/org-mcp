@@ -191,7 +191,9 @@ OPERATION is a string describing the operation for error messages."
                  (string= (buffer-file-name) file-path)
                  (buffer-modified-p))
         (org-mcp--tool-validation-error
-         "Cannot %s: file has unsaved changes in buffer"
+         (concat
+          "Cannot %s: an Emacs buffer visiting this file has unsaved "
+          "changes; ask the user to save it (C-x C-s) and retry")
          operation)))))
 
 (defmacro org-mcp--with-org-file (file-path &rest body)
@@ -1350,6 +1352,8 @@ Use cases:
    "Update the TODO state of an Org headline.  Changes the task state
 while preserving the headline title, tags, and other properties.
 Creates an Org ID property for the headline if one doesn't exist.
+Modifies the file on disk; fails if an Emacs buffer visiting the
+file has unsaved changes; ask the user to save the buffer and retry.
 
 Parameters:
   uri - URI of the headline to update (string, required)
@@ -1377,6 +1381,8 @@ Returns JSON object:
    "Add a new TODO item to an Org file at a specified location.
 Creates the headline with TODO state, tags, and optional body content.
 Automatically creates an Org ID property for the new headline.
+Modifies the file on disk; fails if an Emacs buffer visiting the
+file has unsaved changes; ask the user to save the buffer and retry.
 
 Parameters:
   title - Headline text without TODO state or tags (string, required)
@@ -1421,6 +1427,8 @@ sibling
    "Rename an Org headline's title while preserving its TODO state,
 tags, properties, and body content.  Creates an Org ID property for
 the headline if one doesn't exist.
+Modifies the file on disk; fails if an Emacs buffer visiting the
+file has unsaved changes; ask the user to save the buffer and retry.
 
 Parameters:
   uri - URI of the headline to rename (string, required)
@@ -1451,6 +1459,8 @@ Returns JSON object:
 replacement.  Finds and replaces a substring within the headline's
 body text.  Creates an Org ID property for the headline if one doesn't
 exist.
+Modifies the file on disk; fails if an Emacs buffer visiting the
+file has unsaved changes; ask the user to save the buffer and retry.
 
 Parameters:
   resource_uri - URI of the headline to edit (string, required)
@@ -1486,6 +1496,8 @@ Special behavior - Empty old_body:
    "Read complete raw content of an Org file. Returns entire file as
 plain text with all formatting, properties, and structure preserved.
 File must be in org-mcp-allowed-files.
+Reads the file from disk; unsaved changes in an Emacs buffer visiting
+the file are not reflected.
 
 Parameters:
   file - Absolute path to Org file (string, required)
@@ -1501,6 +1513,8 @@ Returns: Plain text content of the entire Org file"
    "Get hierarchical structure of Org file as JSON outline. Returns
    all headline titles and nesting relationships at full depth. File
    must be in org-mcp-allowed-files.
+Reads the file from disk; unsaved changes in an Emacs buffer visiting
+the file are not reflected.
 
 Parameters:
   file - Absolute path to Org file (string, required)
@@ -1516,6 +1530,8 @@ Returns: JSON object with hierarchical outline structure"
    "Read specific Org headline by hierarchical path. Returns headline
    with TODO state, tags, properties, body text, and all nested
    subheadings. File must be in org-mcp-allowed-files.
+Reads the file from disk; unsaved changes in an Emacs buffer visiting
+the file are not reflected.
 
 Parameters:
   file - Absolute path to Org file (string, required)
@@ -1538,6 +1554,8 @@ Returns: Plain text content of the headline and its subtree"
    "Read Org headline by its unique ID property. More stable than
 path-based access since IDs don't change when headlines are renamed
 or moved. File containing the ID must be in org-mcp-allowed-files.
+Reads the file from disk; unsaved changes in an Emacs buffer visiting
+the file are not reflected.
 
 Parameters:
   uuid - UUID from headline's ID property (string, required)
@@ -1553,7 +1571,8 @@ Returns: Plain text content of the headline and its subtree"
    :description
    "Access the complete raw content of an Org file.  Returns the
 entire file as plain text, preserving all formatting, properties, and
-structure.
+structure.  Reads the file from disk; unsaved changes in an Emacs
+buffer visiting the file are not reflected.
 
 URI format: org://{filename}
   filename - Absolute path to the Org file (required)
@@ -1568,7 +1587,8 @@ Returns: Plain text content of the entire Org file"
    :description
    "Get the hierarchical structure of an Org file as a JSON
 outline.  Extracts headline titles and their nesting relationships up
-to 2 levels deep.
+to 2 levels deep.  Reads the file from disk; unsaved changes in an
+Emacs buffer visiting the file are not reflected.
 
 URI format: org-outline://{filename}
   filename - Absolute path to the Org file (required)
@@ -1612,7 +1632,8 @@ Use this resource to:
    :description
    "Access content of a specific Org headline by its path in the
 file hierarchy.  Returns the headline and all its subheadings as
-plain text.
+plain text.  Reads the file from disk; unsaved changes in an Emacs
+buffer visiting the file are not reflected.
 
 URI format: org-headline://{filename}#{headline-path}
   filename - Absolute path (# characters must be encoded as %23)
@@ -1669,7 +1690,8 @@ Use this resource to:
    :description
    "Access content of an Org headline by its unique ID property.
 More stable than path-based access since IDs don't change when
-headlines are renamed or moved.
+headlines are renamed or moved.  Reads the file from disk; unsaved
+changes in an Emacs buffer visiting the file are not reflected.
 
 URI format: org-id://{uuid}
   uuid - Value of the headline's ID property (required)

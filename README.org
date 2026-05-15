@@ -50,12 +50,14 @@ Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib
 - *URI Pattern:* =org://{filename}= where filename is the absolute path to the file
 - *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
 - *Returns:* Plain text content of the Org file
+- *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 *** org-outline://{filename}
 - *Description:* Get the hierarchical structure of an Org file
 - *URI Pattern:* =org-outline://{filename}= where filename is the absolute path to the file
 - *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
 - *Returns:* JSON representation of the document structure with headings and their levels
+- *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 Example:
 #+begin_example
@@ -84,6 +86,7 @@ Returns: JSON structure like:
   - Headlines containing # must be encoded as %23 in the path
 - *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
 - *Returns:* Plain text content of the specified headline section including all subheadings
+- *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 Example:
 #+begin_example
@@ -118,6 +121,7 @@ encoding.
 - *URI Pattern:* =org-id://{uuid}= where uuid is the value of an ID property
 - *Configuration:* The file containing the ID must be in =org-mcp-allowed-files=
 - *Returns:* Plain text content of the headline with the specified ID, including all subheadings
+- *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 Example:
 #+begin_example
@@ -212,6 +216,7 @@ Empty configuration returns:
   - =currentState= (string, required): Current TODO state (empty string "" for no state) - must match actual state
   - =newState= (string, required): New TODO state (must be valid in org-todo-keywords)
 - *Returns:* Success status with previous and new states, and ID-based URI of the updated headline
+- *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
 Example:
 #+begin_example
@@ -243,6 +248,7 @@ Example:
   - =currentTitle= (string, required): Current headline title (without TODO state or tags) - must match actual title
   - =newTitle= (string, required): New headline title (without TODO state or tags)
 - *Returns:* Success status with previous and new titles
+- *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
 Example:
 #+begin_example
@@ -277,6 +283,7 @@ Example:
   - =parentUri= (string, required): URI of parent item. Use =org-headline://filename.org/= for top-level items in a file
   - =afterUri= (string, optional): URI of sibling to insert after. If not given, append as last child of parent
 - *Returns:* Object with success status, new item URI, file name, and title
+- *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
 Example:
 #+begin_example
@@ -307,6 +314,7 @@ Example:
   - =replaceAll= (boolean, optional): Replace all occurrences (default: false)
 - *Returns:* Success status with ID-based URI of the updated node
 - *Special behavior:* When =oldBody= is an empty string (""), the tool will only work if the node has no body content, allowing you to add initial content to empty nodes
+- *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
 Example:
 #+begin_example
@@ -341,6 +349,7 @@ Example:
   - =file= (string, required): Absolute path to an Org file
 - *Returns:* Plain text content of the entire Org file
 - *Configuration:* File must be in =org-mcp-allowed-files=
+- *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 *** org-read-outline
 - *Description:* Get hierarchical structure of an Org file as JSON outline
@@ -348,6 +357,7 @@ Example:
   - =file= (string, required): Absolute path to an Org file
 - *Returns:* JSON object with hierarchical outline structure
 - *Configuration:* File must be in =org-mcp-allowed-files=
+- *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 *** org-read-headline
 - *Description:* Read specific Org headline by hierarchical path
@@ -356,6 +366,7 @@ Example:
   - =headlinePath= (string, required): Non-empty slash-separated path to headline. Only slashes within headline titles must be URL-encoded as =%2F= to distinguish them from path separators. Other characters (spaces, =#=, etc.) do not need encoding. To read entire files, use =org-read-file= instead
 - *Returns:* Plain text content of the headline and its subtree
 - *Configuration:* File must be in =org-mcp-allowed-files=
+- *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 *** org-read-by-id
 - *Description:* Read Org headline by its unique ID property
@@ -364,6 +375,7 @@ Example:
 - *Returns:* Plain text content of the headline and its subtree
 - *Configuration:* File containing the ID must be in =org-mcp-allowed-files=
 - *Note:* More stable than path-based access since IDs don't change when headlines are renamed or moved
+- *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 * License
 
