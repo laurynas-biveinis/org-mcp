@@ -1070,6 +1070,15 @@ alist-membership path is inactive and the tag-format check fires."
      "Task" "TODO" (list invalid-tag) nil
      (format "org-headline://%s#" test-file))))
 
+(defun org-mcp-test--assert-add-todo-result-shape (result title basename)
+  "Assert RESULT has the standard 4-field `org-add-todo' response shape.
+TITLE is the expected `title' field; BASENAME the expected `file'."
+  (should (= (length result) 4))
+  (should (equal (alist-get 'success result) t))
+  (should (string-match-p "\\`org-id://.+" (alist-get 'uri result)))
+  (should (equal (alist-get 'file result) basename))
+  (should (equal (alist-get 'title result) title)))
+
 (defmacro org-mcp-test--add-todo-and-check
     (initial-content todo-keywords tag-alist ids
                      title todo-state tags body parent-uri after-uri
@@ -1097,12 +1106,8 @@ variables after setup, e.g., ((org-tag-alist nil))."
                    ,title ,todo-state ,tags ,body ,parent-uri ,after-uri))
                  (result-text (mcp-server-lib-ert-call-tool "org-add-todo" params))
                  (result (json-read-from-string result-text)))
-            ;; Check result structure
-            (should (= (length result) 4))
-            (should (equal (alist-get 'success result) t))
-            (should (string-match-p "\\`org-id://.+" (alist-get 'uri result)))
-            (should (equal (alist-get 'file result) ,basename))
-            (should (equal (alist-get 'title result) ,title))
+            (org-mcp-test--assert-add-todo-result-shape
+             result ,title ,basename)
             (org-mcp-test--verify-file-matches test-file ,expected-pattern))))
     `(org-mcp-test--with-add-todo-setup
       test-file
