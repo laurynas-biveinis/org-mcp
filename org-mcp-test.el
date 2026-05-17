@@ -1050,6 +1050,17 @@ Tests that the given title is rejected when creating a TODO."
    invalid-title "TODO" nil nil
    (format "org-headline://%s#" test-file)))
 
+(defun org-mcp-test--assert-add-todo-invalid-tag (invalid-tag)
+  "Assert that adding TODO with INVALID-TAG (a single tag string) is rejected.
+Binds `org-tag-alist' and `org-tag-persistent-alist' to nil so the
+alist-membership path is inactive and the tag-format check fires."
+  (let ((org-tag-alist nil)
+        (org-tag-persistent-alist nil))
+    (org-mcp-test--call-add-todo-expecting-error
+     org-mcp-test--content-empty nil nil
+     "Task" "TODO" (list invalid-tag) nil
+     (format "org-headline://%s#" test-file))))
+
 (defmacro org-mcp-test--add-todo-and-check
     (initial-content todo-keywords tag-alist ids
                      title todo-state tags body parent-uri after-uri
@@ -1873,30 +1884,15 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
 
 (ert-deftest org-mcp-test-add-todo-tag-invalid-exclamation ()
   "Test that tags with exclamation mark are rejected."
-  (let ((org-tag-alist nil)
-        (org-tag-persistent-alist nil))
-    (org-mcp-test--call-add-todo-expecting-error
-     org-mcp-test--content-empty nil nil
-     "Task" "TODO" '("invalid-tag!") nil
-     (format "org-headline://%s#" test-file))))
+  (org-mcp-test--assert-add-todo-invalid-tag "invalid-tag!"))
 
 (ert-deftest org-mcp-test-add-todo-tag-invalid-dash ()
   "Test that tags with dash character are rejected."
-  (let ((org-tag-alist nil)
-        (org-tag-persistent-alist nil))
-    (org-mcp-test--call-add-todo-expecting-error
-     org-mcp-test--content-empty nil nil
-     "Task" "TODO" '("tag-with-dash") nil
-     (format "org-headline://%s#" test-file))))
+  (org-mcp-test--assert-add-todo-invalid-tag "tag-with-dash"))
 
 (ert-deftest org-mcp-test-add-todo-tag-invalid-hash ()
   "Test that tags with hash character are rejected."
-  (let ((org-tag-alist nil)
-        (org-tag-persistent-alist nil))
-    (org-mcp-test--call-add-todo-expecting-error
-     org-mcp-test--content-empty nil nil
-     "Task" "TODO" '("tag#hash") nil
-     (format "org-headline://%s#" test-file))))
+  (org-mcp-test--assert-add-todo-invalid-tag "tag#hash"))
 
 (ert-deftest org-mcp-test-add-todo-child-under-parent ()
   "Test adding a child TODO under an existing parent."
