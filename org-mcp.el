@@ -375,6 +375,38 @@ Validates file access and returns expanded file path."
         (setq headline-path (list id))))
     (cons file-path headline-path)))
 
+(defun org-mcp--parse-parent-uri (parent-uri)
+  "Parse PARENT-URI into a (FILE-PATH PARENT-PATH PARENT-ID) list.
+PARENT-PATH and PARENT-ID are mutually exclusive: at most one is
+non-nil.  For `org-headline://' URIs, PARENT-PATH is a list of
+unhex-decoded path components, or nil if the fragment is empty
+or absent.  For `org-id://' URIs, PARENT-ID is the bare ID; an
+`org-id://' URI is interpreted by `org-mcp--tool-add-todo' as a
+child insert, so top-level insertion requires `org-headline://'
+with empty or absent fragment.
+Throws a validation error if PARENT-URI is malformed or if its
+file is not in the allowed list."
+  (let (file-path
+        parent-path
+        parent-id)
+    (org-mcp--with-uri-prefix-dispatch
+        parent-uri
+      ;; Handle org-headline:// URIs
+      (let* ((split-result (org-mcp--split-headline-uri headline))
+             (filename (car split-result))
+             (path-str (cdr split-result))
+             (allowed-file (org-mcp--validate-file-access filename)))
+        (setq file-path (expand-file-name allowed-file))
+        (when (and path-str (> (length path-str) 0))
+          (setq parent-path
+                (mapcar
+                 #'url-unhex-string (split-string path-str "/")))))
+      ;; Handle org-id:// URIs
+      (progn
+        (setq file-path (org-mcp--find-allowed-file-with-id id))
+        (setq parent-id id)))
+    (list file-path parent-path parent-id)))
+
 (defun org-mcp--navigate-to-headline (headline-path)
   "Navigate to headline in HEADLINE-PATH.
 HEADLINE-PATH is a list of headline titles forming a path.
@@ -1050,27 +1082,10 @@ MCP Parameters:
   (org-mcp--validate-headline-title title)
   (org-mcp--validate-todo-state todo_state "todo_state")
   (let* ((tag-list (org-mcp--validate-and-normalize-tags tags))
-         file-path
-         parent-path
-         parent-id)
-
-    ;; Parse parent URI once to extract file-path and parent location
-    (org-mcp--with-uri-prefix-dispatch
-        parent_uri
-      ;; Handle org-headline:// URIs
-      (let* ((split-result (org-mcp--split-headline-uri headline))
-             (filename (car split-result))
-             (path-str (cdr split-result))
-             (allowed-file (org-mcp--validate-file-access filename)))
-        (setq file-path (expand-file-name allowed-file))
-        (when (and path-str (> (length path-str) 0))
-          (setq parent-path
-                (mapcar
-                 #'url-unhex-string (split-string path-str "/")))))
-      ;; Handle org-id:// URIs
-      (progn
-        (setq file-path (org-mcp--find-allowed-file-with-id id))
-        (setq parent-id id)))
+         (parsed (org-mcp--parse-parent-uri parent_uri))
+         (file-path (nth 0 parsed))
+         (parent-path (nth 1 parsed))
+         (parent-id (nth 2 parsed)))
 
     ;; Add the TODO item
     (org-mcp--modify-and-save file-path "add TODO"
