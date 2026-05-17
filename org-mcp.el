@@ -651,6 +651,88 @@ Throws error for invalid types."
    (t
     (org-mcp--tool-validation-error "Invalid tags format: %s" tags))))
 
+(defun org-mcp--skip-file-header-element ()
+  "Skip one syntactic element of the file's leading header block.
+Each call consumes at most one element starting at point and
+returns non-nil if it consumed anything, nil otherwise.  Intended
+to be driven by `(while (org-mcp--skip-file-header-element))' so
+the loop terminates naturally at the first non-header line.
+
+For the user-facing contract -- what counts as a header element,
+the leading-whitespace policy, why drawer keywords are uniformly
+consumed, why headings still require column 0 -- see the
+`:description' string registered for `org-mcp--tool-add-todo' in
+`org-mcp-enable' below.  This doc string covers the internal
+function contract only.
+
+Caller preconditions, NOT re-checked here:
+- Point is at the beginning of a line.  The leading `^' in each
+  regex makes a match impossible unless point is at a line
+  beginning, so a mid-line call falls through to the nil branch
+  rather than mis-reading the rest of the line as a header
+  element.
+
+Throws a validation error via `org-mcp--tool-validation-error'
+naming the actual keyword if a drawer opener has no matching
+`:END:'."
+  (cond
+   ((eobp)
+    nil)
+   ;; Broader than Org's comment grammar (`^# ' / `^#$') by design.
+   ;; Consume any `#'-prefixed line (with optional leading whitespace,
+   ;; matching Org's parser), including `#hashtag' paragraphs Org
+   ;; parses as `paragraph' rather than `comment'.
+   ((looking-at "^[ \t]*#")
+    (forward-line)
+    t)
+   ((looking-at "^[ \t]*$")
+    (forward-line)
+    t)
+   ((and (looking-at "^[ \t]*:\\([-_[:alnum:]]+\\):[ \t]*$")
+         ;; A bare `:END:' with no preceding opener is not a drawer
+         ;; opener -- fall through to ordinary content so the header
+         ;; terminates before it.
+         (not (string= (upcase (match-string 1)) "END")))
+    (let ((drawer-name (match-string 1))
+          ;; Match `:END:' case-insensitively to mirror Org's parser
+          ;; (which accepts `:end:', `:End:', etc.).  Pinned here --
+          ;; only the `:END:' checks below depend on case folding;
+          ;; the opener regex above uses `[:alnum:]' and is case-safe
+          ;; regardless.
+          (case-fold-search t))
+      (forward-line)
+      (while (and (not (eobp))
+                  (not (looking-at "^[ \t]*:END:[ \t]*$"))
+                  (not (looking-at "^\\*+ ")))
+        (forward-line))
+      (unless (looking-at "^[ \t]*:END:[ \t]*$")
+        (org-mcp--tool-validation-error
+         (if (looking-at "^\\*+ ")
+             (concat
+              "Heading line inside :%s: drawer in file"
+              " header block; drawers cannot contain"
+              " headings")
+           "Unterminated :%s: drawer in file header block")
+         drawer-name))
+      (forward-line)
+      t))
+   (t
+    nil)))
+
+(defun org-mcp--validate-file-header ()
+  "Walk the file's leading header block, signaling drawer errors.
+Drives `org-mcp--skip-file-header-element' from `point-min' inside
+`save-excursion', so point and validation errors are decoupled from
+the caller's positioning concerns.  Intended to be called once per
+modifying tool invocation, before any insertion or navigation, so
+that file-header integrity is checked uniformly regardless of whether
+the call targets the top level or a parent heading.  Returns the
+buffer position immediately past the header block."
+  (save-excursion
+    (goto-char (point-min))
+    (while (org-mcp--skip-file-header-element))
+    (point)))
+
 (defun org-mcp--navigate-to-parent-or-top (parent-path parent-id)
   "Navigate to parent headline or top of file.
 PARENT-PATH is a list of headline titles (or nil for top-level).
@@ -913,6 +995,7 @@ MCP Parameters:
                                  .
                                  ,(or current_state ""))
                                 (new_state . ,new_state))
+      (org-mcp--validate-file-header)
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
 
@@ -997,6 +1080,7 @@ MCP Parameters:
                                  .
                                  ,(file-name-nondirectory file-path))
                                 (title . ,title))
+      (org-mcp--validate-file-header)
       (let ((parent-level
              (org-mcp--navigate-to-parent-or-top
               parent-path parent-id)))
@@ -1133,6 +1217,7 @@ MCP Parameters:
     (org-mcp--modify-and-save file-path "rename"
                               `((previous_title . ,current_title)
                                 (new_title . ,new_title))
+      (org-mcp--validate-file-header)
       ;; Navigate to the headline
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
@@ -1192,6 +1277,7 @@ MCP Parameters:
            (headline-path (cdr parsed)))
 
       (org-mcp--modify-and-save file-path "edit body" nil
+        (org-mcp--validate-file-header)
         (org-mcp--goto-headline-from-uri
          headline-path
          (string-prefix-p org-mcp--uri-id-prefix resource_uri))
@@ -1440,6 +1526,11 @@ while preserving the headline title, tags, and other properties.
 Creates an Org ID property for the headline if one doesn't exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
+Validates the file's leading header block on every call; any
+`:NAME:' line at column 0 (with optional leading whitespace and
+any keyword) is treated as a drawer opener and must have a
+matching `:END:'.  An unterminated drawer, or a drawer containing
+a heading, is rejected as a validation error.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1458,6 +1549,11 @@ Creates the headline with TODO state, tags, and optional body content.
 Automatically creates an Org ID property for the new headline.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
+Validates the file's leading header block on every call; any
+`:NAME:' line at column 0 (with optional leading whitespace and
+any keyword) is treated as a drawer opener and must have a
+matching `:END:'.  An unterminated drawer, or a drawer containing
+a heading, is rejected as a validation error.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1482,6 +1578,11 @@ tags, properties, and body content.  Creates an Org ID property for
 the headline if one doesn't exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
+Validates the file's leading header block on every call; any
+`:NAME:' line at column 0 (with optional leading whitespace and
+any keyword) is treated as a drawer opener and must have a
+matching `:END:'.  An unterminated drawer, or a drawer containing
+a heading, is rejected as a validation error.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1501,6 +1602,11 @@ body text.  Creates an Org ID property for the headline if one doesn't
 exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
+Validates the file's leading header block on every call; any
+`:NAME:' line at column 0 (with optional leading whitespace and
+any keyword) is treated as a drawer opener and must have a
+matching `:END:'.  An unterminated drawer, or a drawer containing
+a heading, is rejected as a validation error.
 
 Returns JSON object:
   success - Always true on success (boolean)

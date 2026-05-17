@@ -156,6 +156,34 @@ More text.
 Third occurrence of pattern."
   "Heading with ID and repeated text patterns.")
 
+(defconst org-mcp-test--content-malformed-header-with-todo-and-body
+  "#+TITLE: Test Document
+:PROPERTIES:
+:CATEGORY: work
+* TODO Existing Heading
+Some body content."
+  "File with an unterminated `:PROPERTIES:' drawer plus a TODO heading
+with body content.")
+
+(defconst org-mcp-test--content-malformed-header-logbook-unterminated
+  "#+TITLE: Test Document
+:LOGBOOK:
+CLOCK: [2026-01-01 Mon 09:00]--[2026-01-01 Mon 10:00] =>  1:00
+* Existing Heading
+Some content."
+  "File with an unterminated `:LOGBOOK:' drawer in its header.  Used
+to verify that any drawer keyword (not just `:PROPERTIES:') is
+recognised by the file-header walker.")
+
+(defconst org-mcp-test--content-malformed-header-heading-in-drawer
+  "#+TITLE: Test Document
+:PROPERTIES:
+:CATEGORY: work
+* Heading Inside Drawer
+* Real Heading"
+  "File with a heading line trapped inside an unterminated
+`:PROPERTIES:' drawer in the header block.")
+
 (defconst org-mcp-test--content-parent-child-then-other-top
   "* Parent Task
 Parent body.
@@ -3225,6 +3253,110 @@ low-level JSON-RPC pipeline so a tool-error response surfaces as a
 (ert-deftest org-mcp-test-tool-read-by-id-non-string-uuid ()
   "Test that a non-string `uuid' is rejected at the tool boundary."
   (org-mcp-test--assert-tool-non-string "org-read-by-id" '((uuid . 42))))
+
+;; File-header validation: every modifying tool must reject an
+;; unterminated drawer in the file's header block (any keyword), and
+;; distinguish "heading inside drawer" from a plain unterminated
+;; drawer in the diagnostic.
+
+(ert-deftest org-mcp-test-update-todo-state-unterminated-drawer ()
+  "Test `org-update-todo-state' rejects a file with a malformed header."
+  (org-mcp-test--with-temp-org-files
+      ((test-file
+        org-mcp-test--content-malformed-header-with-todo-and-body))
+    (org-mcp-test--call-update-todo-state-expecting-error
+     test-file
+     (format "org-headline://%s#Existing%%20Heading" test-file)
+     "TODO" "DONE")))
+
+(ert-deftest org-mcp-test-rename-headline-unterminated-drawer ()
+  "Test `org-rename-headline' rejects a file with a malformed header."
+  (org-mcp-test--with-temp-org-files
+      ((test-file
+        org-mcp-test--content-malformed-header-with-todo-and-body))
+    (org-mcp-test--assert-error-and-file
+     test-file
+     (let* ((request
+              (mcp-server-lib-create-tools-call-request
+               "org-rename-headline" 1
+               `((uri . ,(format "org-headline://%s#Existing%%20Heading"
+                                 test-file))
+                 (current_title . "Existing Heading")
+                 (new_title . "Renamed"))))
+            (response
+             (mcp-server-lib-process-jsonrpc-parsed
+              request mcp-server-lib-ert-server-id)))
+       (mcp-server-lib-ert-process-tool-response response)))))
+
+(ert-deftest org-mcp-test-edit-body-unterminated-drawer ()
+  "Test `org-edit-body' rejects a file with a malformed header."
+  (org-mcp-test--with-temp-org-files
+      ((test-file
+        org-mcp-test--content-malformed-header-with-todo-and-body))
+    (org-mcp-test--call-edit-body-expecting-error
+     test-file
+     (format "org-headline://%s#Existing%%20Heading" test-file)
+     "Some body content."
+     "Replaced.")))
+
+(ert-deftest org-mcp-test-add-todo-unterminated-drawer ()
+  "Test `org-add-todo' rejects a file with a malformed header."
+  (org-mcp-test--with-temp-org-files
+      ((test-file
+        org-mcp-test--content-malformed-header-with-todo-and-body))
+    (org-mcp-test--assert-error-and-file
+     test-file
+     (let* ((params
+             (org-mcp-test--build-add-todo-params
+              "New Task" "TODO" '("work") nil
+              (format "org-headline://%s#" test-file)))
+            (request
+             (mcp-server-lib-create-tools-call-request
+              "org-add-todo" nil params))
+            (response
+             (mcp-server-lib-process-jsonrpc-parsed
+              request mcp-server-lib-ert-server-id)))
+       (mcp-server-lib-ert-process-tool-response response)))))
+
+(ert-deftest org-mcp-test-add-todo-unterminated-logbook-drawer ()
+  "Test that any drawer keyword (not just `:PROPERTIES:') is recognised.
+A `:LOGBOOK:' drawer without `:END:' must be rejected with the same
+class of error as an unterminated `:PROPERTIES:' drawer."
+  (org-mcp-test--with-temp-org-files
+      ((test-file
+        org-mcp-test--content-malformed-header-logbook-unterminated))
+    (org-mcp-test--assert-error-and-file
+     test-file
+     (let* ((params
+             (org-mcp-test--build-add-todo-params
+              "New Task" "TODO" '("work") nil
+              (format "org-headline://%s#" test-file)))
+            (request
+             (mcp-server-lib-create-tools-call-request
+              "org-add-todo" nil params))
+            (response
+             (mcp-server-lib-process-jsonrpc-parsed
+              request mcp-server-lib-ert-server-id)))
+       (mcp-server-lib-ert-process-tool-response response)))))
+
+(ert-deftest org-mcp-test-add-todo-heading-in-drawer ()
+  "Test that a heading line trapped inside a header-block drawer is rejected."
+  (org-mcp-test--with-temp-org-files
+      ((test-file
+        org-mcp-test--content-malformed-header-heading-in-drawer))
+    (org-mcp-test--assert-error-and-file
+     test-file
+     (let* ((params
+             (org-mcp-test--build-add-todo-params
+              "New Task" "TODO" '("work") nil
+              (format "org-headline://%s#" test-file)))
+            (request
+             (mcp-server-lib-create-tools-call-request
+              "org-add-todo" nil params))
+            (response
+             (mcp-server-lib-process-jsonrpc-parsed
+              request mcp-server-lib-ert-server-id)))
+       (mcp-server-lib-ert-process-tool-response response)))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
