@@ -215,8 +215,8 @@ Empty configuration returns:
 - *Description:* Update the TODO state of a specific headline
 - *Parameters:*
   - =uri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
-  - =currentState= (string, required): Current TODO state (empty string "" for no state) - must match actual state
-  - =newState= (string, required): New TODO state (must be valid in org-todo-keywords)
+  - =current_state= (string, required): Current TODO state (empty string "" for no state) - must match actual state
+  - =new_state= (string, required): New TODO state (must be valid in org-todo-keywords)
 - *Returns:* Success status with previous and new states, and ID-based URI of the updated headline
 - *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
@@ -225,15 +225,15 @@ Example:
 # Request:
 {
   "uri": "org-headline:///home/user/org/projects.org/Project%20Alpha",
-  "currentState": "TODO",
-  "newState": "IN-PROGRESS"
+  "current_state": "TODO",
+  "new_state": "IN-PROGRESS"
 }
 
 # Success response:
 {
   "success": true,
-  "previousState": "TODO",
-  "newState": "IN-PROGRESS",
+  "previous_state": "TODO",
+  "new_state": "IN-PROGRESS",
   "uri": "org-id://554A22F6-E29F-4759-8AD2-E7CA225C6397"
 }
 
@@ -247,8 +247,8 @@ Example:
 - *Description:* Rename the title of an existing headline while preserving its TODO state, tags, and properties
 - *Parameters:*
   - =uri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
-  - =currentTitle= (string, required): Current headline title (without TODO state or tags) - must match actual title
-  - =newTitle= (string, required): New headline title (without TODO state or tags)
+  - =current_title= (string, required): Current headline title (without TODO state or tags) - must match actual title
+  - =new_title= (string, required): New headline title (without TODO state or tags)
 - *Returns:* Success status with previous and new titles
 - *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
@@ -257,15 +257,15 @@ Example:
 # Request:
 {
   "uri": "org-headline:///home/user/org/projects.org/Original%20Task",
-  "currentTitle": "Original Task",
-  "newTitle": "Updated Task Name"
+  "current_title": "Original Task",
+  "new_title": "Updated Task Name"
 }
 
 # Success response:
 {
   "success": true,
-  "previousTitle": "Original Task",
-  "newTitle": "Updated Task Name",
+  "previous_title": "Original Task",
+  "new_title": "Updated Task Name",
   "uri": "org-id://550e8400-e29b-41d4-a716-446655440002"
 }
 
@@ -279,11 +279,11 @@ Example:
 - *Description:* Add a new TODO item to an Org file
 - *Parameters:*
   - =title= (string, required): The headline text
-  - =todoState= (string, required): TODO state from =org-todo-keywords=
+  - =todo_state= (string, required): TODO state from =org-todo-keywords=
   - =tags= (string or array, required): Tags to add (e.g., "urgent" or ["work", "urgent"])
   - =body= (string, optional): Body text content to add under the heading
-  - =parentUri= (string, required): URI of parent item. Use =org-headline://filename.org/= for top-level items in a file
-  - =afterUri= (string, optional): URI of sibling to insert after. If not given, append as last child of parent
+  - =parent_uri= (string, required): URI of parent item. Use =org-headline://filename.org/= for top-level items in a file
+  - =after_uri= (string, optional): URI of sibling to insert after. If not given, append as last child of parent
 - *Returns:* Object with success status, new item URI, file name, and title
 - *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
@@ -292,10 +292,10 @@ Example:
 # Request:
 {
   "title": "Implement new feature",
-  "todoState": "TODO",
+  "todo_state": "TODO",
   "tags": ["work", "urgent"],
   "body": "This feature needs to be completed by end of week.",
-  "parentUri": "org-headline:///home/user/org/projects.org/"
+  "parent_uri": "org-headline:///home/user/org/projects.org/"
 }
 
 # Success response:
@@ -310,21 +310,21 @@ Example:
 *** org-edit-body
 - *Description:* Edit body content of an Org node using partial string replacement
 - *Parameters:*
-  - =resourceUri= (string, required): URI of the node to edit (supports =org-headline://= or =org-id://=)
-  - =oldBody= (string, required): Substring to search for within the node's body (must be unique unless replaceAll is true). Use empty string "" to add content to an empty node
-  - =newBody= (string, required): Replacement text
-  - =replaceAll= (boolean, optional): Replace all occurrences (default: false)
+  - =resource_uri= (string, required): URI of the node to edit (supports =org-headline://= or =org-id://=)
+  - =old_body= (string, required): Substring to search for within the node's body (must be unique unless replace_all is true). Use empty string "" to add content to an empty node
+  - =new_body= (string, required): Replacement text
+  - =replace_all= (boolean, optional): Replace all occurrences (default: false)
 - *Returns:* Success status with ID-based URI of the updated node
-- *Special behavior:* When =oldBody= is an empty string (""), the tool will only work if the node has no body content, allowing you to add initial content to empty nodes
+- *Special behavior:* When =old_body= is an empty string (""), the tool will only work if the node has no body content, allowing you to add initial content to empty nodes
 - *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
 Example:
 #+begin_example
 # Request:
 {
-  "resourceUri": "org-id://abc-123",
-  "oldBody": "This is a placeholder.",
-  "newBody": "Implementation started - using Strategy pattern."
+  "resource_uri": "org-id://abc-123",
+  "old_body": "This is a placeholder.",
+  "new_body": "Implementation started - using Strategy pattern."
 }
 
 # Success response:
@@ -335,9 +335,9 @@ Example:
 
 # Adding content to empty node:
 {
-  "resourceUri": "org-id://new-task",
-  "oldBody": "",
-  "newBody": "Initial task description."
+  "resource_uri": "org-id://new-task",
+  "old_body": "",
+  "new_body": "Initial task description."
 }
 #+end_example
 
@@ -365,7 +365,7 @@ Example:
 - *Description:* Read specific Org headline by hierarchical path
 - *Parameters:*
   - =file= (string, required): Absolute path to an Org file
-  - =headlinePath= (string, required): Non-empty slash-separated path to headline. Only slashes within headline titles must be URL-encoded as =%2F= to distinguish them from path separators. Other characters (spaces, =#=, etc.) do not need encoding. To read entire files, use =org-read-file= instead
+  - =headline_path= (string, required): Non-empty slash-separated path to headline. Only slashes within headline titles must be URL-encoded as =%2F= to distinguish them from path separators. Other characters (spaces, =#=, etc.) do not need encoding. To read entire files, use =org-read-file= instead
 - *Returns:* Plain text content of the headline and its subtree
 - *Configuration:* File must be in =org-mcp-allowed-files=
 - *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.

@@ -667,7 +667,7 @@ If nil, positions at end of parent's subtree.
 Throws validation error if AFTER-URI is invalid or sibling not found."
   (if (and after-uri (not (string-empty-p after-uri)))
       (progn
-        ;; Parse afterUri to get the ID
+        ;; Parse after-uri to get the ID
         (let ((after-id
                (org-mcp--extract-uri-suffix
                 after-uri org-mcp--uri-id-prefix))
@@ -760,11 +760,11 @@ BODY-BEGIN is the buffer position where body starts.
 BODY-END is the buffer position where body ends."
   (let ((new-body-content
          (cond
-          ;; Special case: empty oldBody with empty body
+          ;; Special case: empty old-body with empty body
           ((and (string= old-body "")
                 (string-match-p "\\`[[:space:]]*\\'" body-content))
            new-body)
-          ;; Normal replacement with replaceAll
+          ;; Normal replacement with replace-all
           (replace-all
            (replace-regexp-in-string
             (regexp-quote old-body) new-body body-content
@@ -1145,7 +1145,7 @@ MCP Parameters:
 
           ;; Check if body is empty
           (when (string-match-p "\\`[[:space:]]*\\'" body-content)
-            ;; Empty oldBody + empty body -> add content
+            ;; Empty old-body + empty body -> add content
             (if (string= old_body "")
                 ;; Treat as single replacement
                 (setq occurrence-count 1)
@@ -1154,7 +1154,7 @@ MCP Parameters:
 
           ;; Count occurrences (unless already handled above)
           (unless (= occurrence-count 1)
-            ;; Empty oldBody with non-empty body is an error
+            ;; Empty old-body with non-empty body is an error
             (if (and (string= old_body "")
                      (not
                       (string-match-p

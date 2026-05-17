@@ -998,18 +998,18 @@ Executes BODY with org-mcp enabled and standard variables set."
            `(progn ,@body))))))
 
 (defmacro org-mcp-test--call-add-todo-expecting-error
-    (initial-content todo-keywords tag-alist title todoState tags body parentUri
-                     &optional afterUri)
+    (initial-content todo-keywords tag-alist title todo-state tags body parent-uri
+                     &optional after-uri)
   "Call org-add-todo MCP tool expecting an error and verify file unchanged.
 INITIAL-CONTENT is the initial Org file content.
 TODO-KEYWORDS is the org-todo-keywords config (nil for default).
 TAG-ALIST is the org-tag-alist config (nil for default).
 TITLE is the headline text.
-TODOSTATE is the TODO state.
+TODO-STATE is the TODO state.
 TAGS is a list of tag strings or nil.
 BODY is the body text or nil.
-PARENTURI is the URI of the parent item.
-AFTERURI is optional URI of sibling to insert after."
+PARENT-URI is the URI of the parent item.
+AFTER-URI is optional URI of sibling to insert after."
   `(org-mcp-test--with-add-todo-setup
     test-file ,initial-content ,todo-keywords
     ,tag-alist nil
@@ -1017,11 +1017,11 @@ AFTERURI is optional URI of sibling to insert after."
      test-file
      (let* ((params
              `((title . ,,title)
-               (todo_state . ,,todoState)
+               (todo_state . ,,todo-state)
                (tags . ,,tags)
                (body . ,,body)
-               (parent_uri . ,,parentUri)
-               (after_uri . ,,afterUri)))
+               (parent_uri . ,,parent-uri)
+               (after_uri . ,,after-uri)))
             (request
               (mcp-server-lib-create-tools-call-request
                "org-add-todo" nil params))
@@ -1052,7 +1052,7 @@ Tests that the given title is rejected when creating a TODO."
 
 (defmacro org-mcp-test--add-todo-and-check
     (initial-content todo-keywords tag-alist ids
-                     title todoState tags body parentUri afterUri
+                     title todo-state tags body parent-uri after-uri
                      basename expected-pattern
                      &optional override-bindings)
   "Add TODO item with setup and verify the result.
@@ -1061,11 +1061,11 @@ TODO-KEYWORDS is the org-todo-keywords config (nil for default).
 TAG-ALIST is the org-tag-alist config (nil for default).
 IDS is optional list of ID strings to register (nil for no ID tracking).
 TITLE is the headline text.
-TODOSTATE is the TODO state.
+TODO-STATE is the TODO state.
 TAGS is a list of tag strings or nil.
 BODY is the body text or nil.
-PARENTURI is the URI of the parent item.
-AFTERURI is optional URI of sibling to insert after.
+PARENT-URI is the URI of the parent item.
+AFTER-URI is optional URI of sibling to insert after.
 BASENAME is the expected file basename.
 EXPECTED-PATTERN is a regexp that the file content should match.
 OVERRIDE-BINDINGS is optional list of let-style bindings to override
@@ -1074,11 +1074,11 @@ variables after setup, e.g., ((org-tag-alist nil))."
   (let ((checking-logic
          `(let* ((params
                   `((title . ,,title)
-                    (todo_state . ,,todoState)
+                    (todo_state . ,,todo-state)
                     (tags . ,,tags)
                     (body . ,,body)
-                    (parent_uri . ,,parentUri)
-                    (after_uri . ,,afterUri)))
+                    (parent_uri . ,,parent-uri)
+                    (after_uri . ,,after-uri)))
                  (result-text (mcp-server-lib-ert-call-tool "org-add-todo" params))
                  (result (json-read-from-string result-text)))
             ;; Check result structure
@@ -1662,7 +1662,7 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
            org-mcp-test--expected-timestamp-id-done-regex))))))
 
 (ert-deftest org-mcp-test-update-todo-state-empty-newstate-invalid ()
-  "Test that empty string for newState is rejected."
+  "Test that empty string for new_state is rejected."
   (let ((test-content org-mcp-test--content-with-id-todo))
     (org-mcp-test--with-temp-org-files
         ((test-file test-content))
@@ -1774,7 +1774,7 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
    '("work" "urgent")
    nil ; no body
    (format "org-headline://%s#" test-file)
-   nil ; no afterUri
+   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-top-level-todo))
 
@@ -1788,7 +1788,7 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
      '("urgent")
      nil ; no body
      (format "org-headline://%s#" test-file)
-     nil ; no afterUri
+     nil ; no after_uri
      (file-name-nondirectory test-file)
      org-mcp-test--expected-regex-top-level-with-header)))
 
@@ -1907,7 +1907,7 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
    '("work")
    nil ; no body
    (format "org-headline://%s#Parent%%20Task" test-file)
-   nil ; no afterUri
+   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-child-under-parent))
 
@@ -2075,8 +2075,8 @@ This is valid Org-mode syntax and should be allowed."
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-after-second-child))
 
-(ert-deftest org-mcp-test-add-todo-afterUri-not-sibling ()
-  "Test error when afterUri is not a child of parentUri."
+(ert-deftest org-mcp-test-add-todo-after-uri-not-sibling ()
+  "Test error when after_uri is not a child of parent_uri."
   ;; Error: Other Child is not a child of First Parent
   (org-mcp-test--call-add-todo-expecting-error
    org-mcp-test--content-wrong-levels nil nil
@@ -2149,7 +2149,7 @@ This is valid Org-mode syntax and should be allowed."
    nil ; nil for tags
    nil ; no body
    (format "org-headline://%s#" test-file)
-   nil ; no afterUri
+   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-without-tags))
 
@@ -2162,7 +2162,7 @@ This is valid Org-mode syntax and should be allowed."
    '() ; empty list for tags
    nil ; no body
    (format "org-headline://%s#" test-file)
-   nil ; no afterUri
+   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-without-tags))
 
@@ -2371,7 +2371,7 @@ content here."
      org-mcp-test--content-with-id-id)))
 
 (ert-deftest org-mcp-test-edit-body-multiple-without-replaceall ()
-  "Test error for multiple occurrences without replaceAll."
+  "Test error for multiple occurrences without replace_all."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-with-id-repeated-text
       `("test-id")
@@ -2379,7 +2379,7 @@ content here."
      test-file "org-id://test-id" "occurrence of pattern" "REPLACED" nil)))
 
 (ert-deftest org-mcp-test-edit-body-replace-all ()
-  "Test org-edit-body tool with replaceAll functionality."
+  "Test org-edit-body tool with replace_all functionality."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-with-id-repeated-text
       `("test-id")
@@ -2431,14 +2431,14 @@ content here."
        org-mcp-test--pattern-edit-body-empty))))
 
 (ert-deftest org-mcp-test-edit-body-empty-old-non-empty-body ()
-  "Test error when oldBody is empty but body has content."
+  "Test error when old_body is empty but body has content."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
     (org-mcp-test--call-edit-body-expecting-error
      test-file
      org-mcp-test--content-with-id-uri
-     "" ; Empty oldBody
+     "" ; Empty old_body
      "replacement"
      nil)))
 
@@ -2466,7 +2466,7 @@ content here."
      org-mcp-test--pattern-edit-body-nested-headlines)))
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-in-middle ()
-  "Test org-edit-body rejects newBody with headline marker in middle."
+  "Test org-edit-body rejects new_body with headline marker in middle."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
@@ -2479,7 +2479,7 @@ content here."
      nil)))
 
 (ert-deftest org-mcp-test-edit-body-accept-lower-level-headline ()
-  "Test org-edit-body accepts newBody with lower-level headline."
+  "Test org-edit-body accepts new_body with lower-level headline."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
@@ -2492,7 +2492,7 @@ content here."
      org-mcp-test--pattern-edit-body-accept-lower-level)))
 
 (ert-deftest org-mcp-test-edit-body-reject-higher-level-headline ()
-  "Test org-edit-body rejects newBody with higher-level headline.
+  "Test org-edit-body rejects new_body with higher-level headline.
 When editing a level 2 node, level 1 headlines should be rejected."
   (org-mcp-test--with-temp-org-files
       ((test-file org-mcp-test--content-nested-siblings))
@@ -2506,7 +2506,7 @@ When editing a level 2 node, level 1 headlines should be rejected."
      nil)))
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-at-start ()
-  "Test org-edit-body rejects newBody with headline at beginning."
+  "Test org-edit-body rejects new_body with headline at beginning."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
@@ -2518,7 +2518,7 @@ When editing a level 2 node, level 1 headlines should be rejected."
      nil)))
 
 (ert-deftest org-mcp-test-edit-body-reject-unbalanced-begin-block ()
-  "Test org-edit-body rejects newBody with unbalanced BEGIN block."
+  "Test org-edit-body rejects new_body with unbalanced BEGIN block."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
@@ -2532,7 +2532,7 @@ Code without END_EXAMPLE"
      nil)))
 
 (ert-deftest org-mcp-test-edit-body-reject-orphaned-end-block ()
-  "Test org-edit-body rejects newBody with orphaned END block."
+  "Test org-edit-body rejects new_body with orphaned END block."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
@@ -2546,7 +2546,7 @@ Without BEGIN_SRC"
      nil)))
 
 (ert-deftest org-mcp-test-edit-body-reject-mismatched-blocks ()
-  "Test org-edit-body rejects newBody with mismatched blocks."
+  "Test org-edit-body rejects new_body with mismatched blocks."
   (org-mcp-test--with-id-setup
    test-file
    org-mcp-test--content-nested-siblings
