@@ -2397,8 +2397,14 @@ content here."
      org-mcp-test--pattern-edit-body-replace-all
      t)))
 
-(ert-deftest org-mcp-test-edit-body-replace-all-explicit-false ()
-  "Test that explicit replace_all=false triggers error on multiple matches."
+(ert-deftest org-mcp-test-edit-body-replace-all-string-false ()
+  "Test that wire-protocol string `\"false\"' is coerced to nil.
+A client sending `{\"replace_all\": \"false\"}' (a string, not a
+JSON boolean) delivers the literal Elisp string `\"false\"' at the
+tool boundary, where `(not \"false\")' is nil and the
+multiple-occurrence guard skips firing.  Removing the `\"false\"'
+branch in `org-mcp--tool-edit-body' would let the string pass
+through as truthy, silently bypassing the guard."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-with-id-repeated-text
       `("test-id")
@@ -2408,7 +2414,27 @@ content here."
      "org-id://test-id"
      "occurrence of pattern"
      "REPLACED"
-     :false)))
+     "false")))
+
+(ert-deftest org-mcp-test-edit-body-replace-all-json-false ()
+  "Test that a real MCP client's JSON `false' fires the safety guard.
+Emacs's `json.el' decodes a JSON boolean `false' to the symbol
+`:json-false' (the default value of `json-false'), NOT to nil.  A
+real client sending `{\"replace_all\": false}' therefore delivers
+`:json-false' at the tool boundary, where `(not :json-false)' is
+nil and the multiple-occurrence guard skips firing -- silently
+replacing every occurrence even though the client explicitly opted
+out."
+  (org-mcp-test--with-id-setup test-file
+      org-mcp-test--content-with-id-repeated-text
+      `("test-id")
+    ;; Should error because multiple occurrences exist
+    (org-mcp-test--call-edit-body-expecting-error
+     test-file
+     "org-id://test-id"
+     "occurrence of pattern"
+     "REPLACED"
+     :json-false)))
 
 (ert-deftest org-mcp-test-edit-body-not-found ()
   "Test org-edit-body tool error when text is not found."

@@ -1088,7 +1088,7 @@ MCP Parameters:
       (org-edit-headline new_title))))
 
 (defun org-mcp--tool-edit-body
-    (resource_uri old_body new_body replace_all)
+    (resource_uri old_body new_body &optional replace_all)
   "Edit body content of an Org node using partial string replacement.
 RESOURCE_URI is the URI of the node to edit.
 OLD_BODY is the substring to search for within the node's body.
@@ -1111,11 +1111,12 @@ MCP Parameters:
              Must maintain balanced #+BEGIN/#+END blocks
   replace_all - Replace all occurrences (optional, default false)
                 When false, old_body must be unique in the body"
-  ;; Normalize JSON false to nil for proper boolean handling
-  ;; JSON false can arrive as :false (keyword) or "false" (string)
+  ;; Normalize falsy values to nil so the multi-occurrence guard
+  ;; fires.  Accept `:json-false' (JSON boolean) and string "false"
+  ;; (a common LLM-client typo); both are otherwise truthy in Elisp.
   (let ((replace_all
          (cond
-          ((eq replace_all :false)
+          ((eq replace_all :json-false)
            nil)
           ((equal replace_all "false")
            nil)

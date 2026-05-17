@@ -2,6 +2,21 @@ org-mcp NEWS -- history of user-visible changes
 
 * Changes in org-mcp 0.10.0 (unreleased)
 
+** Bug Fixes
+
+*** Marked `org-edit-body's `replace_all' as optional in the JSON Schema
+    The published JSON Schema now reports `replace_all' as not
+    required, matching the tool's documented default of `false'.
+
+*** Fixed `org-edit-body' silently replacing all on `replace_all=false'
+    A client sending the JSON boolean `false' for the `replace_all'
+    parameter (e.g. `{"replace_all": false}') previously bypassed the
+    multiple-occurrence safety guard and silently replaced every
+    occurrence of the search string even though the client
+    explicitly opted out of replace-all behaviour.  JSON `false' is
+    now correctly recognised, so the guard fires on ambiguous
+    matches as documented.
+
 * Changes in org-mcp 0.9.0 (2025-11-11)
 
 ** Initial release
