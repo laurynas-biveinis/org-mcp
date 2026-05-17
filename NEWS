@@ -4,6 +4,14 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Case-sensitive body matching in `org-edit-body'
+    The MCP tool `org-edit-body' now matches the `old_body' parameter
+    case-sensitively.  Previously the occurrence counter ran
+    case-sensitively but the replacement ran case-insensitively, so
+    when the body contained a case-mismatched substring the
+    replacement could touch a copy the counter never saw, while the
+    intended copy was left untouched.
+
 *** Marked `org-edit-body's `replace_all' as optional in the JSON Schema
     The published JSON Schema now reports `replace_all' as not
     required, matching the tool's documented default of `false'.

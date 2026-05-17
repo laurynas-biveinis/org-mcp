@@ -156,6 +156,18 @@ More text.
 Third occurrence of pattern."
   "Heading with ID and repeated text patterns.")
 
+(defconst org-mcp-test--content-with-id-case-mixed-body
+  (format
+   "* TODO Task with mixed-case body
+:PROPERTIES:
+:ID:       %s
+:END:
+hello world
+Hello world"
+   org-mcp-test--content-with-id-id)
+  "Task with body containing both `hello world' (lowercase, first)
+and `Hello world' (capitalized, second).")
+
 (defconst org-mcp-test--content-duplicate-headlines-before
   "* Team Updates
 ** Project Review
@@ -637,6 +649,18 @@ Second child content.
            "?\\'")
           org-mcp-test--content-with-id-id)
   "Pattern for multiline edit-body test result.")
+
+(defconst org-mcp-test--pattern-edit-body-case-sensitive
+  (format (concat
+           "\\`\\* TODO Task with mixed-case body\n"
+           ":PROPERTIES:\n"
+           ":ID: +%s\n"
+           ":END:\n"
+           "hello world\n"
+           "REPLACED\n?\\'")
+          org-mcp-test--content-with-id-id)
+  "Pattern for case-sensitive edit-body: replaces `Hello world' (capitalized)
+while leaving `hello world' (lowercase) untouched.")
 
 (defconst org-mcp-test--pattern-edit-body-replace-all
   (concat
@@ -2373,6 +2397,24 @@ The navigation function should find headlines even when they have TODO keywords.
 with new multiline
 content here."
      org-mcp-test--pattern-edit-body-multiline
+     nil
+     org-mcp-test--content-with-id-id)))
+
+(ert-deftest org-mcp-test-edit-body-case-sensitive-match ()
+  "Test that org-edit-body matches `old_body' case-sensitively.
+The fixture body contains `hello world' (lowercase, first) and
+`Hello world' (capitalized, second).  A request to replace
+`Hello world' must touch only the capitalized occurrence;
+case-insensitive matching would touch the lowercase line instead."
+  (org-mcp-test--with-id-setup test-file
+      org-mcp-test--content-with-id-case-mixed-body
+      `(,org-mcp-test--content-with-id-id)
+    (org-mcp-test--call-edit-body-and-check
+     test-file
+     org-mcp-test--content-with-id-uri
+     "Hello world"
+     "REPLACED"
+     org-mcp-test--pattern-edit-body-case-sensitive
      nil
      org-mcp-test--content-with-id-id)))
 

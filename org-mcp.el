@@ -760,26 +760,30 @@ BODY-BEGIN is the buffer position where body starts.
 BODY-END is the buffer position where body ends."
   (let ((new-body-content
          (cond
-          ;; Special case: empty old-body with empty body
+          ;; Special case: empty old_body with empty body
           ((and (string= old-body "")
                 (string-match-p "\\`[[:space:]]*\\'" body-content))
            new-body)
-          ;; Normal replacement with replace-all
-          (replace-all
-           (replace-regexp-in-string
-            (regexp-quote old-body) new-body body-content
-            t t))
-          ;; Normal single replacement
+          ;; Normal replacement.  Pin `case-fold-search' to nil so the
+          ;; search agrees with the occurrence counter in the caller
+          ;; (which already pins it to nil).
           (t
-           (let ((pos
-                  (string-match
-                   (regexp-quote old-body) body-content)))
-             (if pos
+           (let ((case-fold-search nil))
+             (if replace-all
+                 (replace-regexp-in-string
+                  (regexp-quote old-body) new-body body-content
+                  t t)
+               ;; The caller has already verified `old-body' occurs at
+               ;; least once under the same `case-fold-search' regime,
+               ;; so `string-match' is guaranteed to find a hit.
+               (let ((pos
+                      (string-match
+                       (regexp-quote old-body) body-content)))
+                 (cl-assert pos)
                  (concat
-                  (substring body-content 0 pos)
-                  new-body
-                  (substring body-content (+ pos (length old-body))))
-               body-content))))))
+                  (substring body-content 0 pos) new-body
+                  (substring body-content
+                             (+ pos (length old-body)))))))))))
 
     ;; Replace the body content
     (if (< body-begin body-end)
@@ -1102,6 +1106,7 @@ MCP Parameters:
                    - org-headline://{absolute-path}#{url-encoded-path}
                    - org-id://{uuid}
   old_body - Substring to find and replace within the body
+             Matched case-sensitively
              Must appear exactly once unless replace_all is true
              Use empty string \"\" only for adding to empty nodes;
              in that case the node body must be empty or
@@ -1167,7 +1172,7 @@ MCP Parameters:
 
           ;; Check if body is empty
           (when (string-match-p "\\`[[:space:]]*\\'" body-content)
-            ;; Empty old-body + empty body -> add content
+            ;; Empty old_body + empty body -> add content
             (if (string= old_body "")
                 ;; Treat as single replacement
                 (setq occurrence-count 1)
@@ -1176,7 +1181,7 @@ MCP Parameters:
 
           ;; Count occurrences (unless already handled above)
           (unless (= occurrence-count 1)
-            ;; Empty old-body with non-empty body is an error
+            ;; Empty old_body with non-empty body is an error
             (if (and (string= old_body "")
                      (not
                       (string-match-p
