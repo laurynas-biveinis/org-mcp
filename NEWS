@@ -4,6 +4,10 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Cached ID-fallback resolution to avoid repeated full-file scans
+    Successful ID-fallback scans now register the (id, file) pair
+    in `org-id-locations'.  Gated on `org-id-track-globally'.
+
 *** Routed read-only `org-id://' resolution through allowed-files fallback
     Read-only `org-id://' resolution (`org-read-by-id' and the
     `org-id://{uuid}' resource) now falls back to scanning allowed

@@ -266,8 +266,15 @@ callers cannot inadvertently leak file locations outside
 
 First consults `org-id-find-id-file'; if that misses, falls back
 to scanning every entry in `org-mcp-allowed-files' for an `:ID:'
-property matching ID.  Callers translate the status into a tool
-error or a resource error of the appropriate shape."
+property matching ID.  On a successful fallback the resolved
+\(id, file) pair is registered into `org-id-locations' so subsequent
+lookups for the same ID hit the DB at O(1) instead of re-scanning;
+this cache write is gated on `org-id-track-globally', so users who
+have explicitly opted out of global ID tracking do not get implicit
+DB mutations.
+
+Callers translate the status into a tool error or a resource error
+of the appropriate shape."
   (if-let* ((id-file (org-id-find-id-file id)))
       (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
           (cons :found allowed-file)
@@ -278,7 +285,9 @@ error or a resource error of the appropriate shape."
           (when (file-exists-p allowed-file)
             (org-mcp--with-org-file allowed-file
               (when (org-find-property "ID" id)
-                (setq found-file (expand-file-name allowed-file)))))))
+                (setq found-file (expand-file-name allowed-file))
+                (when org-id-track-globally
+                  (org-id-add-location id found-file)))))))
       (if found-file
           (cons :found found-file)
         (cons :missing nil)))))

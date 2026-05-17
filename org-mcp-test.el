@@ -1844,6 +1844,63 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
          test-file
          org-mcp-test--expected-task-with-id-in-progress-regex)))))
 
+(ert-deftest org-mcp-test-id-fallback-scan-caches-resolution ()
+  "Test that DB-miss ID resolution writes to `org-id-locations'.
+Locks the cache-write side effect of
+`org-mcp--find-allowed-file-with-id': when the org-id DB has no
+record of the ID but a fallback scan of `org-mcp-allowed-files'
+finds it, the (id, file) pair must be registered into
+`org-id-locations' so the next lookup hits the DB at O(1) instead
+of re-scanning every allowed file.  Without this test, a
+regression that silently dropped the `org-id-add-location' call
+would still pass every existing ID-using test because they all
+pre-register IDs via `with-id-setup'."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-with-id-todo))
+    (let ((org-id-track-globally t)
+          (org-id-locations-file nil)
+          (org-id-locations nil)
+          (org-mcp-allowed-files (list test-file))
+          (org-todo-keywords
+           '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+      (should-not
+       (org-id-find-id-file org-mcp-test--content-with-id-id))
+      (mcp-server-lib-ert-call-tool
+       "org-update-todo-state"
+       `((uri . ,org-mcp-test--content-with-id-uri)
+         (current_state . "TODO")
+         (new_state . "DONE")))
+      (should
+       (equal
+        (file-truename
+         (org-id-find-id-file
+          org-mcp-test--content-with-id-id))
+        (file-truename test-file))))))
+
+(ert-deftest org-mcp-test-id-fallback-scan-skips-cache-when-tracking-off ()
+  "Test that DB-miss ID resolution skips the cache write when
+`org-id-track-globally' is nil.  Locks the gating contract: users
+who have opted out of global ID tracking must not get implicit
+`org-id-locations' mutations from MCP tool calls; the fallback
+scan still resolves the ID and the tool succeeds, but the DB
+stays untouched."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-with-id-todo))
+    (let ((org-id-track-globally nil)
+          (org-id-locations-file nil)
+          (org-id-locations nil)
+          (org-mcp-allowed-files (list test-file))
+          (org-todo-keywords
+           '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+      (mcp-server-lib-ert-call-tool
+       "org-update-todo-state"
+       `((uri . ,org-mcp-test--content-with-id-uri)
+         (current_state . "TODO")
+         (new_state . "DONE")))
+      (should-not
+       (org-id-find-id-file
+        org-mcp-test--content-with-id-id)))))
+
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."
   (let ((test-content org-mcp-test--content-simple-todo))
