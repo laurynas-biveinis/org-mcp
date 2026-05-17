@@ -717,12 +717,13 @@ Throws validation error if AFTER-URI is invalid or sibling not found."
             (org-mcp--tool-validation-error
              "Sibling with ID %s not found under parent"
              after-id))))
-    ;; No after_uri - insert at end of parent's subtree
-    (org-end-of-subtree t t)
-    ;; If we're at the start of a sibling, go back one char
-    ;; to be at the end of parent's content
-    (when (looking-at "^\\*+ ")
-      (backward-char 1))))
+    ;; No after_uri - insert at end of parent's subtree.  Leave point
+    ;; at the start of the following heading (or `point-max') so the
+    ;; preceding `\n' acts as the separator.  An earlier
+    ;; `(backward-char 1)' here moved point onto that `\n', which
+    ;; tricked `ensure-newline' into adding a second one and inserted
+    ;; a spurious blank line before the next heading.
+    (org-end-of-subtree t t)))
 
 (defun org-mcp--ensure-newline ()
   "Ensure there is a newline or buffer start before point."

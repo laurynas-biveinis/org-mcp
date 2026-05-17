@@ -156,6 +156,13 @@ More text.
 Third occurrence of pattern."
   "Heading with ID and repeated text patterns.")
 
+(defconst org-mcp-test--content-parent-child-then-other-top
+  "* Parent Task
+Parent body.
+** Existing Child
+* Other Top"
+  "Parent with one child followed by another top-level heading.")
+
 (defconst org-mcp-test--content-with-id-case-mixed-body
   (format
    "* TODO Task with mixed-case body
@@ -333,6 +340,18 @@ into a file that already contains headings.")
     "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
    org-mcp-test--content-with-id-id)
   "Pattern for child TODO (level 2) added under parent (level 1) with existing child (level 2).")
+
+(defconst org-mcp-test--regex-child-end-no-blank-before-other-top
+  (concat
+   "\\`\\* Parent Task\n"
+   "Parent body\\.\n"
+   "\\*\\* Existing Child\n"
+   "\\*\\* TODO New Child +.*:work:.*\n"
+   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
+   "\\* Other Top\\'")
+  "Pattern asserting that a child appended at end of parent appears
+between `** Existing Child' and `* Other Top' with no blank line
+before `* Other Top'.")
 
 (defconst org-mcp-test--regex-second-child-same-level
   (concat
@@ -1941,6 +1960,24 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
    nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-child-under-parent))
+
+(ert-deftest org-mcp-test-add-todo-child-end-parent-followed-by-other ()
+  "Test child insert avoids a spurious blank line before a following heading.
+When `org-end-of-subtree' is called from a parent that has content
+following it, point lands at the `*' of the next heading; the
+insertion pipeline must produce a single `\\n' between the new child
+and that following heading.  Locks in the fix to
+`org-mcp--position-for-new-child'."
+  (org-mcp-test--add-todo-and-check
+   org-mcp-test--content-parent-child-then-other-top nil nil nil
+   "New Child"
+   "TODO"
+   '("work")
+   nil ; no body
+   (format "org-headline://%s#Parent%%20Task" test-file)
+   nil ; no after_uri
+   (file-name-nondirectory test-file)
+   org-mcp-test--regex-child-end-no-blank-before-other-top))
 
 (ert-deftest org-mcp-test-add-todo-empty-after-uri-rejected ()
   "Test that adding a child TODO with empty `after_uri' is rejected.

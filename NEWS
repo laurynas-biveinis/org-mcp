@@ -4,6 +4,14 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Fixed spurious blank line in `org-add-todo' when parent is followed by content
+    Adding a child under a parent heading that has any following
+    content (a top-level heading or any parent-level sibling)
+    inserted an unwanted blank line between the new heading and the
+    next following heading.  The fix removes a spurious
+    `backward-char' inside the end-of-subtree positioning step so the
+    new heading lands flush against the following content.
+
 *** Fixed default placement for top-level `org-add-todo'
     When called at top level (parent URI with no fragment) on a file
     that already contained at least one top-level heading, the
