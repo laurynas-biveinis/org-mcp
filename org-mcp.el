@@ -1057,9 +1057,8 @@ MCP Parameters:
   (org-mcp--validate-string-field uri "uri")
   (org-mcp--validate-string-field current_state "current_state" t)
   (org-mcp--validate-string-field new_state "new_state")
-  (let* ((parsed (org-mcp--parse-resource-uri uri))
-         (file-path (car parsed))
-         (headline-path (cdr parsed)))
+  (pcase-let ((`(,file-path . ,headline-path)
+               (org-mcp--parse-resource-uri uri)))
     (org-mcp--validate-todo-state new_state "new_state")
     (org-mcp--modify-and-save file-path "update"
                               `((previous_state
@@ -1122,11 +1121,9 @@ MCP Parameters:
   (org-mcp--validate-string-field after_uri "after_uri" t)
   (org-mcp--validate-headline-title title)
   (org-mcp--validate-todo-state todo_state "todo_state")
-  (let* ((tag-list (org-mcp--validate-and-normalize-tags tags))
-         (parsed (org-mcp--parse-parent-uri parent_uri))
-         (file-path (nth 0 parsed))
-         (parent-path (nth 1 parsed))
-         (parent-id (nth 2 parsed)))
+  (pcase-let ((tag-list (org-mcp--validate-and-normalize-tags tags))
+              (`(,file-path ,parent-path ,parent-id)
+               (org-mcp--parse-parent-uri parent_uri)))
 
     ;; Add the TODO item
     (org-mcp--modify-and-save file-path "add TODO"
@@ -1264,9 +1261,8 @@ MCP Parameters:
   (org-mcp--validate-string-field new_title "new_title")
   (org-mcp--validate-headline-title new_title)
 
-  (let* ((parsed (org-mcp--parse-resource-uri uri))
-         (file-path (car parsed))
-         (headline-path (cdr parsed)))
+  (pcase-let ((`(,file-path . ,headline-path)
+               (org-mcp--parse-resource-uri uri)))
 
     ;; Rename the headline in the file
     (org-mcp--modify-and-save file-path "rename"
@@ -1327,9 +1323,8 @@ MCP Parameters:
            replace_all))))
     (org-mcp--validate-body-no-unbalanced-blocks new_body)
 
-    (let* ((parsed (org-mcp--parse-resource-uri resource_uri))
-           (file-path (car parsed))
-           (headline-path (cdr parsed)))
+    (pcase-let ((`(,file-path . ,headline-path)
+                 (org-mcp--parse-resource-uri resource_uri)))
 
       (org-mcp--modify-and-save file-path "edit body" nil
         (org-mcp--validate-file-header)
