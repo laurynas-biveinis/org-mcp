@@ -2868,5 +2868,50 @@ Some quote
        (format "'%s': the referenced file not in allowed list"
                org-mcp-test--content-id-resource-id))))))
 
+(defconst org-mcp-test--repo-root
+  (file-name-directory
+   (or load-file-name buffer-file-name (expand-file-name "./")))
+  "Repository root directory, captured at test-file load time.
+Used by repo-level meta tests that read project files (Eask,
+`org-mcp.el') by name rather than via `org-mcp-allowed-files'.")
+
+(defun org-mcp-test--read-repo-file (relative-name)
+  "Return the contents of RELATIVE-NAME under the repository root."
+  (with-temp-buffer
+    (insert-file-contents
+     (expand-file-name relative-name org-mcp-test--repo-root))
+    (buffer-string)))
+
+(ert-deftest org-mcp-test-meta-version-strings-agree ()
+  "Test that the package version is consistent across all sites.
+The `Eask' file's `(package ...)' form, `org-mcp.el's `;; Version:'
+header, and `NEWS' top-section heading must all report the same
+version; drift between them leads to MELPA/Eask metadata
+inconsistencies at release time and to changelog/release-state
+confusion."
+  (let* ((eask-content (org-mcp-test--read-repo-file "Eask"))
+         (el-content (org-mcp-test--read-repo-file "org-mcp.el"))
+         (news-content (org-mcp-test--read-repo-file "NEWS"))
+         (eask-version
+          (and (string-match
+                "(package[ \t\n]+\"[^\"]+\"[ \t\n]+\"\\([^\"]+\\)\""
+                eask-content)
+               (match-string 1 eask-content)))
+         (el-version
+          (and (string-match
+                "^;;[ \t]+Version:[ \t]+\\(\\S-+\\)"
+                el-content)
+               (match-string 1 el-content)))
+         (news-version
+          (and (string-match
+                "^\\* Changes in org-mcp \\(\\S-+\\)"
+                news-content)
+               (match-string 1 news-content))))
+    (should (stringp eask-version))
+    (should (stringp el-version))
+    (should (stringp news-version))
+    (should (equal eask-version el-version))
+    (should (equal eask-version news-version))))
+
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
