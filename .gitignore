@@ -1,7 +1,7 @@
 *.elc
 *~
 /.DS_Store
-org-mcp-autoloads.el
+*-autoloads.el
 .claude/
 .eask/
 dist/
