@@ -134,20 +134,18 @@ denied access."
     (insert-file-contents file-path)
     (buffer-string)))
 
-(defun org-mcp--paths-equal-p (path1 path2)
-  "Return t if PATH1 and PATH2 refer to the same file.
-Handles symlinks and path variations by normalizing both paths."
-  (string= (file-truename path1) (file-truename path2)))
-
 (defun org-mcp--find-allowed-file (filename)
   "Find FILENAME in `org-mcp-allowed-files'.
-Returns the expanded path if found, nil if not in the allowed list."
-  (when-let* ((found
-               (cl-find
-                (file-truename filename)
-                org-mcp-allowed-files
-                :test #'org-mcp--paths-equal-p)))
-    (expand-file-name found)))
+Returns the expanded path if found, nil if not in the allowed list.
+Compares truenames to handle symlinks and path variations."
+  (let ((target (file-truename filename)))
+    (when-let* ((found
+                 (cl-find
+                  target
+                  org-mcp-allowed-files
+                  :key #'file-truename
+                  :test #'string=)))
+      (expand-file-name found))))
 
 (defun org-mcp--refresh-file-buffers (file-path)
   "Refresh all buffers visiting FILE-PATH.
