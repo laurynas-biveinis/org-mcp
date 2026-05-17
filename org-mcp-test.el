@@ -997,6 +997,19 @@ Executes BODY with org-mcp enabled and standard variables set."
                ,@body)
            `(progn ,@body))))))
 
+(defun org-mcp-test--build-add-todo-params
+    (title todo-state tags body parent-uri &optional after-uri)
+  "Build params alist for the `org-add-todo' MCP tool.
+TITLE, TODO-STATE, TAGS, BODY, and PARENT-URI populate the
+correspondingly-named wire-protocol keys.  AFTER-URI populates
+`after_uri'."
+  (list (cons 'title title)
+        (cons 'todo_state todo-state)
+        (cons 'tags tags)
+        (cons 'body body)
+        (cons 'parent_uri parent-uri)
+        (cons 'after_uri after-uri)))
+
 (defmacro org-mcp-test--call-add-todo-expecting-error
     (initial-content todo-keywords tag-alist title todo-state tags body parent-uri
                      &optional after-uri)
@@ -1016,12 +1029,8 @@ AFTER-URI is optional URI of sibling to insert after."
     (org-mcp-test--assert-error-and-file
      test-file
      (let* ((params
-             `((title . ,,title)
-               (todo_state . ,,todo-state)
-               (tags . ,,tags)
-               (body . ,,body)
-               (parent_uri . ,,parent-uri)
-               (after_uri . ,,after-uri)))
+             (org-mcp-test--build-add-todo-params
+              ,title ,todo-state ,tags ,body ,parent-uri ,after-uri))
             (request
               (mcp-server-lib-create-tools-call-request
                "org-add-todo" nil params))
@@ -1084,12 +1093,8 @@ variables after setup, e.g., ((org-tag-alist nil))."
   (declare (indent 2))
   (let ((checking-logic
          `(let* ((params
-                  `((title . ,,title)
-                    (todo_state . ,,todo-state)
-                    (tags . ,,tags)
-                    (body . ,,body)
-                    (parent_uri . ,,parent-uri)
-                    (after_uri . ,,after-uri)))
+                  (org-mcp-test--build-add-todo-params
+                   ,title ,todo-state ,tags ,body ,parent-uri ,after-uri))
                  (result-text (mcp-server-lib-ert-call-tool "org-add-todo" params))
                  (result (json-read-from-string result-text)))
             ;; Check result structure
