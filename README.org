@@ -276,6 +276,12 @@ Example:
 #+end_example
 
 *** org-add-todo
+# Canonical references for the tool contract: per-parameter semantics
+# live in the `MCP Parameters:' section of `org-mcp--tool-add-todo''s
+# docstring (parsed by mcp-server-lib into the tool's input schema);
+# tool-level overview, return shape, and positioning behavior live in
+# the `:description' string registered for the tool, both in
+# org-mcp.el.  Summaries below; keep parameter names/types in sync.
 - *Description:* Add a new TODO item to an Org file
 - *Parameters:*
   - =title= (string, required): The headline text
@@ -283,7 +289,7 @@ Example:
   - =tags= (string or array, required): Tags to add (e.g., "urgent" or ["work", "urgent"])
   - =body= (string, optional): Body text content to add under the heading
   - =parent_uri= (string, required): URI of parent item. Use =org-headline://filename.org/= for top-level items in a file
-  - =after_uri= (string, optional): URI of sibling to insert after. If not given, append as last child of parent
+  - =after_uri= (string, optional): URI of sibling to insert after; omit to append as last child. See the MCP tool description for accepted formats and rejection rules.
 - *Returns:* Object with success status, new item URI, file name, and title
 - *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
