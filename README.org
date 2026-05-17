@@ -15,6 +15,8 @@ From [[https://melpa.org/#/org-mcp][MELPA]] or [[https://stable.melpa.org/#/org-
 
 =M-x package-install RET org-mcp RET=
 
+See [[file:NEWS][NEWS]] for the changelog.
+
 * Usage
 
 *WARNING:* some of the tools in this package give LLMs WRITE access to your Org
