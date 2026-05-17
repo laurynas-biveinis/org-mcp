@@ -6,6 +6,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'ert)
 (require 'org-mcp)
 (require 'mcp-server-lib-commands)
@@ -1082,19 +1083,21 @@ correspondingly-named wire-protocol keys.  AFTER-URI populates
         (cons 'parent_uri parent-uri)
         (cons 'after_uri after-uri)))
 
-(defmacro org-mcp-test--call-add-todo-expecting-error
-    (initial-content todo-keywords tag-alist title todo-state tags body parent-uri
-                     &optional after-uri)
+(cl-defmacro org-mcp-test--call-add-todo-expecting-error
+    (initial-content title todo-state tags body parent-uri
+                     &key todo-keywords tag-alist after-uri)
   "Call org-add-todo MCP tool expecting an error and verify file unchanged.
 INITIAL-CONTENT is the initial Org file content.
-TODO-KEYWORDS is the org-todo-keywords config (nil for default).
-TAG-ALIST is the org-tag-alist config (nil for default).
 TITLE is the headline text.
 TODO-STATE is the TODO state.
 TAGS is a list of tag strings or nil.
 BODY is the body text or nil.
 PARENT-URI is the URI of the parent item.
-AFTER-URI is optional URI of sibling to insert after."
+
+Keyword arguments:
+:TODO-KEYWORDS is the org-todo-keywords config (nil for default).
+:TAG-ALIST is the org-tag-alist config (nil for default).
+:AFTER-URI is the URI of a sibling to insert after."
   `(org-mcp-test--with-add-todo-setup
     test-file ,initial-content ,todo-keywords
     ,tag-alist nil
@@ -1119,7 +1122,7 @@ INITIAL-CONTENT is the initial file content.
 PARENT-HEADLINE is the parent headline path (empty string for top-level).
 BODY-WITH-HEADLINE is the body containing invalid headline."
   (org-mcp-test--call-add-todo-expecting-error
-   initial-content nil nil
+   initial-content
    "Test Task" "TODO" '("work") body-with-headline
    (format "org-headline://%s#%s" test-file parent-headline)))
 
@@ -1127,7 +1130,7 @@ BODY-WITH-HEADLINE is the body containing invalid headline."
   "Assert that adding TODO with INVALID-TITLE throws an error.
 Tests that the given title is rejected when creating a TODO."
   (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-empty nil nil
+   org-mcp-test--content-empty
    invalid-title "TODO" nil nil
    (format "org-headline://%s#" test-file)))
 
@@ -1138,7 +1141,7 @@ alist-membership path is inactive and the tag-format check fires."
   (let ((org-tag-alist nil)
         (org-tag-persistent-alist nil))
     (org-mcp-test--call-add-todo-expecting-error
-     org-mcp-test--content-empty nil nil
+     org-mcp-test--content-empty
      "Task" "TODO" (list invalid-tag) nil
      (format "org-headline://%s#" test-file))))
 
@@ -1945,7 +1948,7 @@ stays untouched."
 (ert-deftest org-mcp-test-add-todo-invalid-state ()
   "Test that adding TODO with invalid state throws error."
   (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-empty nil nil
+   org-mcp-test--content-empty
    "New Task"
    "INVALID-STATE" ; Not in org-todo-keywords
    '("work")
@@ -1978,7 +1981,7 @@ stays untouched."
   "Test that tags not in `org-tag-alist' are rejected."
   ;; Should reject tags not in org-tag-alist
   (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-empty nil nil
+   org-mcp-test--content-empty
    "Task" "TODO" '("invalid") nil
    (format "org-headline://%s#" test-file)))
 
@@ -2070,10 +2073,10 @@ Empty string is distinct from absent/nil: absent appends as last
 child, but `\"\"' must error so a client cannot silently mistake
 an unset field for an explicit no-op."
   (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-nested-siblings nil nil
+   org-mcp-test--content-nested-siblings
    "Child Task" "TODO" '("work") nil
    (format "org-headline://%s#Parent%%20Task" test-file)
-   ""))
+   :after-uri ""))
 
 (ert-deftest org-mcp-test-add-todo-whitespace-after-uri-rejected ()
   "Test that adding a child TODO with whitespace-only `after_uri' is rejected.
@@ -2085,10 +2088,10 @@ through the `string-empty-p' guard and surfaced as the prefix-shape
 no-meaningful-content rejection at the validation boundary so
 whitespace and the empty string take the same error path."
   (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-nested-siblings nil nil
+   org-mcp-test--content-nested-siblings
    "Child Task" "TODO" '("work") nil
    (format "org-headline://%s#Parent%%20Task" test-file)
-   "   "))
+   :after-uri "   "))
 
 (ert-deftest org-mcp-test-add-todo-after-uri-nil-wire-accepted ()
   "Test that an explicit JSON `null' on the wire for `after_uri' succeeds.
@@ -2217,7 +2220,7 @@ Unbalanced blocks like #+BEGIN_EXAMPLE without #+END_EXAMPLE should be
 rejected in TODO body content."
   ;; Should reject unbalanced blocks
   (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-empty nil nil
+   org-mcp-test--content-empty
    "Task with unbalanced block"
    "TODO"
    '("work")
@@ -2229,7 +2232,7 @@ rejected in TODO body content."
 An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
   ;; Should reject unbalanced END blocks
   (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-empty nil nil
+   org-mcp-test--content-empty
    "Task with unbalanced END block"
    "TODO"
    '("work")
@@ -2274,10 +2277,10 @@ This is valid Org-mode syntax and should be allowed."
   "Test error when after_uri is not a child of parent_uri."
   ;; Error: Other Child is not a child of First Parent
   (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-wrong-levels nil nil
+   org-mcp-test--content-wrong-levels
    "New Task" "TODO" '("work") nil
    (format "org-headline://%s#First%%20Parent" test-file)
-   (format "org-headline://%s#Second%%20Parent/Other%%20Child" test-file)))
+   :after-uri (format "org-headline://%s#Second%%20Parent/Other%%20Child" test-file)))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
@@ -2302,18 +2305,17 @@ This is valid Org-mode syntax and should be allowed."
   "Test that mutually exclusive tags are rejected."
   (org-mcp-test--call-add-todo-expecting-error
    "#+TITLE: Test Org File\n\n"
-   '((sequence "TODO" "|" "DONE"))
-   '(("work" . ?w)
-     :startgroup
-     ("@office" . ?o)
-     ("@home" . ?h)
-     :endgroup)
    "Test Task"
    "TODO"
    ["work" "@office" "@home"] ; conflicting tags
    nil
    (format "org-headline://%s#" test-file)
-   nil))
+   :todo-keywords '((sequence "TODO" "|" "DONE"))
+   :tag-alist '(("work" . ?w)
+                :startgroup
+                ("@office" . ?o)
+                ("@home" . ?h)
+                :endgroup)))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-valid ()
   "Test that non-conflicting tags from mutex groups are accepted."
