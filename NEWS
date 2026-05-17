@@ -4,6 +4,15 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Fixed default placement for top-level `org-add-todo'
+    When called at top level (parent URI with no fragment) on a file
+    that already contained at least one top-level heading, the
+    default placement inserted the new heading before the first
+    existing heading rather than at end of file, contradicting the
+    tool's own documented behavior, which has always promised "end
+    of file" placement.  The default now appends at end of file as
+    documented.
+
 *** Rejected empty or whitespace-only `after_uri' in `org-add-todo'
     `after_uri=""' and any whitespace-only value (regular spaces,
     tabs, NBSP) are now validation errors.  Omit the JSON key

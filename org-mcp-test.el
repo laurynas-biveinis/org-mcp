@@ -294,11 +294,6 @@ Second child content.
   (concat
    "\\`#\\+TITLE: My Org Document\n"
    "\n"
-   "\\* TODO New Top Task +.*:urgent:\n"
-   "\\(?: *:PROPERTIES:\n"
-   " *:ID: +[^\n]+\n"
-   " *:END:\n\\)?"
-   "\n?"
    "\\* Parent Task\n"
    ":PROPERTIES:\n"
    ":ID: +" org-mcp-test--content-nested-siblings-parent-id "\n"
@@ -312,8 +307,14 @@ Second child content.
    ":ID: +" org-mcp-test--content-with-id-id "\n"
    ":END:\n"
    "Second child content\\.\n"
-   "\\*\\* Third Child #3\\'")
-  "Regex matching complete buffer after adding top-level TODO with headers.")
+   "\\*\\* Third Child #3\n"
+   "\\* TODO New Top Task +.*:urgent:\n"
+   "\\(?: *:PROPERTIES:\n"
+   " *:ID: +[^\n]+\n"
+   " *:END:\n\\)?\\'")
+  "Regex matching complete buffer after adding top-level TODO with headers.
+Locks the documented \"end of file\" placement for top-level inserts
+into a file that already contains headings.")
 
 (defconst org-mcp-test--regex-child-under-parent
   (format

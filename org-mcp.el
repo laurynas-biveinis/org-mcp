@@ -760,10 +760,14 @@ After insertion, point is left on the heading line at end-of-line."
           (progn
             (org-mcp--ensure-newline)
             (insert "* "))
-        ;; Has headlines - use `org-insert-heading'
-        ;; Ensure proper spacing before inserting
+        ;; Has headlines - append at end of file (the tool description's
+        ;; documented "end of file" placement for the no-fragment parent
+        ;; URI).  `org-insert-heading' at the caller-positioned point
+        ;; lands the new heading BEFORE the first existing heading,
+        ;; contradicting the documented contract.
+        (goto-char (point-max))
         (org-mcp--ensure-newline)
-        (org-insert-heading nil nil t))
+        (insert "* "))
       (insert title))))
 
 (defun org-mcp--replace-body-content
