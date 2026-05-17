@@ -1941,19 +1941,61 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
    (file-name-nondirectory test-file)
    org-mcp-test--regex-child-under-parent))
 
-(ert-deftest org-mcp-test-add-todo-child-empty-after-uri ()
-  "Test adding a child TODO with empty string for after_uri.
-Empty string should be treated as nil - append as last child."
-  (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-nested-siblings nil nil nil
-   "Child Task"
-   "TODO"
-   '("work")
-   nil ; no body
+(ert-deftest org-mcp-test-add-todo-empty-after-uri-rejected ()
+  "Test that adding a child TODO with empty `after_uri' is rejected.
+Empty string is distinct from absent/nil: absent appends as last
+child, but `\"\"' must error so a client cannot silently mistake
+an unset field for an explicit no-op."
+  (org-mcp-test--call-add-todo-expecting-error
+   org-mcp-test--content-nested-siblings nil nil
+   "Child Task" "TODO" '("work") nil
    (format "org-headline://%s#Parent%%20Task" test-file)
-   "" ; empty string after_uri
-   (file-name-nondirectory test-file)
-   org-mcp-test--regex-child-under-parent))
+   ""))
+
+(ert-deftest org-mcp-test-add-todo-whitespace-after-uri-rejected ()
+  "Test that adding a child TODO with whitespace-only `after_uri' is rejected.
+A whitespace-only string carries the same no-meaningful-content
+intent as `\"\"' (which is already rejected by
+`org-mcp-test-add-todo-empty-after-uri-rejected') but slipped
+through the `string-empty-p' guard and surfaced as the prefix-shape
+`Field after_uri is not org-id://: ...' error.  Lock the
+no-meaningful-content rejection at the validation boundary so
+whitespace and the empty string take the same error path."
+  (org-mcp-test--call-add-todo-expecting-error
+   org-mcp-test--content-nested-siblings nil nil
+   "Child Task" "TODO" '("work") nil
+   (format "org-headline://%s#Parent%%20Task" test-file)
+   "   "))
+
+(ert-deftest org-mcp-test-add-todo-after-uri-nil-wire-accepted ()
+  "Test that an explicit JSON `null' on the wire for `after_uri' succeeds.
+The empty/whitespace pair is rejected at the validation boundary;
+the positive half of that contract is that an explicit JSON `null'
+must be accepted as equivalent to omitting the key, landing on the
+same last-child append path.  This test bypasses
+`org-mcp-test--build-add-todo-params' and builds the params alist
+directly with `(cons 'after_uri nil)' so the wire-null contract is
+pinned independent of helper shape -- a future helper that omits
+nil keys would otherwise silently strip the only coverage of the
+JSON-null wire form."
+  (org-mcp-test--with-add-todo-setup
+      test-file org-mcp-test--content-nested-siblings nil nil nil
+    (let* ((params
+            (list (cons 'title "Child Task")
+                  (cons 'todo_state "TODO")
+                  (cons 'tags '("work"))
+                  (cons 'body nil)
+                  (cons 'parent_uri
+                        (format "org-headline://%s#Parent%%20Task"
+                                test-file))
+                  (cons 'after_uri nil)))
+           (result-text
+            (mcp-server-lib-ert-call-tool "org-add-todo" params))
+           (result (json-read-from-string result-text)))
+      (org-mcp-test--assert-add-todo-result-shape
+       result "Child Task" (file-name-nondirectory test-file))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--regex-child-under-parent))))
 
 (ert-deftest org-mcp-test-add-todo-second-child-same-level ()
   "Test that adding a second child creates it at the same level as first child.

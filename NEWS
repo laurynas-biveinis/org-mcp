@@ -4,6 +4,13 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Rejected empty or whitespace-only `after_uri' in `org-add-todo'
+    `after_uri=""' and any whitespace-only value (regular spaces,
+    tabs, NBSP) are now validation errors.  Omit the JSON key
+    entirely when not specifying a sibling.  The bare prefix
+    `after_uri="org-id://"' (with no UUID after the scheme) is
+    also rejected at the validation boundary.
+
 *** Case-sensitive body matching in `org-edit-body'
     The MCP tool `org-edit-body' now matches the `old_body' parameter
     case-sensitively.  Previously the occurrence counter ran

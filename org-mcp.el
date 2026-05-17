@@ -664,15 +664,32 @@ PARENT-END is the end position of the parent's subtree.
 Assumes point is at parent heading.
 If AFTER-URI is non-nil, positions after that sibling.
 If nil, positions at end of parent's subtree.
+An empty or whitespace-only AFTER-URI is rejected as a validation
+error (distinct from absent); omit the key entirely to get default
+placement.  A bare `org-id://' prefix with no UUID after it is also
+rejected at the validation boundary; otherwise the empty extracted
+UUID would surface downstream as the misleading `Sibling with ID
+not found under parent' with an empty interpolated ID.
 Throws validation error if AFTER-URI is invalid or sibling not found."
-  (if (and after-uri (not (string-empty-p after-uri)))
+  (when (and
+         after-uri
+         (or (string-empty-p after-uri)
+             (string-match-p "\\`[[:space:]]*\\'" after-uri)
+             ;; Explicitly match NBSP for Emacs 27.2 compatibility
+             ;; In Emacs 27.2, [[:space:]] doesn't match NBSP (U+00A0)
+             (string-match-p "\\`[\u00A0]*\\'" after-uri)))
+    (org-mcp--tool-validation-error
+     (concat
+      "Field after_uri must not be empty or whitespace-only; "
+      "omit the key to insert as last child")))
+  (if after-uri
       (progn
         ;; Parse after-uri to get the ID
         (let ((after-id
                (org-mcp--extract-uri-suffix
                 after-uri org-mcp--uri-id-prefix))
               (found nil))
-          (unless after-id
+          (when (or (null after-id) (string-empty-p after-id))
             (org-mcp--tool-validation-error
              "Field after_uri is not %s: %s"
              org-mcp--uri-id-prefix after-uri))
@@ -913,7 +930,9 @@ MCP Parameters:
                           or org-id://{parent-uuid}
   after_uri - Sibling to insert after (optional)
               Must be org-id://{uuid} format
-              If omitted, appends as last child of parent"
+              If omitted, appends as last child of parent
+              Empty or whitespace-only string is rejected; omit
+              the key instead"
   (org-mcp--validate-headline-title title)
   (org-mcp--validate-todo-state todo_state)
   (let* ((tag-list (org-mcp--validate-and-normalize-tags tags))
