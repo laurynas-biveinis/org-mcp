@@ -846,12 +846,15 @@ CURRENT_STATE is the current TODO state (empty string for no state).
 NEW_STATE is the new TODO state to set.
 
 MCP Parameters:
-  uri - URI of the headline
+  uri - URI of the headline to update
         Formats:
-          - org-headline://{absolute-path}#{headline-path}
-          - org-id://{id}
-  current_state - Current TODO state (empty string for no state)
-  new_state - New TODO state (must be in `org-todo-keywords')"
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
+  current_state - Expected current TODO state
+                  Use empty string \"\" if headline has no TODO state
+                  Must match actual state or tool will error
+  new_state - New TODO state to set
+              Must be a valid keyword from `org-todo-keywords'"
   (let* ((parsed (org-mcp--parse-resource-uri uri))
          (file-path (car parsed))
          (headline-path (cdr parsed)))
@@ -887,18 +890,26 @@ PARENT_URI is the URI of the parent item.
 AFTER_URI is optional URI of sibling to insert after.
 
 MCP Parameters:
-  title - The headline text
+  title - Headline text without TODO state or tags
+          Cannot be empty or whitespace-only
+          Cannot contain newlines
   todo_state - TODO state from `org-todo-keywords'
   tags - Tags to add (single string or array of strings)
+         Single tag: \"urgent\"; multiple tags: [\"work\", \"urgent\"]
+         Validated against `org-tag-alist' if configured
+         Must follow Org tag rules (alphanumeric, _, @)
+         Respects mutually exclusive tag groups
   body - Optional body text content
+         Cannot contain headlines at same or higher level as the
+         new item
+         If #+BEGIN/#+END blocks are present, they must be balanced
   parent_uri - Parent item URI
-               Formats:
-                 - org-headline://{absolute-path}#{headline-path}
-                 - org-id://{id}
+               For top-level: org-headline://{absolute-path}
+               For child: org-headline://{path}#{parent-path}
+                          or org-id://{parent-uuid}
   after_uri - Sibling to insert after (optional)
-              Formats:
-                - org-headline://{absolute-path}#{headline-path}
-                - org-id://{id}"
+              Must be org-id://{uuid} format
+              If omitted, appends as last child of parent"
   (org-mcp--validate-headline-title title)
   (org-mcp--validate-todo-state todo_state)
   (let* ((tag-list (org-mcp--validate-and-normalize-tags tags))
@@ -1043,12 +1054,16 @@ headline if one doesn't exist.
 Returns the ID-based URI for the renamed headline.
 
 MCP Parameters:
-  uri - URI of the headline
+  uri - URI of the headline to rename
         Formats:
-          - org-headline://{absolute-path}#{headline-path}
-          - org-id://{id}
-  current_title - Current title without TODO state or tags
-  new_title - New title without TODO state or tags"
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
+  current_title - Expected current title without TODO state or tags
+                  Must match actual title or tool will error
+                  Used to prevent race conditions
+  new_title - New title without TODO state or tags
+              Cannot be empty or whitespace-only
+              Cannot contain newlines"
   (org-mcp--validate-headline-title new_title)
 
   (let* ((parsed (org-mcp--parse-resource-uri uri))
@@ -1082,14 +1097,20 @@ NEW_BODY is the replacement text.
 REPLACE_ALL if non-nil, replace all occurrences.
 
 MCP Parameters:
-  resource_uri - URI of the node
+  resource_uri - URI of the headline to edit
                  Formats:
-                   - org-headline://{absolute-path}#{headline-path}
-                   - org-id://{id}
-  old_body - Substring to replace within the body (must be unique
-             unless replace_all).  Use \"\" to add to empty nodes
+                   - org-headline://{absolute-path}#{url-encoded-path}
+                   - org-id://{uuid}
+  old_body - Substring to find and replace within the body
+             Must appear exactly once unless replace_all is true
+             Use empty string \"\" only for adding to empty nodes;
+             in that case the node body must be empty or
+             whitespace-only, otherwise the tool errors
   new_body - Replacement text
-  replace_all - Replace all occurrences (optional, default false)"
+             Cannot introduce headlines at same or higher level
+             Must maintain balanced #+BEGIN/#+END blocks
+  replace_all - Replace all occurrences (optional, default false)
+                When false, old_body must be unique in the body"
   ;; Normalize JSON false to nil for proper boolean handling
   ;; JSON false can arrive as :false (keyword) or "false" (string)
   (let ((replace_all
@@ -1355,17 +1376,6 @@ Creates an Org ID property for the headline if one doesn't exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
 
-Parameters:
-  uri - URI of the headline to update (string, required)
-        Formats:
-          - org-headline://{absolute-path}#{url-encoded-path}
-          - org-id://{uuid}
-  current_state - Expected current TODO state (string, required)
-                  Use empty string \"\" if headline has no TODO state
-                  Must match actual state or tool will error
-  new_state - New TODO state to set (string, required)
-              Must be valid keyword from org-todo-keywords
-
 Returns JSON object:
   success - Always true on success (boolean)
   previous_state - The previous TODO state (string, empty for none)
@@ -1383,28 +1393,6 @@ Creates the headline with TODO state, tags, and optional body content.
 Automatically creates an Org ID property for the new headline.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
-
-Parameters:
-  title - Headline text without TODO state or tags (string, required)
-          Cannot be empty or whitespace-only
-          Cannot contain newlines
-  todo_state - TODO keyword from org-todo-keywords (string, required)
-  tags - Tags for the headline (string or array, required)
-         Single tag: \"urgent\"
-         Multiple tags: [\"work\", \"urgent\"]
-         Validated against org-tag-alist if configured
-         Must follow Org tag rules (alphanumeric, _, @)
-         Respects mutually exclusive tag groups
-  body - Body content under the headline (string, optional)
-         Cannot contain headlines at same or higher level as new item
-         If #+BEGIN/#+END blocks are present, they must be balanced
-  parent_uri - Parent location (string, required)
-               For top-level: org-headline://{absolute-path}
-               For child: org-headline://{path}#{parent-path}
-                         or org-id://{parent-uuid}
-  after_uri - Sibling to insert after (string, optional)
-              Must be org-id://{uuid} format
-              If omitted, appends as last child of parent
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1430,19 +1418,6 @@ the headline if one doesn't exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
 
-Parameters:
-  uri - URI of the headline to rename (string, required)
-        Formats:
-          - org-headline://{absolute-path}#{url-encoded-path}
-          - org-id://{uuid}
-  current_title - Expected current title without TODO/tags (string,
-required)
-                  Must match actual title or tool will error
-                  Used to prevent race conditions
-  new_title - New title without TODO state or tags (string, required)
-              Cannot be empty or whitespace-only
-              Cannot contain newlines
-
 Returns JSON object:
   success - Always true on success (boolean)
   previous_title - The previous headline title (string)
@@ -1462,30 +1437,9 @@ exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
 
-Parameters:
-  resource_uri - URI of the headline to edit (string, required)
-                 Formats:
-                   - org-headline://{absolute-path}#{url-encoded-path}
-                   - org-id://{uuid}
-  old_body - Substring to find and replace (string, required)
-             Must appear exactly once unless replace_all is true
-             Use empty string \"\" only for adding to empty nodes
-  new_body - Replacement text (string, required)
-             Cannot introduce headlines at same or higher level
-             Must maintain balanced #+BEGIN/#+END blocks
-  replace_all - Replace all occurrences (boolean, optional, default
-                false). When false, old_body must be unique in the
-                body.
-
 Returns JSON object:
   success - Always true on success (boolean)
-  uri - ID-based URI (org-id://{uuid}) for the edited headline
-
-Special behavior - Empty old_body:
-  When old_body is \"\", the tool adds content to empty nodes:
-  - Only works if node body is empty or whitespace-only
-  - Error if node already has content
-  - Useful for adding initial content to newly created headlines"
+  uri - ID-based URI (org-id://{uuid}) for the edited headline"
    :read-only nil
    :server-id org-mcp--server-id)
 
@@ -1498,9 +1452,6 @@ plain text with all formatting, properties, and structure preserved.
 File must be in org-mcp-allowed-files.
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
-
-Parameters:
-  file - Absolute path to Org file (string, required)
 
 Returns: Plain text content of the entire Org file"
    :read-only t
@@ -1516,9 +1467,6 @@ Returns: Plain text content of the entire Org file"
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
 
-Parameters:
-  file - Absolute path to Org file (string, required)
-
 Returns: JSON object with hierarchical outline structure"
    :read-only t
    :server-id org-mcp--server-id)
@@ -1533,16 +1481,6 @@ Returns: JSON object with hierarchical outline structure"
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
 
-Parameters:
-  file - Absolute path to Org file (string, required)
-  headline_path - Non-empty slash-separated path to headline (string,
-                  required). Only slashes (/) in  headline titles must
-                  be encoded as %2F
-                  Example: \"Project/Planning\" for nested headlines
-                  Example: \"A%2FB Testing\" for headline titled
-                  \"A/B Testing\"
-                  To read entire files, use org-read-file instead
-
 Returns: Plain text content of the headline and its subtree"
    :read-only t
    :server-id org-mcp--server-id)
@@ -1556,9 +1494,6 @@ path-based access since IDs don't change when headlines are renamed
 or moved. File containing the ID must be in org-mcp-allowed-files.
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
-
-Parameters:
-  uuid - UUID from headline's ID property (string, required)
 
 Returns: Plain text content of the headline and its subtree"
    :read-only t
