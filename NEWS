@@ -4,6 +4,11 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Uniform type validation for wire-protocol string parameters
+    Every MCP tool now rejects non-string values for string-typed
+    parameters with a uniform `Field X must be a string, got: V
+    (type: T)' error.
+
 *** Fixed spurious blank line in `org-add-todo' when parent is followed by content
     Adding a child under a parent heading that has any following
     content (a top-level heading or any parent-level sibling)

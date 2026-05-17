@@ -73,6 +73,22 @@ Returns the suffix string if URI starts with PREFIX, nil otherwise."
   "Throw validation error MESSAGE with ARGS for tool operations."
   (mcp-server-lib-tool-throw (apply #'format message args)))
 
+(defun org-mcp--validate-string-field
+    (value field-name &optional allow-nil)
+  "Validate VALUE is a string and signal a tool error if not.
+FIELD-NAME is the wire-protocol parameter name embedded into the
+error message so the caller can pinpoint which input to fix.  When
+ALLOW-NIL is non-nil, nil VALUE is also accepted -- use this for
+optional parameters.  Strings are otherwise unconstrained here;
+emptiness, allowed-value, and format checks belong to caller-side
+validators that may assume VALUE is a string after this guard."
+  (unless (if allow-nil
+              (or (null value) (stringp value))
+            (stringp value))
+    (org-mcp--tool-validation-error
+     "Field %s must be a string, got: %S (type: %s)"
+     field-name value (type-of value))))
+
 (defun org-mcp--resource-validation-error (message &rest args)
   "Signal validation error MESSAGE with ARGS for resource operations."
   (mcp-server-lib-resource-signal-error
@@ -434,8 +450,12 @@ Returns the content string or nil if not found."
       (goto-char pos)
       (org-mcp--extract-headline-content))))
 
-(defun org-mcp--validate-todo-state (state)
-  "Validate STATE is a valid TODO keyword."
+(defun org-mcp--validate-todo-state (state field-name)
+  "Validate STATE is a valid TODO keyword.
+FIELD-NAME is the JSON wire-protocol name of the parameter being
+validated (e.g. `\"todo_state\"' or `\"new_state\"'); it is embedded
+into the validation error so the consumer can pinpoint which input
+to fix."
   (let ((valid-states
          (delete
           "|"
@@ -443,8 +463,8 @@ Returns the content string or nil if not found."
            (apply #'append (mapcar #'cdr org-todo-keywords))))))
     (unless (member state valid-states)
       (org-mcp--tool-validation-error
-       "Invalid TODO state: '%s' - valid states: %s"
-       state (mapconcat #'identity valid-states ", ")))))
+       "Field %s must be one of %s, got: '%s'"
+       field-name (mapconcat #'identity valid-states ", ") state))))
 
 (defun org-mcp--validate-and-normalize-tags (tags)
   "Validate and normalize TAGS.
@@ -881,10 +901,13 @@ MCP Parameters:
                   Must match actual state or tool will error
   new_state - New TODO state to set
               Must be a valid keyword from `org-todo-keywords'"
+  (org-mcp--validate-string-field uri "uri")
+  (org-mcp--validate-string-field current_state "current_state" t)
+  (org-mcp--validate-string-field new_state "new_state")
   (let* ((parsed (org-mcp--parse-resource-uri uri))
          (file-path (car parsed))
          (headline-path (cdr parsed)))
-    (org-mcp--validate-todo-state new_state)
+    (org-mcp--validate-todo-state new_state "new_state")
     (org-mcp--modify-and-save file-path "update"
                               `((previous_state
                                  .
@@ -938,8 +961,13 @@ MCP Parameters:
               If omitted, appends as last child of parent
               Empty or whitespace-only string is rejected; omit
               the key instead"
+  (org-mcp--validate-string-field title "title")
+  (org-mcp--validate-string-field todo_state "todo_state")
+  (org-mcp--validate-string-field body "body" t)
+  (org-mcp--validate-string-field parent_uri "parent_uri")
+  (org-mcp--validate-string-field after_uri "after_uri" t)
   (org-mcp--validate-headline-title title)
-  (org-mcp--validate-todo-state todo_state)
+  (org-mcp--validate-todo-state todo_state "todo_state")
   (let* ((tag-list (org-mcp--validate-and-normalize-tags tags))
          file-path
          parent-path
@@ -1092,6 +1120,9 @@ MCP Parameters:
   new_title - New title without TODO state or tags
               Cannot be empty or whitespace-only
               Cannot contain newlines"
+  (org-mcp--validate-string-field uri "uri")
+  (org-mcp--validate-string-field current_title "current_title")
+  (org-mcp--validate-string-field new_title "new_title")
   (org-mcp--validate-headline-title new_title)
 
   (let* ((parsed (org-mcp--parse-resource-uri uri))
@@ -1140,6 +1171,9 @@ MCP Parameters:
              Must maintain balanced #+BEGIN/#+END blocks
   replace_all - Replace all occurrences (optional, default false)
                 When false, old_body must be unique in the body"
+  (org-mcp--validate-string-field resource_uri "resource_uri")
+  (org-mcp--validate-string-field old_body "old_body")
+  (org-mcp--validate-string-field new_body "new_body")
   ;; Normalize falsy values to nil so the multi-occurrence guard
   ;; fires.  Accept `:json-false' (JSON boolean) and string "false"
   ;; (a common LLM-client typo); both are otherwise truthy in Elisp.
@@ -1248,6 +1282,7 @@ FILE is the absolute path to an Org file.
 
 MCP Parameters:
   file - Absolute path to an Org file"
+  (org-mcp--validate-string-field file "file")
   (org-mcp--handle-file-resource `(("filename" . ,file))))
 
 (defun org-mcp--tool-read-outline (file)
@@ -1256,6 +1291,7 @@ FILE is the absolute path to an Org file.
 
 MCP Parameters:
   file - Absolute path to an Org file"
+  (org-mcp--validate-string-field file "file")
   (org-mcp--handle-outline-resource `(("filename" . ,file))))
 
 (defun org-mcp--tool-read-headline (file headline_path)
@@ -1275,13 +1311,11 @@ MCP Parameters:
                   \"A/B Testing\"
                   To read entire files, use org-read-file
                   instead"
-  (unless (stringp headline_path)
-    (org-mcp--tool-validation-error
-     "Parameter headline_path must be a string, got: %S (type: %s)"
-     headline_path (type-of headline_path)))
+  (org-mcp--validate-string-field file "file")
+  (org-mcp--validate-string-field headline_path "headline_path")
   (when (string-empty-p headline_path)
     (org-mcp--tool-validation-error
-     "Parameter headline_path must be non-empty; use \
+     "Field headline_path must be non-empty; use \
 org-read-file tool to read entire files"))
   (let ((full-path (concat file "#" headline_path)))
     (org-mcp--handle-headline-resource `(("filename" . ,full-path)))))
@@ -1292,6 +1326,7 @@ UUID is the UUID from headline's ID property.
 
 MCP Parameters:
   uuid - UUID from headline's ID property"
+  (org-mcp--validate-string-field uuid "uuid")
   (org-mcp--handle-id-resource `(("uuid" . ,uuid))))
 
 (defun org-mcp-enable ()

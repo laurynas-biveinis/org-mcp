@@ -2738,11 +2738,31 @@ Some quote
 ;; org-read-headline test
 
 (ert-deftest org-mcp-test-tool-read-headline-empty-path ()
-  "Test org-read-headline with empty headline_path signals validation error."
-  (should-error
-   (org-mcp-test--call-read-headline-expecting-error
-    org-mcp-test--content-nested-siblings "")
-   :type 'mcp-server-lib-tool-error))
+  "Test org-read-headline with empty `headline_path' signals validation error.
+Anchors on the full `Field headline_path must be non-empty; use
+org-read-file tool to read entire files' wording so the
+wire-protocol error contract is locked: a regression that
+reintroduces the legacy `Parameter X must ...' shape or drops the
+recovery hint surfaces as a test failure."
+  (org-mcp-test--with-temp-org-files
+      ((test-file ""))
+    (let* ((request
+            (mcp-server-lib-create-tools-call-request
+             "org-read-headline" 1
+             `((file . ,test-file) (headline_path . ""))))
+           (response
+            (mcp-server-lib-process-jsonrpc-parsed
+             request mcp-server-lib-ert-server-id))
+           (err
+            (should-error
+             (mcp-server-lib-ert-process-tool-response response)
+             :type 'mcp-server-lib-tool-error)))
+      (should
+       (string-match-p
+        (regexp-quote
+         "Field headline_path must be non-empty; use \
+org-read-file tool to read entire files")
+        (error-message-string err))))))
 
 (ert-deftest org-mcp-test-tool-read-headline-single-level ()
   "Test org-read-headline with single-level path."
@@ -3066,6 +3086,145 @@ confusion."
     (should (stringp news-version))
     (should (equal eask-version el-version))
     (should (equal eask-version news-version))))
+
+;; Uniform type validation: every wire-protocol string parameter must
+;; be rejected at the tool boundary when a non-string is supplied.
+;; The validation happens before any file or URI is parsed, so a
+;; throwaway temp file suffices for setup.
+
+(defmacro org-mcp-test--assert-tool-non-string (tool-name params)
+  "Assert calling TOOL-NAME with PARAMS errors at the tool boundary.
+Sets up the standard test harness (a dummy temp file is allowed but
+unused — validation fires before any file is touched).  Uses the
+low-level JSON-RPC pipeline so a tool-error response surfaces as a
+`mcp-server-lib-tool-error' signal we can match on."
+  `(org-mcp-test--with-temp-org-files
+       ((test-file ""))
+     (should-error
+      (let* ((request
+              (mcp-server-lib-create-tools-call-request
+               ,tool-name 1 ,params))
+             (response
+              (mcp-server-lib-process-jsonrpc-parsed
+               request mcp-server-lib-ert-server-id)))
+        (mcp-server-lib-ert-process-tool-response response))
+      :type 'mcp-server-lib-tool-error)))
+
+(ert-deftest org-mcp-test-add-todo-non-string-title ()
+  "Test that a non-string `title' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-add-todo"
+   `((title . 42) (todo_state . "TODO") (tags . nil) (body . nil)
+     (parent_uri . "org-headline:///tmp/x.org#"))))
+
+(ert-deftest org-mcp-test-add-todo-non-string-todo-state ()
+  "Test that a non-string `todo_state' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-add-todo"
+   `((title . "T") (todo_state . 42) (tags . nil) (body . nil)
+     (parent_uri . "org-headline:///tmp/x.org#"))))
+
+(ert-deftest org-mcp-test-add-todo-non-string-body ()
+  "Test that a non-string `body' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-add-todo"
+   `((title . "T") (todo_state . "TODO") (tags . nil) (body . 42)
+     (parent_uri . "org-headline:///tmp/x.org#"))))
+
+(ert-deftest org-mcp-test-add-todo-non-string-parent-uri ()
+  "Test that a non-string `parent_uri' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-add-todo"
+   `((title . "T") (todo_state . "TODO") (tags . nil) (body . nil)
+     (parent_uri . 42))))
+
+(ert-deftest org-mcp-test-add-todo-non-string-after-uri ()
+  "Test that a non-string `after_uri' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-add-todo"
+   `((title . "T") (todo_state . "TODO") (tags . nil) (body . nil)
+     (parent_uri . "org-headline:///tmp/x.org#") (after_uri . 42))))
+
+(ert-deftest org-mcp-test-update-todo-state-non-string-uri ()
+  "Test that a non-string `uri' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-update-todo-state"
+   `((uri . 42) (current_state . "TODO") (new_state . "DONE"))))
+
+(ert-deftest org-mcp-test-update-todo-state-non-string-current-state ()
+  "Test that a non-string `current_state' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-update-todo-state"
+   `((uri . "org-id://x") (current_state . 42) (new_state . "DONE"))))
+
+(ert-deftest org-mcp-test-update-todo-state-non-string-new-state ()
+  "Test that a non-string `new_state' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-update-todo-state"
+   `((uri . "org-id://x") (current_state . "TODO") (new_state . 42))))
+
+(ert-deftest org-mcp-test-rename-headline-non-string-uri ()
+  "Test that a non-string `uri' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-rename-headline"
+   `((uri . 42) (current_title . "Old") (new_title . "New"))))
+
+(ert-deftest org-mcp-test-rename-headline-non-string-current-title ()
+  "Test that a non-string `current_title' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-rename-headline"
+   `((uri . "org-id://x") (current_title . 42) (new_title . "New"))))
+
+(ert-deftest org-mcp-test-rename-headline-non-string-new-title ()
+  "Test that a non-string `new_title' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-rename-headline"
+   `((uri . "org-id://x") (current_title . "Old") (new_title . 42))))
+
+(ert-deftest org-mcp-test-edit-body-non-string-resource-uri ()
+  "Test that a non-string `resource_uri' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-edit-body"
+   `((resource_uri . 42) (old_body . "a") (new_body . "b")
+     (replace_all . nil))))
+
+(ert-deftest org-mcp-test-edit-body-non-string-old-body ()
+  "Test that a non-string `old_body' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-edit-body"
+   `((resource_uri . "org-id://x") (old_body . 42) (new_body . "b")
+     (replace_all . nil))))
+
+(ert-deftest org-mcp-test-edit-body-non-string-new-body ()
+  "Test that a non-string `new_body' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-edit-body"
+   `((resource_uri . "org-id://x") (old_body . "a") (new_body . 42)
+     (replace_all . nil))))
+
+(ert-deftest org-mcp-test-tool-read-file-non-string-file ()
+  "Test that a non-string `file' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string "org-read-file" '((file . 42))))
+
+(ert-deftest org-mcp-test-tool-read-outline-non-string-file ()
+  "Test that a non-string `file' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string "org-read-outline" '((file . 42))))
+
+(ert-deftest org-mcp-test-tool-read-headline-non-string-file ()
+  "Test that a non-string `file' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-read-headline"
+   `((file . 42) (headline_path . "P"))))
+
+(ert-deftest org-mcp-test-tool-read-headline-non-string-path ()
+  "Test that a non-string `headline_path' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string
+   "org-read-headline"
+   `((file . "/tmp/x.org") (headline_path . 42))))
+
+(ert-deftest org-mcp-test-tool-read-by-id-non-string-uuid ()
+  "Test that a non-string `uuid' is rejected at the tool boundary."
+  (org-mcp-test--assert-tool-non-string "org-read-by-id" '((uuid . 42))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here
