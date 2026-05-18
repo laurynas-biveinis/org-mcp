@@ -271,7 +271,9 @@ property matching ID.  On a successful fallback the resolved
 lookups for the same ID hit the DB at O(1) instead of re-scanning;
 this cache write is gated on `org-id-track-globally', so users who
 have explicitly opted out of global ID tracking do not get implicit
-DB mutations.
+DB mutations.  The cache write is performed best-effort -- any
+signal from `org-id-add-location' is swallowed so a write failure
+cannot poison a successful resolution.
 
 Callers translate the status into a tool error or a resource error
 of the appropriate shape."
@@ -279,18 +281,21 @@ of the appropriate shape."
       (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
           (cons :found allowed-file)
         (cons :disallowed nil))
-    (let ((found-file nil))
-      (dolist (allowed-file org-mcp-allowed-files)
-        (unless found-file
-          (when (file-exists-p allowed-file)
-            (org-mcp--with-org-file allowed-file
-              (when (org-find-property "ID" id)
-                (setq found-file (expand-file-name allowed-file))
-                (when org-id-track-globally
-                  (org-id-add-location id found-file)))))))
-      (if found-file
-          (cons :found found-file)
-        (cons :missing nil)))))
+    (if-let* ((file
+               (catch 'found
+                 (dolist (allowed-file org-mcp-allowed-files)
+                   (when (file-exists-p allowed-file)
+                     (org-mcp--with-org-file allowed-file
+                       (when (org-find-property "ID" id)
+                         (throw 'found
+                                (expand-file-name
+                                 allowed-file)))))))))
+        (progn
+          (when org-id-track-globally
+            (ignore-errors
+              (org-id-add-location id file)))
+          (cons :found file))
+      (cons :missing nil))))
 
 (defun org-mcp--find-allowed-file-with-id (id)
   "Find an allowed file containing the Org ID.

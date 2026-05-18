@@ -1930,6 +1930,32 @@ stays untouched."
        (org-id-find-id-file
         org-mcp-test--content-with-id-id)))))
 
+(ert-deftest org-mcp-test-id-fallback-scan-tolerates-cache-write-failure
+    ()
+  "Test that a signal from `org-id-add-location' does not poison
+ID resolution.  When the fallback scan finds the ID, the cache
+write into `org-id-locations' is best-effort: a failing
+`org-id-add-location' (locked file, write error, broken DB) must
+not surface as a tool error, because the resolution semantically
+already succeeded by the time the cache write is attempted."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-with-id-todo))
+    (let ((org-id-track-globally t)
+          (org-id-locations-file nil)
+          (org-id-locations nil)
+          (org-mcp-allowed-files (list test-file))
+          (org-todo-keywords
+           '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+      (should-not
+       (org-id-find-id-file org-mcp-test--content-with-id-id))
+      (cl-letf (((symbol-function 'org-id-add-location)
+                 (lambda (&rest _) (error "cache write boom"))))
+        (mcp-server-lib-ert-call-tool
+         "org-update-todo-state"
+         `((uri . ,org-mcp-test--content-with-id-uri)
+           (current_state . "TODO")
+           (new_state . "DONE")))))))
+
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."
   (let ((test-content org-mcp-test--content-simple-todo))
