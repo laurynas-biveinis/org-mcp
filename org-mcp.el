@@ -111,20 +111,29 @@ IDENTIFIER is the resource identifier."
    mcp-server-lib-jsonrpc-error-invalid-params
    (format "%s not found: '%s'" resource-type identifier)))
 
-(defun org-mcp--tool-file-access-error (locator)
-  "Throw file access error for tool operations.
-LOCATOR is the resource identifier (file path or ID) that was
-denied access."
+(defun org-mcp--tool-id-disallowed-error (id)
+  "Throw tool error: ID resolves to a non-allowed file.
+The resolved file path is intentionally not included in the error
+message to avoid disclosing files the user excluded from
+`org-mcp-allowed-files'."
   (mcp-server-lib-tool-throw
-   (format "'%s': the referenced file not in allowed list" locator)))
+   (format "ID '%s' resolves to a file not in the allowed list" id)))
 
-(defun org-mcp--resource-file-access-error (locator)
-  "Signal file access error for resource operations.
-LOCATOR is the resource identifier (file path or ID) that was
-denied access."
+(defun org-mcp--resource-file-access-error (filename)
+  "Signal file access error for a filename-based resource request.
+FILENAME is the path that was rejected."
   (mcp-server-lib-resource-signal-error
    mcp-server-lib-jsonrpc-error-invalid-params
-   (format "'%s': the referenced file not in allowed list" locator)))
+   (format "'%s': the referenced file not in allowed list" filename)))
+
+(defun org-mcp--resource-id-disallowed-error (id)
+  "Signal resource error: ID resolves to a non-allowed file.
+The resolved file path is intentionally not included in the error
+message to avoid disclosing files the user excluded from
+`org-mcp-allowed-files'."
+  (mcp-server-lib-resource-signal-error
+   mcp-server-lib-jsonrpc-error-invalid-params
+   (format "ID '%s' resolves to a file not in the allowed list" id)))
 
 ;; Helpers
 
@@ -241,20 +250,28 @@ variables."
        ,@body
        (org-mcp--complete-and-save ,file-path ,response-alist))))
 
-(defun org-mcp--find-allowed-file-with-id (id)
-  "Find an allowed file containing the Org ID.
-First looks up in the org-id database, then validates the file is in
-the allowed list.
-Returns the expanded file path if found and allowed.
-Throws a tool error if ID exists but file is not allowed, or if ID
-is not found."
+(defun org-mcp--lookup-id-file (id)
+  "Resolve Org ID to an allowed file path without signalling errors.
+Returns a cons (STATUS . FILE) where STATUS is one of:
+  `:found'      ID found and FILE is in `org-mcp-allowed-files'.
+  `:disallowed' ID found but the resolved file is not in the
+                allowed list.
+  `:missing'    ID not found in `org-id-locations' nor in any
+                allowed file.
+FILE is meaningful only for `:found' (the expanded path).  For
+`:disallowed' and `:missing' FILE is nil; the resolved-but-
+unauthorised path is intentionally not carried in the result so
+callers cannot inadvertently leak file locations outside
+`org-mcp-allowed-files' through error messages.
+
+First consults `org-id-find-id-file'; if that misses, falls back
+to scanning every entry in `org-mcp-allowed-files' for an `:ID:'
+property matching ID.  Callers translate the status into a tool
+error or a resource error of the appropriate shape."
   (if-let* ((id-file (org-id-find-id-file id)))
-      ;; ID found in database, check if file is allowed
       (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-          allowed-file
-        (org-mcp--tool-file-access-error id))
-    ;; ID not in database - might not exist or DB is stale
-    ;; Fall back to searching allowed files manually
+          (cons :found allowed-file)
+        (cons :disallowed nil))
     (let ((found-file nil))
       (dolist (allowed-file org-mcp-allowed-files)
         (unless found-file
@@ -262,7 +279,22 @@ is not found."
             (org-mcp--with-org-file allowed-file
               (when (org-find-property "ID" id)
                 (setq found-file (expand-file-name allowed-file)))))))
-      (or found-file (org-mcp--id-not-found-error id)))))
+      (if found-file
+          (cons :found found-file)
+        (cons :missing nil)))))
+
+(defun org-mcp--find-allowed-file-with-id (id)
+  "Find an allowed file containing the Org ID.
+Returns the expanded file path if found and allowed.
+Throws a tool error if ID exists but file is not allowed, or if ID
+is not found in the database or in any allowed file (see
+`org-mcp--lookup-id-file' for the shared resolution logic, which
+includes the fallback scan of `org-mcp-allowed-files')."
+  (pcase-let ((`(,status . ,file) (org-mcp--lookup-id-file id)))
+    (pcase status
+      (:found file)
+      (:disallowed (org-mcp--tool-id-disallowed-error id))
+      (:missing (org-mcp--id-not-found-error id)))))
 
 (defmacro org-mcp--with-uri-prefix-dispatch
     (uri headline-body id-body)
@@ -1190,15 +1222,16 @@ The filename parameter includes both file and headline path."
 
 (defun org-mcp--handle-id-resource (params)
   "Handler for org-id://{uuid} template.
-PARAMS is an alist containing the uuid parameter."
-  (let* ((id (alist-get "uuid" params nil nil #'string=))
-         (file-path (org-id-find-id-file id)))
-    (unless file-path
-      (org-mcp--resource-not-found-error "ID" id))
-    (let ((allowed-file (org-mcp--find-allowed-file file-path)))
-      (unless allowed-file
-        (org-mcp--resource-file-access-error id))
-      (org-mcp--get-content-by-id allowed-file id))))
+PARAMS is an alist containing the uuid parameter.
+ID resolution shares the fallback-aware path used by the modifying
+tools via `org-mcp--lookup-id-file', so an ID present in an allowed
+file resolves even when `org-id-locations' has no record of it."
+  (let ((id (alist-get "uuid" params nil nil #'string=)))
+    (pcase-let ((`(,status . ,file) (org-mcp--lookup-id-file id)))
+      (pcase status
+        (:found (org-mcp--get-content-by-id file id))
+        (:disallowed (org-mcp--resource-id-disallowed-error id))
+        (:missing (org-mcp--resource-not-found-error "ID" id))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title at URI from CURRENT_TITLE to NEW_TITLE.

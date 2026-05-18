@@ -2815,6 +2815,38 @@ org-read-file tool to read entire files")
     org-mcp-test--content-with-id-id
     org-mcp-test--pattern-tool-read-by-id)))
 
+(ert-deftest org-mcp-test-tool-read-by-id-falls-back-to-allowed-files-scan ()
+  "Test `org-read-by-id' resolves an ID absent from `org-id-locations'.
+Locks the read-only side of the ID-resolution contract: when
+`org-id-find-id-file' misses but the ID is present in an allowed
+file (e.g. tracking just enabled, locations file stale or missing,
+or the ID added by an external edit), `org-read-by-id' must scan
+`org-mcp-allowed-files' and resolve the URI, matching the behaviour
+of every modifying tool.  Without this regression test, a fix that
+only routes one of the two paths through the shared lookup helper
+would still let every existing read-by-id test pass because they
+all pre-register the ID via `with-id-setup'."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-with-id-todo))
+    (let ((org-id-track-globally t)
+          (org-id-locations-file nil)
+          (org-id-locations nil)
+          (org-mcp-allowed-files (list test-file)))
+      (should-not
+       (org-id-find-id-file org-mcp-test--content-with-id-id))
+      (org-mcp-test--call-read-by-id-and-check
+       org-mcp-test--content-with-id-id
+       (format
+        (concat
+         "\\`\\* TODO Task with ID\n"
+         ":PROPERTIES:\n"
+         ":ID: +%s\n"
+         ":END:\n"
+         "First line of content\\.\n"
+         "Second line of content\\.\n"
+         "Third line of content\\.?\\'")
+        org-mcp-test--content-with-id-id)))))
+
 ;; Resource tests
 
 (ert-deftest org-mcp-test-file-resource-template-in-list ()
@@ -3064,10 +3096,10 @@ org-read-file tool to read entire files")
     (list allowed-file)
     `((,org-mcp-test--content-id-resource-id . ,other-file))
     (let ((uri (format "org-id://%s" org-mcp-test--content-id-resource-id)))
-      ;; Should get an error for file not allowed
+      ;; Should get an error for ID resolving to a non-allowed file
       (org-mcp-test--read-resource-expecting-error
        uri
-       (format "'%s': the referenced file not in allowed list"
+       (format "ID '%s' resolves to a file not in the allowed list"
                org-mcp-test--content-id-resource-id))))))
 
 (defconst org-mcp-test--repo-root

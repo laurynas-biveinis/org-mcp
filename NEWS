@@ -4,6 +4,17 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Routed read-only `org-id://' resolution through allowed-files fallback
+    Read-only `org-id://' resolution (`org-read-by-id' and the
+    `org-id://{uuid}' resource) now falls back to scanning allowed
+    files when `org-id-find-id-file' misses, matching the modifying
+    tools' behaviour.
+
+*** Clarified `org-id://' error when the resolved file is not allowed
+    The MCP error now reads `ID '<uuid>' resolves to a file not in
+    the allowed list'.  The resolved file path is intentionally not
+    surfaced to avoid disclosing files outside `org-mcp-allowed-files'.
+
 *** Rejected unterminated file-header drawer across modifying tools
     Every modifying MCP tool now rejects a file whose header block
     contains a `:NAME:' drawer opener with no matching `:END:'.
