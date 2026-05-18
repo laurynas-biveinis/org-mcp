@@ -4,6 +4,17 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Treated empty `body' string as no-body in `org-add-todo'
+    Passing `body=""' (an empty string) now produces the same file
+    as omitting `body' entirely.  Previously the body-insertion
+    block emitted `(insert "\n" "")' (one newline) and then a
+    trailing guard `(unless (string-suffix-p "\n" "") (insert
+    "\n"))' that also fired -- yielding two unwanted blank lines
+    after the new heading.  `org-mcp--validate-string-field' accepts
+    both nil and the empty string for `body' (allow-nil=t), but the
+    implementation did not collapse "" to nil before the insertion
+    block; now it does.
+
 *** Cached ID-fallback resolution to avoid repeated full-file scans
     Successful ID-fallback scans now register the (id, file) pair
     in `org-id-locations'.  Gated on `org-id-track-globally'.

@@ -1121,65 +1121,74 @@ MCP Parameters:
   (org-mcp--validate-string-field after_uri "after_uri" t)
   (org-mcp--validate-headline-title title)
   (org-mcp--validate-todo-state todo_state "todo_state")
-  (pcase-let ((tag-list (org-mcp--validate-and-normalize-tags tags))
-              (`(,file-path ,parent-path ,parent-id)
-               (org-mcp--parse-parent-uri parent_uri)))
+  ;; Collapse empty `body' to nil locally: the validator accepts both
+  ;; nil and "" (allow-nil=t), but the downstream body-insertion block
+  ;; would emit two unwanted blank lines for "" because
+  ;; `(insert "\n" "")' plus the trailing `(string-suffix-p "\n" "")'
+  ;; guard both fire.
+  (let ((effective-body (and body (not (string-empty-p body)) body)))
+    (pcase-let ((tag-list (org-mcp--validate-and-normalize-tags tags))
+                (`(,file-path ,parent-path ,parent-id)
+                 (org-mcp--parse-parent-uri parent_uri)))
 
-    ;; Add the TODO item
-    (org-mcp--modify-and-save file-path "add TODO"
-                              `((file
-                                 .
-                                 ,(file-name-nondirectory file-path))
-                                (title . ,title))
-      (org-mcp--validate-file-header)
-      (let ((parent-level
-             (org-mcp--navigate-to-parent-or-top
-              parent-path parent-id)))
+      ;; Add the TODO item
+      (org-mcp--modify-and-save file-path "add TODO"
+                                `((file
+                                   .
+                                   ,(file-name-nondirectory
+                                     file-path))
+                                  (title . ,title))
+        (org-mcp--validate-file-header)
+        (let ((parent-level
+               (org-mcp--navigate-to-parent-or-top
+                parent-path parent-id)))
 
-        ;; Handle positioning after navigation to parent
-        (when (or parent-path parent-id)
-          (let ((parent-end
-                 (save-excursion
-                   (org-end-of-subtree t t)
-                   (point))))
-            (org-mcp--position-for-new-child after_uri parent-end)))
+          ;; Handle positioning after navigation to parent
+          (when (or parent-path parent-id)
+            (let ((parent-end
+                   (save-excursion
+                     (org-end-of-subtree t t)
+                     (point))))
+              (org-mcp--position-for-new-child after_uri parent-end)))
 
-        ;; Validate body before inserting heading
-        ;; Calculate the target level for validation
-        (let ((target-level
-               (if (or parent-path parent-id)
-                   ;; Child heading - parent level + 1
-                   (1+ (or parent-level 0))
-                 ;; Top-level heading
-                 1)))
+          ;; Validate body before inserting heading
+          ;; Calculate the target level for validation
+          (let ((target-level
+                 (if (or parent-path parent-id)
+                     ;; Child heading - parent level + 1
+                     (1+ (or parent-level 0))
+                   ;; Top-level heading
+                   1)))
 
-          ;; Validate body content if provided
-          (when body
-            (org-mcp--validate-body-no-headlines body target-level)
-            (org-mcp--validate-body-no-unbalanced-blocks body)))
+            ;; Validate body content if provided
+            (when effective-body
+              (org-mcp--validate-body-no-headlines
+               effective-body target-level)
+              (org-mcp--validate-body-no-unbalanced-blocks
+               effective-body)))
 
-        ;; Insert the new heading
-        (org-mcp--insert-heading title parent-level)
+          ;; Insert the new heading
+          (org-mcp--insert-heading title parent-level)
 
-        (org-todo todo_state)
+          (org-todo todo_state)
 
-        (when tag-list
-          (org-set-tags tag-list))
+          (when tag-list
+            (org-set-tags tag-list))
 
-        ;; Add body if provided
-        (if body
-            (progn
-              (end-of-line)
-              (insert "\n" body)
-              (unless (string-suffix-p "\n" body)
-                (insert "\n"))
-              ;; Move back to the heading for org-id-get-create
-              ;; org-id-get-create requires point to be on a heading
-              (org-back-to-heading t))
-          ;; No body - ensure newline after heading
-          (end-of-line)
-          (unless (looking-at "\n")
-            (insert "\n")))))))
+          ;; Add body if provided
+          (if effective-body
+              (progn
+                (end-of-line)
+                (insert "\n" effective-body)
+                (unless (string-suffix-p "\n" effective-body)
+                  (insert "\n"))
+                ;; Move back to the heading for org-id-get-create
+                ;; org-id-get-create requires point to be on a heading
+                (org-back-to-heading t))
+            ;; No body - ensure newline after heading
+            (end-of-line)
+            (unless (looking-at "\n")
+              (insert "\n"))))))))
 
 ;; Resource handlers
 

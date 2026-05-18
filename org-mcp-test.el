@@ -2172,6 +2172,30 @@ Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (v
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-with-body))
 
+(ert-deftest org-mcp-test-add-todo-empty-body-no-spurious-blank-lines ()
+  "Test that `body=\"\"' produces the same file as `body=nil'.
+Empty string is a valid `body' value (the validator accepts both
+nil and \"\" because `allow-nil=t'), but the body-insertion block
+would emit `(insert \"\\n\" \"\")' (one newline) plus a trailing
+guard `(unless (string-suffix-p \"\\n\" \"\") (insert \"\\n\"))'
+that also fires -- yielding two unwanted blank lines after the
+new heading.  Locks the normalization fix that collapses an empty
+`body' to nil before the insertion block runs."
+  (org-mcp-test--add-todo-and-check
+   org-mcp-test--content-empty nil nil nil
+   "New Task"
+   "TODO"
+   '("work" "urgent")
+   "" ; empty body — must be treated as no-body
+   (format "org-headline://%s#" test-file)
+   nil
+   (file-name-nondirectory test-file)
+   (concat
+    "\\`\\* TODO New Task +:.*work.*urgent.*:\n"
+    "\\(?: *:PROPERTIES:\n"
+    " *:ID: +[^\n]+\n"
+    " *:END:\n\\)?\\'")))
+
 (ert-deftest org-mcp-test-add-todo-body-with-same-level-headline ()
   "Test that adding TODO with body containing same-level headline is rejected."
   (org-mcp-test--assert-add-todo-rejects-body-headline
