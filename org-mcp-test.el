@@ -275,6 +275,23 @@ Second child content.
           " *:END:\n\\'")
   "Expected pattern after adding TODO after level 3 sibling.")
 
+(defconst org-mcp-test--regex-after-sibling-level3-with-body
+  (concat "\\`\\* Top Level\n"
+          "\\*\\* Review the package\n"
+          "\\*\\*\\* Review org-mcp\\.el\n"
+          " *:PROPERTIES:\n"
+          " *:ID: +" org-mcp-test--level2-parent-level3-sibling-id "\n"
+          " *:END:\n"
+          "Main package file\n"
+          "\\*\\*\\* TODO Review org-mcp-test\\.el +.*:internet:.*\n"
+          " *:PROPERTIES:\n"
+          " *:ID: +[a-fA-F0-9-]+\n"
+          " *:END:\n"
+          (regexp-quote org-mcp-test--body-text-multiline)
+          "\n\\'")
+  "Whole-file pattern after a body-bearing child insert at EOF when the
+fixture has no trailing newline.")
+
 (defconst org-mcp-test--expected-regex-renamed-second-child
   (format
    (concat
@@ -2158,6 +2175,31 @@ Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (v
            org-mcp-test--level2-parent-level3-sibling-id)
    (file-name-nondirectory test-file)
    org-mcp-test--regex-after-sibling-level3))
+
+(ert-deftest org-mcp-test-add-todo-after-uri-eof-no-trailing-newline-with-body ()
+  "Test body insert after_uri at parent's last child at EOF with no `\\n'.
+The fixture's parent (`Review the package') is the file's last
+subtree and ends mid-line at `point-max' (no trailing newline).
+`org-mcp--insert-heading-line' bakes a `\\n' into the new heading
+line, and the body-insertion block previously left that `\\n' in
+place after the body's own terminator, producing a trailing blank
+line at EOF.  Locks the fix that drops the leftover `\\n' when it
+is the buffer's last char."
+  (org-mcp-test--add-todo-and-check
+   org-mcp-test--content-level2-parent-level3-children
+   '((sequence "TODO" "|" "DONE"))
+   '("internet")
+   `(,org-mcp-test--level2-parent-level3-sibling-id)
+   "Review org-mcp-test.el"
+   "TODO"
+   '("internet")
+   org-mcp-test--body-text-multiline
+   (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
+           test-file)
+   (format "org-id://%s"
+           org-mcp-test--level2-parent-level3-sibling-id)
+   (file-name-nondirectory test-file)
+   org-mcp-test--regex-after-sibling-level3-with-body))
 
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."

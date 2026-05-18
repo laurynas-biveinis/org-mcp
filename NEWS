@@ -4,6 +4,20 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Removed trailing blank line at end of file in `org-add-todo' with body
+    Adding a TODO with a non-empty `body' under a parent heading
+    (either via `after_uri' against the parent's last child, or with
+    `position="end"' when the parent is the file's last subtree) to a
+    file that did not end with a trailing newline previously produced
+    a file ending in two newlines -- a trailing blank line.  The
+    underlying cause was that `org-mcp' bakes a trailing newline into
+    the inserted heading line, and the body-insertion block emitted
+    the body before that baked newline, leaving the heading's newline
+    as a redundant trailing one after the body's own terminator.  The
+    redundant newline is now dropped, so the file ends with exactly
+    one newline.  Mid-file placements still leave a single blank line
+    between the body and the next heading, matching prior behaviour.
+
 *** Treated empty `body' string as no-body in `org-add-todo'
     Passing `body=""' (an empty string) now produces the same file
     as omitting `body' entirely.  Previously the body-insertion

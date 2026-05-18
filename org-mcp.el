@@ -944,6 +944,29 @@ After insertion, point is left on the heading line at end-of-line."
         (insert "* "))
       (insert title))))
 
+(defun org-mcp--insert-body-after-heading (body)
+  "Insert BODY after the heading line at point.
+Moves to end-of-line, inserts `\\n' + BODY (adding a trailing
+`\\n' if BODY doesn't already end with one), and drops the
+heading's baked trailing `\\n' iff it was the buffer's last char
+so EOF ends up with exactly one trailing newline; mid-file
+placements keep the baked `\\n' as the blank-line separator
+before the next heading.  Computing the EOF predicate up front
+keeps the trim independent of any later code that might shift
+`point-max'.
+
+Caller preconditions, NOT re-checked here:
+- Point is on the heading line whose section is being extended.
+- BODY is a non-nil string."
+  (end-of-line)
+  (let ((heading-newline-at-eof
+         (and (eq (char-after) ?\n) (= (1+ (point)) (point-max)))))
+    (insert "\n" body)
+    (unless (string-suffix-p "\n" body)
+      (insert "\n"))
+    (when heading-newline-at-eof
+      (delete-char 1))))
+
 (defun org-mcp--replace-body-content
     (old-body new-body body-content replace-all body-begin body-end)
   "Replace body content in the current buffer.
@@ -1178,10 +1201,7 @@ MCP Parameters:
           ;; Add body if provided
           (if effective-body
               (progn
-                (end-of-line)
-                (insert "\n" effective-body)
-                (unless (string-suffix-p "\n" effective-body)
-                  (insert "\n"))
+                (org-mcp--insert-body-after-heading effective-body)
                 ;; Move back to the heading for org-id-get-create
                 ;; org-id-get-create requires point to be on a heading
                 (org-back-to-heading t))
