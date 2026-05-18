@@ -332,16 +332,20 @@ fixture has no trailing newline.")
 (defconst org-mcp-test--expected-timestamp-id-done-regex
   (concat
    "\\`\\* DONE Task with timestamp ID"
-   "\\(?:\n:PROPERTIES:\n:ID:[ \t]+[A-Fa-f0-9-]+\n:END:\\)?"
+   "\n:PROPERTIES:\n:ID:[ \t]+[A-Za-z0-9-]+\n:END:"
    "\\(?:.\\|\n\\)*\\'")
   "Regex matching complete buffer after updating timestamp ID task to DONE.")
 
 (defconst org-mcp-test--expected-task-with-id-in-progress-regex
   (concat
    "\\`\\* IN-PROGRESS Task with ID"
-   "\\(?:\n:PROPERTIES:\n:ID:[ \t]+[A-Fa-f0-9-]+\n:END:\\)?"
+   "\n:PROPERTIES:\n:ID:[ \t]+[A-Fa-f0-9-]+\n:END:"
    "\\(?:.\\|\n\\)*\\'")
   "Regex matching complete buffer with Task with ID in IN-PROGRESS state.")
+
+(defconst org-mcp-test--regex-id-drawer
+  " *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n"
+  "Regex matching an `org-id-get-create'-style ID property drawer.")
 
 (defconst org-mcp-test--expected-regex-top-level-with-header
   (concat
@@ -362,9 +366,8 @@ fixture has no trailing newline.")
    "Second child content\\.\n"
    "\\*\\* Third Child #3\n"
    "\\* TODO New Top Task +.*:urgent:\n"
-   "\\(?: *:PROPERTIES:\n"
-   " *:ID: +[^\n]+\n"
-   " *:END:\n\\)?\\'")
+   org-mcp-test--regex-id-drawer
+   "\\'")
   "Regex matching complete buffer after adding top-level TODO with headers.
 Locks the documented \"end of file\" placement for top-level inserts
 into a file that already contains headings.")
@@ -373,17 +376,17 @@ into a file that already contains headings.")
   (format
    (concat
     "^\\* Parent Task\n"
-    "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+    " *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n"
     "Some parent content\\.\n"
     "\\*\\* First Child 50%% Complete\n"
     "First child content\\.\n"
     "It spans multiple lines\\.\n"
     "\\*\\* Second Child\n"
-    "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
+    " *:PROPERTIES:\n *:ID: +%s\n *:END:\n"
     "Second child content\\.\n"
     "\\*\\* Third Child #3\n"
     "\\*\\* TODO Child Task +.*:work:.*\n"
-    "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?")
+    org-mcp-test--regex-id-drawer)
    org-mcp-test--content-with-id-id)
   "Pattern for child TODO (level 2) added under parent (level 1) with existing child (level 2).")
 
@@ -393,7 +396,7 @@ into a file that already contains headings.")
    "Parent body\\.\n"
    "\\*\\* Existing Child\n"
    "\\*\\* TODO New Child +.*:work:.*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
+   org-mcp-test--regex-id-drawer
    "\\* Other Top\\'")
   "Pattern asserting that a child appended at end of parent appears
 between `** Existing Child' and `* Other Top' with no blank line
@@ -404,31 +407,30 @@ before `* Other Top'.")
    "\\`\\* Top Level\n"
    "\\*\\* Review the package\n"
    "\\*\\*\\* Review org-mcp\\.el\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"  ; Review org-mcp.el has ID
+   org-mcp-test--regex-id-drawer
    "Main package file\n"
    "\\*\\*\\* TODO Second Child +.*:work:.*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?\\'")  ; Second Child may have ID
+   org-mcp-test--regex-id-drawer
+   "\\'")
   "Pattern for second child (level 3) added at same level as first child (level 3) under parent (level 2).")
 
 (defconst org-mcp-test--regex-todo-with-body
   (concat
-   "^\\* TODO Task with Body +:[^\n]*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?" ; Optional properties
+   "\\`\\* TODO Task with Body +:[^\n]*\n"
+   org-mcp-test--regex-id-drawer
    (regexp-quote org-mcp-test--body-text-multiline)
-   "\n?$")
+   "\n\\'")
   "Pattern for TODO with body text.")
 
 (defconst org-mcp-test--regex-todo-with-literal-block-end
   (concat
-   "^\\* TODO Task with literal END_SRC +:work:\n"
-   "\\(?: *:PROPERTIES:\n"
-   " *:ID: +[^\n]+\n"
-   " *:END:\n\\)?"
+   "\\`\\* TODO Task with literal END_SRC +:work:\n"
+   org-mcp-test--regex-id-drawer
    "Example of source block:\n"
    "#\\+BEGIN_EXAMPLE\n"
    "#\\+END_SRC\n"
    "#\\+END_EXAMPLE\n"
-   "Text after\\.$")
+   "Text after\\.\n\\'")
   "Pattern for TODO with body containing literal END_SRC inside EXAMPLE block.")
 
 (defconst org-mcp-test--regex-todo-after-sibling
@@ -446,7 +448,7 @@ before `* Other Top'.")
    "First child content\\.\n"
    "It spans multiple lines\\.\n\n?"
    "\\*\\* TODO New Task After First +:[^\n]*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
+   org-mcp-test--regex-id-drawer
    "\\*\\* Second Child\n"
    ":PROPERTIES:\n"
    ":ID: +" org-mcp-test--content-with-id-id "\n"
@@ -457,7 +459,7 @@ before `* Other Top'.")
 
 (defconst org-mcp-test--regex-todo-after-second-child
   (concat
-   "^#\\+TITLE: My Org Document\n\n"
+   "\\`#\\+TITLE: My Org Document\n\n"
    "\\* Parent Task\n"
    ":PROPERTIES:\n"
    ":ID: +" org-mcp-test--content-nested-siblings-parent-id "\n"
@@ -472,44 +474,55 @@ before `* Other Top'.")
    ":END:\n"
    "Second child content\\.\n\n?"
    "\\*\\* TODO New Task After Second +:[^\n]*\n"
-   "\\(?: *:PROPERTIES:\n *:ID: +[^\n]+\n *:END:\n\\)?"
+   org-mcp-test--regex-id-drawer
    "\\*\\* Third Child #3\\'")
   "Pattern for TODO added after Second Child sibling.")
 
 (defconst org-mcp-test--regex-todo-without-tags
   (concat
-   "^\\* TODO Task Without Tags *\n" ; No tags, optional spaces
-   "\\(?: *:PROPERTIES:\n" " *:ID: +[^\n]+\n" " *:END:\n\\)?$")
+   "\\`\\* TODO Task Without Tags\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
   "Pattern for TODO item without any tags.")
 
 (defconst org-mcp-test--regex-top-level-todo
   (concat
-   "^\\* TODO New Task +:.*work.*urgent.*:\n"
-   "\\(?: *:PROPERTIES:\n"
-   " *:ID: +[^\n]+\n"
-   " *:END:\n\\)?$")
+   "\\`\\* TODO New Task +:.*work.*urgent.*:\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
   "Pattern for top-level TODO item with work and urgent tags.")
+
+(defconst org-mcp-test--regex-todo-tag-accept-valid
+  (concat
+   "\\`\\* TODO ValidTask +:work:\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Pattern for TODO with a single `work' tag drawn from `org-tag-alist'.")
+
+(defconst org-mcp-test--regex-todo-tag-validation-without-alist
+  (concat
+   "\\`\\* TODO Task1 +:"
+   ".*validtag.*tag123.*my_tag.*@home.*:\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Pattern for TODO with multiple valid tags accepted without `org-tag-alist'.")
 
 (defconst org-mcp-test--pattern-add-todo-parent-id-uri
   (concat
-   "^\\* Parent Task\n"
-   "\\(?: *:PROPERTIES:\n"
-   " *:ID: +[^\n]+\n"
-   " *:END:\n\\)?"
+   "\\`#\\+TITLE: My Org Document\n\n"
+   "\\* Parent Task\n"
+   org-mcp-test--regex-id-drawer
    "Some parent content\\.\n"
    "\\*\\* First Child 50% Complete\n"
    "First child content\\.\n"
    "It spans multiple lines\\.\n"
    "\\*\\* Second Child\n"
-   "\\(?: *:PROPERTIES:\n"
-   " *:ID: +[^\n]+\n"
-   " *:END:\n\\)?"
+   org-mcp-test--regex-id-drawer
    "Second child content\\.\n"
    "\\*\\* Third Child #3\n"
    "\\*\\* TODO Child via ID +:work:\n"
-   "\\(?: *:PROPERTIES:\n"
-   " *:ID: +[^\n]+\n"
-   " *:END:\n\\)?$")
+   org-mcp-test--regex-id-drawer
+   "\\'")
   "Pattern for TODO added via parent ID URI.")
 
 (defconst org-mcp-test--pattern-renamed-simple-todo
@@ -525,11 +538,11 @@ before `* Other Top'.")
 
 (defconst org-mcp-test--pattern-renamed-todo-with-tags
   (concat
-   "^\\* TODO Renamed Task[ \t]+:work:urgent:\n"
+   "\\`\\* TODO Renamed Task[ \t]+:work:urgent:\n"
    " *:PROPERTIES:\n"
    " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
    " *:END:\n"
-   "Task description\\.$")
+   "Task description\\.\\'")
   "Pattern for renamed TODO task preserving tags.")
 
 (defconst org-mcp-test--pattern-renamed-headline-no-todo
@@ -538,7 +551,7 @@ before `* Other Top'.")
     "\\`#\\+TITLE: My Org Document\n"
     "\n"
     "\\* Parent Task\n"
-    "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+    " *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n"
     "Some parent content\\.\n"
     "\\*\\* Updated Child\n"
     " *:PROPERTIES:\n"
@@ -547,7 +560,7 @@ before `* Other Top'.")
     "First child content\\.\n"
     "It spans multiple lines\\.\n"
     "\\*\\* Second Child\n"
-    "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
+    " *:PROPERTIES:\n *:ID: +%s\n *:END:\n"
     "Second child content\\.\n"
     "\\*\\* Third Child #3\n?"
     "\\'")
@@ -560,14 +573,13 @@ before `* Other Top'.")
     "\\`#\\+TITLE: My Org Document\n"
     "\n"
     "\\* Parent Task\n"
-    "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+    " *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n"
     "Some parent content\\.\n"
     "\\*\\* First Child 50%% Complete\n"
-    "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
     "First child content\\.\n"
     "It spans multiple lines\\.\n"
     "\\*\\* Second Child\n"
-    "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
+    " *:PROPERTIES:\n *:ID: +%s\n *:END:\n"
     "Second child content\\.\n"
     "\\*\\* Renamed Child\n"
     " *:PROPERTIES:\n"
@@ -748,17 +760,16 @@ while leaving `hello world' (lowercase) untouched.")
     "\\`#\\+TITLE: My Org Document\n"
     "\n"
     "\\* Parent Task\n"
-    "\\(?: *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n\\)?"
+    " *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n"
     "Updated parent content\n"
     "\\*\\* First Child 50%% Complete\n"
-    "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
+    " *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n"
     "First child content\\.\n"
     "It spans multiple lines\\.\n"
     "\\*\\* Second Child\n"
-    "\\(?: *:PROPERTIES:\n *:ID: +%s\n *:END:\n\\)?"
+    " *:PROPERTIES:\n *:ID: +%s\n *:END:\n"
     "Second child content\\.\n"
     "\\*\\* Third Child #3\n?"
-    "\\(?: *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n\\)?"
     "\\'")
    org-mcp-test--content-with-id-id)
   "Pattern for nested headlines edit-body test result.")
@@ -800,9 +811,7 @@ while leaving `hello world' (lowercase) untouched.")
    " *:END:\n"
    "some text\n"
    "\\*\\*\\* Subheading content\n"
-   "\\(?: *:PROPERTIES:\n" ; Subheading gets ID
-   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
-   " *:END:\n\\)?"
+   org-mcp-test--regex-id-drawer
    "\\*\\* Third Child #3")
   "Pattern for edit-body accepting lower-level headlines.")
 
@@ -2014,11 +2023,7 @@ stays untouched."
    (format "org-headline://%s#" test-file)
    nil
    (file-name-nondirectory test-file)
-   (concat
-    "^\\* TODO ValidTask +:work:\n"
-    "\\(?: *:PROPERTIES:\n"
-    " *:ID: +[^\n]+\n"
-    " *:END:\n\\)?$")))
+   org-mcp-test--regex-todo-tag-accept-valid))
 
 (ert-deftest org-mcp-test-add-todo-tag-validation-without-alist ()
   "Test valid tag names are accepted when `org-tag-alist' is empty."
@@ -2032,12 +2037,7 @@ stays untouched."
    (format "org-headline://%s#" test-file)
    nil
    (file-name-nondirectory test-file)
-   (concat
-    "^\\* TODO Task1 +:"
-    ".*validtag.*tag123.*my_tag.*@home.*:\n"
-    "\\(?: *:PROPERTIES:\n"
-    " *:ID: +[^\n]+\n"
-    " *:END:\n\\)?$")
+   org-mcp-test--regex-todo-tag-validation-without-alist
    ((org-tag-alist nil)
     (org-tag-persistent-alist nil))))
 
@@ -2234,9 +2234,7 @@ new heading.  Locks the normalization fix that collapses an empty
    (file-name-nondirectory test-file)
    (concat
     "\\`\\* TODO New Task +:.*work.*urgent.*:\n"
-    "\\(?: *:PROPERTIES:\n"
-    " *:ID: +[^\n]+\n"
-    " *:END:\n\\)?\\'")))
+    org-mcp-test--regex-id-drawer "\\'")))
 
 (ert-deftest org-mcp-test-add-todo-body-with-same-level-headline ()
   "Test that adding TODO with body containing same-level headline is rejected."
@@ -2273,12 +2271,10 @@ A single asterisk without space is not a valid Org headline."
    nil
    (file-name-nondirectory test-file)
    (concat
-    "^\\* TODO Task +:work:\n"
-    "\\(?: *:PROPERTIES:\n"
-    " *:ID: +[^\n]+\n"
-    " *:END:\n\\)?"
+    "\\`\\* TODO Task +:work:\n"
+    org-mcp-test--regex-id-drawer
     "Some initial text\\.\n"
-    "\\*$")))
+    "\\*\n\\'")))
 
 (ert-deftest org-mcp-test-add-todo-body-with-unbalanced-block ()
   "Test that adding TODO with body containing unbalanced block is rejected.
