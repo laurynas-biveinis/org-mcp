@@ -388,14 +388,36 @@ Specifically decodes %23 back to #."
   "Split PATH-AFTER-PROTOCOL into (file-path . headline-path).
 PATH-AFTER-PROTOCOL is the part after `org-headline://'.
 Returns (FILE . HEADLINE) where FILE is the decoded file path and
-HEADLINE is the part after the fragment separator.
-File paths with # characters should be encoded as %23."
-  (if-let* ((hash-pos (string-match "#" path-after-protocol)))
-      (cons
-       (org-mcp--decode-file-path
-        (substring path-after-protocol 0 hash-pos))
-       (substring path-after-protocol (1+ hash-pos)))
-    (cons (org-mcp--decode-file-path path-after-protocol) nil)))
+HEADLINE is the part after the fragment separator, or nil when the
+fragment is absent or empty.
+File paths with # characters should be encoded as %23.
+A single trailing `/' on the decoded file path is stripped
+regardless of whether a fragment is present, and an empty
+fragment collapses to a nil HEADLINE, so all of
+`org-headline://file.org', `org-headline://file.org/',
+`org-headline://file.org#', `org-headline://file.org/#',
+`org-headline://file.org#H' and `org-headline://file.org/#H'
+resolve to equivalent (FILE . HEADLINE) pairs."
+  (let* ((hash-pos (string-match "#" path-after-protocol))
+         (file-encoded
+          (if hash-pos
+              (substring path-after-protocol 0 hash-pos)
+            path-after-protocol))
+         (file-decoded (org-mcp--decode-file-path file-encoded))
+         ;; `> 1' leaves "/" alone — never collapse it to "".
+         (file
+          (if (and (> (length file-decoded) 1)
+                   (eq
+                    (aref file-decoded (1- (length file-decoded)))
+                    ?/))
+              (substring file-decoded 0 -1)
+            file-decoded))
+         (headline
+          (and hash-pos
+               (let ((fragment
+                      (substring path-after-protocol (1+ hash-pos))))
+                 (and (> (length fragment) 0) fragment)))))
+    (cons file headline)))
 
 (defun org-mcp--parse-resource-uri (uri)
   "Parse URI and return (file-path . headline-path).
@@ -443,7 +465,7 @@ file is not in the allowed list."
              (path-str (cdr split-result))
              (allowed-file (org-mcp--validate-file-access filename)))
         (setq file-path (expand-file-name allowed-file))
-        (when (and path-str (> (length path-str) 0))
+        (when path-str
           (setq parent-path
                 (mapcar
                  #'url-unhex-string (split-string path-str "/")))))

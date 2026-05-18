@@ -3100,6 +3100,18 @@ all pre-register the ID via `with-id-setup'."
       uri
       org-mcp-test--expected-first-section))))
 
+(ert-deftest org-mcp-test-headline-resource-empty-fragment ()
+  "Test that `org-headline://FILE#' returns the full file content.
+Locks the contract that an empty fragment in an `org-headline://'
+URI is equivalent to no fragment at all, so the resource handler
+returns the entire file rather than erroring on a `(\"\")' headline
+path produced by `split-string' on the empty fragment string."
+  (let ((test-content "* Test Heading\nThis is test content."))
+    (org-mcp-test--with-temp-org-files
+     ((test-file test-content))
+     (let ((uri (format "org-headline://%s#" test-file)))
+       (org-mcp-test--verify-resource-read uri test-content)))))
+
 (ert-deftest org-mcp-test-headline-resource-returns-nested-content ()
   "Test that headline resource returns nested headline content."
   (org-mcp-test--with-temp-org-files

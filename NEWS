@@ -4,6 +4,18 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Normalised redundant separators in `org-headline://' URIs
+    `org-mcp--split-headline-uri' now collapses both an empty
+    fragment (`org-headline://FILE#') and a single trailing `/' on
+    the file path to the same `(FILE . nil)' pair as the bare
+    `org-headline://FILE'.  Previously the empty fragment surfaced
+    as `Headline not found' on resource reads, and the trailing
+    slash stayed in the decoded file name.  All of
+    `org-headline://file.org', `org-headline://file.org/',
+    `org-headline://file.org#', `org-headline://file.org/#',
+    `org-headline://file.org#H' and `org-headline://file.org/#H'
+    now resolve to equivalent `(FILE . HEADLINE)' pairs.
+
 *** Removed trailing blank line at end of file in `org-add-todo' with body
     Adding a TODO with a non-empty `body' under a parent heading
     (either via `after_uri' against the parent's last child, or with
