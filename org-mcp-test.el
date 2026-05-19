@@ -1180,27 +1180,28 @@ TITLE is the expected `title' field; BASENAME the expected `file'."
   (should (equal (alist-get 'file result) basename))
   (should (equal (alist-get 'title result) title)))
 
-(defmacro org-mcp-test--add-todo-and-check
-    (initial-content todo-keywords tag-alist ids
-                     title todo-state tags body parent-uri after-uri
-                     basename expected-pattern
-                     &optional override-bindings)
+(cl-defmacro org-mcp-test--add-todo-and-check
+    (initial-content
+     title todo-state tags body parent-uri
+     basename expected-pattern
+     &key todo-keywords tag-alist ids after-uri override-bindings)
   "Add TODO item with setup and verify the result.
 INITIAL-CONTENT is the initial Org file content.
-TODO-KEYWORDS is the org-todo-keywords config (nil for default).
-TAG-ALIST is the org-tag-alist config (nil for default).
-IDS is optional list of ID strings to register (nil for no ID tracking).
 TITLE is the headline text.
 TODO-STATE is the TODO state.
 TAGS is a list of tag strings or nil.
 BODY is the body text or nil.
 PARENT-URI is the URI of the parent item.
-AFTER-URI is optional URI of sibling to insert after.
 BASENAME is the expected file basename.
 EXPECTED-PATTERN is a regexp that the file content should match.
-OVERRIDE-BINDINGS is optional list of let-style bindings to override
+
+Keyword arguments:
+:TODO-KEYWORDS is the org-todo-keywords config (nil for default).
+:TAG-ALIST is the org-tag-alist config (nil for default).
+:IDS is a list of ID strings to register (nil for no ID tracking).
+:AFTER-URI is the URI of a sibling to insert after.
+:OVERRIDE-BINDINGS is a list of let-style bindings to override
 variables after setup, e.g., ((org-tag-alist nil))."
-  (declare (indent 2))
   (let ((checking-logic
          `(let* ((params
                   (org-mcp-test--build-add-todo-params
@@ -1973,13 +1974,12 @@ already succeeded by the time the cache write is attempted."
 (ert-deftest org-mcp-test-add-todo-top-level ()
   "Test adding a top-level TODO item."
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-empty nil nil nil
+   org-mcp-test--content-empty
    "New Task"
    "TODO"
    '("work" "urgent")
    nil ; no body
    (format "org-headline://%s#" test-file)
-   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-top-level-todo))
 
@@ -1987,13 +1987,12 @@ already succeeded by the time the cache write is attempted."
   "Test adding top-level TODO after header comments."
   (let ((initial-content org-mcp-test--content-nested-siblings))
     (org-mcp-test--add-todo-and-check
-     initial-content nil nil nil
+     initial-content
      "New Top Task"
      "TODO"
      '("urgent")
      nil ; no body
      (format "org-headline://%s#" test-file)
-     nil ; no after_uri
      (file-name-nondirectory test-file)
      org-mcp-test--expected-regex-top-level-with-header)))
 
@@ -2041,13 +2040,12 @@ already succeeded by the time the cache write is attempted."
   "Test that tags in `org-tag-alist' are accepted."
   ;; Should accept tags in org-tag-alist (work, personal, urgent)
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-empty nil nil nil
+   org-mcp-test--content-empty
    "ValidTask"
    "TODO"
    '("work")
    nil
    (format "org-headline://%s#" test-file)
-   nil
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-tag-accept-valid))
 
@@ -2055,17 +2053,16 @@ already succeeded by the time the cache write is attempted."
   "Test valid tag names are accepted when `org-tag-alist' is empty."
   ;; Should accept valid tag names (alphanumeric, _, @)
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-empty nil nil nil
+   org-mcp-test--content-empty
    "Task1"
    "TODO"
    '("validtag" "tag123" "my_tag" "@home")
    nil
    (format "org-headline://%s#" test-file)
-   nil
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-tag-validation-without-alist
-   ((org-tag-alist nil)
-    (org-tag-persistent-alist nil))))
+   :override-bindings ((org-tag-alist nil)
+                       (org-tag-persistent-alist nil))))
 
 (ert-deftest org-mcp-test-add-todo-tag-invalid-exclamation ()
   "Test that tags with exclamation mark are rejected."
@@ -2082,13 +2079,12 @@ already succeeded by the time the cache write is attempted."
 (ert-deftest org-mcp-test-add-todo-child-under-parent ()
   "Test adding a child TODO under an existing parent."
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-nested-siblings nil nil nil
+   org-mcp-test--content-nested-siblings
    "Child Task"
    "TODO"
    '("work")
    nil ; no body
    (format "org-headline://%s#Parent%%20Task" test-file)
-   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-child-under-parent))
 
@@ -2100,13 +2096,12 @@ insertion pipeline must produce a single `\\n' between the new child
 and that following heading.  Locks in the fix to
 `org-mcp--position-for-new-child'."
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-parent-child-then-other-top nil nil nil
+   org-mcp-test--content-parent-child-then-other-top
    "New Child"
    "TODO"
    '("work")
    nil ; no body
    (format "org-headline://%s#Parent%%20Task" test-file)
-   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-child-end-no-blank-before-other-top))
 
@@ -2170,14 +2165,13 @@ JSON-null wire form."
   "Test that adding a second child creates it at the same level as first child.
 This tests the bug where the second child was created at level 4 instead of level 3."
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-level2-parent-level3-children nil nil nil
+   org-mcp-test--content-level2-parent-level3-children
    "Second Child"
    "TODO"
    '("work")
    nil  ; no body
    (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
            test-file)
-   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-second-child-same-level))
 
@@ -2188,19 +2182,19 @@ Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (v
   ;; BUG: org-insert-heading creates level 1 (*) instead of level 3 (***)
   (org-mcp-test--add-todo-and-check
    org-mcp-test--content-level2-parent-level3-children
-   '((sequence "TODO" "|" "DONE"))
-   '("internet")
-   `(,org-mcp-test--level2-parent-level3-sibling-id)
    "Review org-mcp-test.el"
    "TODO"
    '("internet")
    nil
    (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
            test-file)
-   (format "org-id://%s"
-           org-mcp-test--level2-parent-level3-sibling-id)
    (file-name-nondirectory test-file)
-   org-mcp-test--regex-after-sibling-level3))
+   org-mcp-test--regex-after-sibling-level3
+   :todo-keywords '((sequence "TODO" "|" "DONE"))
+   :tag-alist '("internet")
+   :ids `(,org-mcp-test--level2-parent-level3-sibling-id)
+   :after-uri (format "org-id://%s"
+                      org-mcp-test--level2-parent-level3-sibling-id)))
 
 (ert-deftest org-mcp-test-add-todo-after-uri-eof-no-trailing-newline-with-body ()
   "Test body insert after_uri at parent's last child at EOF with no `\\n'.
@@ -2213,30 +2207,29 @@ line at EOF.  Locks the fix that drops the leftover `\\n' when it
 is the buffer's last char."
   (org-mcp-test--add-todo-and-check
    org-mcp-test--content-level2-parent-level3-children
-   '((sequence "TODO" "|" "DONE"))
-   '("internet")
-   `(,org-mcp-test--level2-parent-level3-sibling-id)
    "Review org-mcp-test.el"
    "TODO"
    '("internet")
    org-mcp-test--body-text-multiline
    (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
            test-file)
-   (format "org-id://%s"
-           org-mcp-test--level2-parent-level3-sibling-id)
    (file-name-nondirectory test-file)
-   org-mcp-test--regex-after-sibling-level3-with-body))
+   org-mcp-test--regex-after-sibling-level3-with-body
+   :todo-keywords '((sequence "TODO" "|" "DONE"))
+   :tag-alist '("internet")
+   :ids `(,org-mcp-test--level2-parent-level3-sibling-id)
+   :after-uri (format "org-id://%s"
+                      org-mcp-test--level2-parent-level3-sibling-id)))
 
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-empty nil nil nil
+   org-mcp-test--content-empty
    "Task with Body"
    "TODO"
    '("work")
    org-mcp-test--body-text-multiline
    (format "org-headline://%s#" test-file)
-   nil
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-with-body))
 
@@ -2250,13 +2243,12 @@ that also fires -- yielding two unwanted blank lines after the
 new heading.  Locks the normalization fix that collapses an empty
 `body' to nil before the insertion block runs."
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-empty nil nil nil
+   org-mcp-test--content-empty
    "New Task"
    "TODO"
    '("work" "urgent")
    "" ; empty body — must be treated as no-body
    (format "org-headline://%s#" test-file)
-   nil
    (file-name-nondirectory test-file)
    (concat
     "\\`\\* TODO New Task +:.*work.*urgent.*:\n"
@@ -2288,13 +2280,12 @@ new heading.  Locks the normalization fix that collapses an empty
 A single asterisk without space is not a valid Org headline."
   ;; Should succeed since * without space is not a headline
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-empty nil nil nil
+   org-mcp-test--content-empty
    "Task"
    "TODO"
    '("work")
    "Some initial text.\n*"
    (format "org-headline://%s#" test-file)
-   nil
    (file-name-nondirectory test-file)
    (concat
     "\\`\\* TODO Task +:work:\n"
@@ -2333,13 +2324,12 @@ An #+END_EXAMPLE without matching #+BEGIN_EXAMPLE should be rejected."
 This is valid Org-mode syntax and should be allowed."
   ;; Should succeed - #+END_SRC is just literal text inside EXAMPLE block
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-empty nil nil nil
+   org-mcp-test--content-empty
    "Task with literal END_SRC"
    "TODO"
    '("work")
    "Example of source block:\n#+BEGIN_EXAMPLE\n#+END_SRC\n#+END_EXAMPLE\nText after."
    (format "org-headline://%s#" test-file)
-   nil
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-with-literal-block-end))
 
@@ -2347,19 +2337,19 @@ This is valid Org-mode syntax and should be allowed."
   "Test adding TODO after a specific sibling."
   (org-mcp-test--add-todo-and-check
    org-mcp-test--content-nested-siblings
-   '((sequence "TODO" "|" "DONE"))
-   '("work")
-   (list org-mcp-test--content-nested-siblings-parent-id
-         org-mcp-test--content-with-id-id)
    "New Task After Second"
    "TODO"
    '("work")
    nil
    (format "org-headline://%s#Parent%%20Task"
            test-file)
-   org-mcp-test--content-with-id-uri
    (file-name-nondirectory test-file)
-   org-mcp-test--regex-todo-after-second-child))
+   org-mcp-test--regex-todo-after-second-child
+   :todo-keywords '((sequence "TODO" "|" "DONE"))
+   :tag-alist '("work")
+   :ids (list org-mcp-test--content-nested-siblings-parent-id
+              org-mcp-test--content-with-id-id)
+   :after-uri org-mcp-test--content-with-id-uri))
 
 (ert-deftest org-mcp-test-add-todo-after-uri-not-sibling ()
   "Test error when after_uri is not a child of parent_uri."
@@ -2375,19 +2365,18 @@ This is valid Org-mode syntax and should be allowed."
   ;; Use org-id:// for parent instead of org-headline://
   (org-mcp-test--add-todo-and-check
    org-mcp-test--content-nested-siblings
-   '((sequence "TODO(t!)" "|" "DONE(d!)"))
-   '("work")
-   (list org-mcp-test--content-nested-siblings-parent-id
-         org-mcp-test--content-with-id-id)
    "Child via ID"
    "TODO"
    '("work")
    nil
    (format "org-id://%s"
            org-mcp-test--content-nested-siblings-parent-id)
-   nil
    (file-name-nondirectory test-file)
-   org-mcp-test--pattern-add-todo-parent-id-uri))
+   org-mcp-test--pattern-add-todo-parent-id-uri
+   :todo-keywords '((sequence "TODO(t!)" "|" "DONE(d!)"))
+   :tag-alist '("work")
+   :ids (list org-mcp-test--content-nested-siblings-parent-id
+              org-mcp-test--content-with-id-id)))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-error ()
   "Test that mutually exclusive tags are rejected."
@@ -2409,45 +2398,41 @@ This is valid Org-mode syntax and should be allowed."
   "Test that non-conflicting tags from mutex groups are accepted."
   (org-mcp-test--add-todo-and-check
    "#+TITLE: Test Org File\n\n"
-   '((sequence "TODO" "|" "DONE"))
-   '(("work" . ?w)
-     :startgroup
-     ("@office" . ?o)
-     ("@home" . ?h)
-     :endgroup ("project" . ?p))
-   nil
    "Test Task"
    "TODO"
    ["work" "@office" "project"] ; no conflict
    nil
    (format "org-headline://%s#" test-file)
-   nil
    (file-name-nondirectory test-file)
-   org-mcp-test--regex-add-todo-with-mutex-tags))
+   org-mcp-test--regex-add-todo-with-mutex-tags
+   :todo-keywords '((sequence "TODO" "|" "DONE"))
+   :tag-alist '(("work" . ?w)
+                :startgroup
+                ("@office" . ?o)
+                ("@home" . ?h)
+                :endgroup ("project" . ?p))))
 
 (ert-deftest org-mcp-test-add-todo-nil-tags ()
   "Test that adding TODO with nil tags creates headline without tags."
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-empty nil nil nil
+   org-mcp-test--content-empty
    "Task Without Tags"
    "TODO"
    nil ; nil for tags
    nil ; no body
    (format "org-headline://%s#" test-file)
-   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-without-tags))
 
 (ert-deftest org-mcp-test-add-todo-empty-list-tags ()
   "Test that adding TODO with empty list tags creates headline without tags."
   (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-empty nil nil nil
+   org-mcp-test--content-empty
    "Task Without Tags"
    "TODO"
    '() ; empty list for tags
    nil ; no body
    (format "org-headline://%s#" test-file)
-   nil ; no after_uri
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-without-tags))
 
