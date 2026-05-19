@@ -693,13 +693,17 @@ Throws an MCP tool error if unbalanced blocks are found."
   (with-temp-buffer
     (insert body)
     (goto-char (point-min))
-    (let
-        ((current-block nil)) ; Current block type or nil
+    ;; Org accepts block markers in any case (`#+BEGIN_SRC',
+    ;; `#+begin_src', `#+Begin_Src', ...).  Pin `case-fold-search' to
+    ;; `t' so the regex below catches all of them; the surrounding
+    ;; `upcase' calls canonicalize the captured marker.
+    (let ((case-fold-search t)
+          (current-block nil)) ; Current block type or nil
       ;; Scan forward for all block markers
       ;; Block names can be any non-whitespace chars
-      (while (re-search-forward
-              "^#\\+\\(BEGIN\\|END\\|begin\\|end\\)_\\(\\S-+\\)"
-              nil t)
+      (while (re-search-forward "^#\\+\\(BEGIN\\|END\\)_\\(\\S-+\\)"
+                                nil
+                                t)
         (let ((marker-type (upcase (match-string 1)))
               (block-type (upcase (match-string 2))))
           (cond
