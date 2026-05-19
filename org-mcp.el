@@ -565,13 +565,14 @@ to fix."
        field-name (mapconcat #'identity valid-states ", ") state))))
 
 (defun org-mcp--validate-and-normalize-tags (tags)
-  "Validate and normalize TAGS.
-TAGS can be a single tag string or list of tag strings.
-Returns normalized tag list.
+  "Validate TAGS and return a normalized list of tag strings.
+TAGS is the JSON-decoded `tags' value: nil, a string, or a vector
+\(see `org-mcp--normalize-tags-to-list').
 Validates:
 - Tag names follow Org rules (alphanumeric, underscore, at-sign)
-- Tags are in configured tag alist (if configured)
-- Tags don't violate mutual exclusivity groups
+- Tags are in `org-tag-alist' or `org-tag-persistent-alist'
+  (if either is configured)
+- Tags don't violate mutual exclusivity groups in either alist
 Signals error for invalid tags."
   (let ((tag-list (org-mcp--normalize-tags-to-list tags))
         (allowed-tags
@@ -730,22 +731,19 @@ Throws an MCP tool error if unbalanced blocks are found."
          current-block)))))
 
 (defun org-mcp--normalize-tags-to-list (tags)
-  "Normalize TAGS parameter to a list format.
-TAGS can be:
-- nil or empty list -> returns nil
-- vector (JSON array) -> converts to list
-- string -> wraps in list
-- list -> returns as-is
-Throws error for invalid types."
+  "Normalize JSON-decoded TAGS parameter to a list of tag strings.
+The MCP wire layer feeds `tags' as one of:
+- nil (JSON `null' or absent field) -> returns nil
+- vector (JSON array)               -> converts to list
+- string (JSON string)              -> wraps in singleton list
+Throws error for any other type."
   (cond
    ((null tags)
-    nil) ; No tags (nil or empty list)
+    nil)
    ((vectorp tags)
-    (append tags nil)) ; Convert JSON array (vector) to list
-   ((listp tags)
-    tags) ; Already a list
+    (append tags nil))
    ((stringp tags)
-    (list tags)) ; Single tag string
+    (list tags))
    (t
     (org-mcp--tool-validation-error "Invalid tags format: %s" tags))))
 
