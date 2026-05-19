@@ -1088,7 +1088,7 @@ Executes BODY with org-mcp enabled and standard variables set."
       ((,file-var ,initial-content))
       (let ((org-todo-keywords ,todo-kw)
             (org-tag-alist ,tag-al)
-            ,@(unless ids '((org-id-locations-file nil))))
+            (org-id-locations-file nil))
         ,(if ids
              `(org-mcp-test--with-id-tracking
                (list ,file-var)
