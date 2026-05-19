@@ -1456,7 +1456,7 @@ MCP Parameters:
                                             old_body))
            ((and (> occurrence-count 1) (not replace_all))
             (org-mcp--tool-validation-error
-             (concat "Text appears %d times (use replace_all)")
+             "Text appears %d times (use replace_all)"
              occurrence-count)))
 
           ;; Perform replacement
