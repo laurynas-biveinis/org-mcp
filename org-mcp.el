@@ -231,14 +231,34 @@ OPERATION is a string describing the operation for error messages."
 (defmacro org-mcp--modify-and-save
     (file-path operation response-alist &rest body)
   "Execute BODY to modify Org file at FILE-PATH, then save result.
-First validates that FILE-PATH has no unsaved changes (using
-OPERATION for error messages).  Then executes BODY in a temp buffer
-set up for the Org file.  After BODY executes, creates an Org ID if
-needed, saves the buffer, refreshes any visiting buffers, and
-returns the result of `org-mcp--complete-and-save' with FILE-PATH
-and RESPONSE-ALIST.
-BODY can access FILE-PATH, OPERATION, and RESPONSE-ALIST as
-variables."
+OPERATION is a string describing the operation for error messages.
+RESPONSE-ALIST is an alist of response fields appended to the JSON
+return value.
+
+Macro behaviour:
+- Validates FILE-PATH has no unsaved changes (errors via
+  `org-mcp--fail-if-modified' if so).
+- Sets up a temp buffer with FILE-PATH's contents in `org-mode',
+  with `set-visited-file-name' pointing at FILE-PATH and point at
+  `point-min'.
+- Executes BODY in that buffer.
+- After BODY returns, calls `org-mcp--complete-and-save' which
+  ensures the entry containing point has an Org ID (creating one
+  if needed), writes the buffer to FILE-PATH, refreshes any
+  visiting Emacs buffer, and returns JSON with the entry's
+  `org-id://' URI.
+
+BODY contract:
+- May access FILE-PATH, OPERATION, and RESPONSE-ALIST as
+  variables.
+- Must NOT call `org-mcp--complete-and-save' itself; the macro
+  appends it after BODY.  Calling it inside BODY would write the
+  file twice and return a stale JSON shape.
+- Must leave point at or within the entry whose `org-id://' URI
+  should be returned to the caller.
+- BODY's return value is discarded; the macro's return value is
+  the JSON from `org-mcp--complete-and-save'.
+- Errors signalled in BODY propagate up unmodified (no rollback)."
   (declare (indent 3) (debug (form form form body)))
   `(progn
      (org-mcp--fail-if-modified ,file-path ,operation)
@@ -278,9 +298,9 @@ cannot poison a successful resolution.
 Callers translate the status into a tool error or a resource error
 of the appropriate shape."
   (if-let* ((id-file (org-id-find-id-file id)))
-      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-          (cons :found allowed-file)
-        (cons :disallowed nil))
+    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+      (cons :found allowed-file)
+      (cons :disallowed nil))
     (if-let* ((file
                (catch 'found
                  (dolist (allowed-file org-mcp-allowed-files)
@@ -290,11 +310,11 @@ of the appropriate shape."
                          (throw 'found
                                 (expand-file-name
                                  allowed-file)))))))))
-        (progn
-          (when org-id-track-globally
-            (ignore-errors
-              (org-id-add-location id file)))
-          (cons :found file))
+      (progn
+        (when org-id-track-globally
+          (ignore-errors
+            (org-id-add-location id file)))
+        (cons :found file))
       (cons :missing nil))))
 
 (defun org-mcp--find-allowed-file-with-id (id)
@@ -324,11 +344,11 @@ Throws an error if neither prefix matches."
   `(if-let* ((id
               (org-mcp--extract-uri-suffix
                ,uri org-mcp--uri-id-prefix)))
-       ,id-body
+     ,id-body
      (if-let* ((headline
                 (org-mcp--extract-uri-suffix
                  ,uri org-mcp--uri-headline-prefix)))
-         ,headline-body
+       ,headline-body
        (org-mcp--tool-validation-error
         "Invalid resource URI format: %s"
         ,uri))))
@@ -534,7 +554,7 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
   (if is-id
       ;; ID case - headline-path contains single ID
       (if-let* ((pos (org-find-property "ID" (car headline-path))))
-          (goto-char pos)
+        (goto-char pos)
         (org-mcp--id-not-found-error (car headline-path)))
     ;; Path case - headline-path contains title hierarchy
     (unless (org-mcp--navigate-to-headline headline-path)
