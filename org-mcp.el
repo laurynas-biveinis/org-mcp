@@ -298,9 +298,9 @@ cannot poison a successful resolution.
 Callers translate the status into a tool error or a resource error
 of the appropriate shape."
   (if-let* ((id-file (org-id-find-id-file id)))
-    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-      (cons :found allowed-file)
-      (cons :disallowed nil))
+      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+          (cons :found allowed-file)
+        (cons :disallowed nil))
     (if-let* ((file
                (catch 'found
                  (dolist (allowed-file org-mcp-allowed-files)
@@ -310,11 +310,11 @@ of the appropriate shape."
                          (throw 'found
                                 (expand-file-name
                                  allowed-file)))))))))
-      (progn
-        (when org-id-track-globally
-          (ignore-errors
-            (org-id-add-location id file)))
-        (cons :found file))
+        (progn
+          (when org-id-track-globally
+            (ignore-errors
+              (org-id-add-location id file)))
+          (cons :found file))
       (cons :missing nil))))
 
 (defun org-mcp--find-allowed-file-with-id (id)
@@ -344,11 +344,11 @@ Throws an error if neither prefix matches."
   `(if-let* ((id
               (org-mcp--extract-uri-suffix
                ,uri org-mcp--uri-id-prefix)))
-     ,id-body
+       ,id-body
      (if-let* ((headline
                 (org-mcp--extract-uri-suffix
                  ,uri org-mcp--uri-headline-prefix)))
-       ,headline-body
+         ,headline-body
        (org-mcp--tool-validation-error
         "Invalid resource URI format: %s"
         ,uri))))
@@ -554,7 +554,7 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
   (if is-id
       ;; ID case - headline-path contains single ID
       (if-let* ((pos (org-find-property "ID" (car headline-path))))
-        (goto-char pos)
+          (goto-char pos)
         (org-mcp--id-not-found-error (car headline-path)))
     ;; Path case - headline-path contains title hierarchy
     (unless (org-mcp--navigate-to-headline headline-path)
@@ -1057,7 +1057,20 @@ BODY-END is the buffer position where body ends."
         (delete-region body-begin body-end)
       ;; Empty body - ensure we're at the right position
       (goto-char body-begin))
-    (insert new-body-content)))
+    ;; Guard against EOF-mid-line insertion: when the empty-body
+    ;; branch's body-begin is at point-max of a file lacking a
+    ;; trailing newline, point sits right after the heading's last
+    ;; char (or after the property drawer's `:END:'), and the bare
+    ;; `(insert ...)' would concatenate the new body onto that line.
+    (org-mcp--ensure-newline)
+    (insert new-body-content)
+    ;; Final-newline guarantee: leave the inserted body terminated
+    ;; with `\n' so the file ends cleanly even when `new-body' does
+    ;; not.  Skip when the next char is already `\n' to avoid
+    ;; doubling up before a following heading.
+    (unless (or (string-suffix-p "\n" new-body-content)
+                (eq (char-after) ?\n))
+      (insert "\n"))))
 
 ;; Tool handlers
 

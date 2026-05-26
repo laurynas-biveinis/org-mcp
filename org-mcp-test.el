@@ -775,23 +775,43 @@ while leaving `hello world' (lowercase) untouched.")
   "Pattern for nested headlines edit-body test result.")
 
 (defconst org-mcp-test--pattern-edit-body-empty
-  (concat
-   "\\*\\* Third Child #3New content added\\.\n"
-   " *:PROPERTIES:\n"
-   " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
-   " *:END:")
-  "Pattern for edit-body test with empty body adding content.")
+  (format
+   (concat
+    "\\`#\\+TITLE: My Org Document\n"
+    "\n"
+    "\\* Parent Task\n"
+    " *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n"
+    "Some parent content\\.\n"
+    "\\*\\* First Child 50%% Complete\n"
+    "First child content\\.\n"
+    "It spans multiple lines\\.\n"
+    "\\*\\* Second Child\n"
+    " *:PROPERTIES:\n *:ID: +%s\n *:END:\n"
+    "Second child content\\.\n"
+    "\\*\\* Third Child #3\n"
+    " *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n"
+    "New content added\\.\n"
+    "\\'")
+   org-mcp-test--content-with-id-id)
+  "Whole-file regex for `edit-body-empty': new body added to
+`** Third Child #3' as the file's last subtree.  An auto-generated
+`:ID:' drawer attaches to that heading; the body is on its own line
+after `:END:'; the file ends with a trailing newline.")
 
 (defconst org-mcp-test--pattern-edit-body-empty-with-props
   (format (concat
-           " *:PROPERTIES:\n"
-           " *:ID:[ \t]+[A-Fa-f0-9-]+\n"
-           " *:END:\n"
+           "\\`\\* TODO Task with ID but no body\n"
            " *:PROPERTIES:\n"
            " *:ID: +%s\n"
-           " *:END:Content added after properties\\.")
+           " *:END:\n"
+           "Content added after properties\\.\n"
+           "\\'")
           org-mcp-test--timestamp-id)
-  "Pattern for edit-body with existing properties adding content.")
+  "Whole-file regex for `edit-body-empty-with-properties': new body
+added under a heading whose only metadata is its `:ID:' drawer.
+The drawer is preserved verbatim (no orphaned-ID cascade); the
+body is on its own line after `:END:'; the file ends with a
+trailing newline.")
 
 (defconst org-mcp-test--pattern-edit-body-accept-lower-level
   (concat

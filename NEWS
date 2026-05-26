@@ -4,6 +4,13 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Stopped `org-edit-body' from concatenating new content with the preceding line
+    With `old_body=""' on a heading whose body is empty in a file
+    without a trailing newline, the inserted content previously ran
+    onto the heading line (or onto the property drawer's `:END:').
+    Now the content lands on its own line, and `org-edit-body'
+    always leaves the file ending in a newline.
+
 *** Normalised redundant separators in `org-headline://' URIs
     `org-mcp--split-headline-uri' now collapses both an empty
     fragment (`org-headline://FILE#') and a single trailing `/' on
