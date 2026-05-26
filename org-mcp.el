@@ -1492,14 +1492,24 @@ MCP Parameters:
              "Text appears %d times (use replace_all)"
              occurrence-count)))
 
-          ;; Perform replacement
-          (org-mcp--replace-body-content
-           old_body
-           new_body
-           body-content
-           replace_all
-           body-begin
-           body-end))))))
+          ;; Perform replacement.
+          ;; `save-excursion' keeps point inside the edit target's
+          ;; entry so `org-id-get-create' (in `complete-and-save')
+          ;; resolves to the edit target.  Without it, body
+          ;; insertion lands point in a different entry -- the
+          ;; parent's first child (when the target has children) or
+          ;; a strictly-deeper heading inside the new body
+          ;; (permitted by `validate-body-no-headlines') -- and
+          ;; `org-back-to-heading' inside `org-id-get-create'
+          ;; would resolve to that entry.
+          (save-excursion
+            (org-mcp--replace-body-content
+             old_body
+             new_body
+             body-content
+             replace_all
+             body-begin
+             body-end)))))))
 
 ;; Tools duplicating resource templates
 

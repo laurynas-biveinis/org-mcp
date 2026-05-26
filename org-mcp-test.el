@@ -763,7 +763,6 @@ while leaving `hello world' (lowercase) untouched.")
     " *:PROPERTIES:\n *:ID: +nested-siblings-parent-id-002\n *:END:\n"
     "Updated parent content\n"
     "\\*\\* First Child 50%% Complete\n"
-    " *:PROPERTIES:\n *:ID:[ \t]+[A-Fa-f0-9-]+\n *:END:\n"
     "First child content\\.\n"
     "It spans multiple lines\\.\n"
     "\\*\\* Second Child\n"
@@ -772,7 +771,9 @@ while leaving `hello world' (lowercase) untouched.")
     "\\*\\* Third Child #3\n?"
     "\\'")
    org-mcp-test--content-with-id-id)
-  "Pattern for nested headlines edit-body test result.")
+  "Pattern for nested headlines edit-body test result.  The first
+child gains no `:ID:' drawer; `org-id-get-create' resolves to the
+edit target (`* Parent Task', which already has one).")
 
 (defconst org-mcp-test--pattern-edit-body-empty
   (format
@@ -813,8 +814,24 @@ The drawer is preserved verbatim (no orphaned-ID cascade); the
 body is on its own line after `:END:'; the file ends with a
 trailing newline.")
 
+(defconst org-mcp-test--pattern-edit-body-empty-with-deeper-heading
+  (format (concat
+           "\\`\\* TODO Task with ID but no body\n"
+           " *:PROPERTIES:\n"
+           " *:ID: +%s\n"
+           " *:END:\n"
+           "intro text\n"
+           "\\*\\* Sub heading\n?\\'")
+          org-mcp-test--timestamp-id)
+  "Whole-file regex for empty-body edit with new content containing
+a deeper heading.  The deeper `** Sub heading' carries no `:ID:'
+drawer; the edit target's existing `:ID:' is preserved and returned
+as the URI.")
+
 (defconst org-mcp-test--pattern-edit-body-accept-lower-level
   (concat
+   "\\`#\\+TITLE: My Org Document\n"
+   "\n"
    "\\* Parent Task\n"
    " *:PROPERTIES:\n"
    " *:ID: +nested-siblings-parent-id-002\n"
@@ -831,9 +848,12 @@ trailing newline.")
    " *:END:\n"
    "some text\n"
    "\\*\\*\\* Subheading content\n"
-   org-mcp-test--regex-id-drawer
-   "\\*\\* Third Child #3")
-  "Pattern for edit-body accepting lower-level headlines.")
+   "\\*\\* Third Child #3\n?\\'")
+  "Whole-file regex for edit-body accepting lower-level headlines.
+The body-internal `*** Subheading content' heading carries no
+`:ID:' drawer; `org-id-get-create' attaches `:ID:' to the edit
+target (`** Second Child', which already has one), not to the
+deeper body-internal heading.")
 
 (defconst org-mcp-test--pattern-tool-read-headline-single
   (concat
@@ -2697,7 +2717,8 @@ case-insensitive matching would touch the lowercase line instead."
      "occurrence of pattern"
      "REPLACED"
      org-mcp-test--pattern-edit-body-replace-all
-     t)))
+     t
+     "test-id")))
 
 (ert-deftest org-mcp-test-edit-body-replace-all-string-false ()
   "Test that wire-protocol string `\"false\"' is coerced to nil.
@@ -2786,10 +2807,40 @@ out."
      (format "org-id://%s" org-mcp-test--timestamp-id)
      ""
      "Content added after properties."
-     org-mcp-test--pattern-edit-body-empty-with-props)))
+     org-mcp-test--pattern-edit-body-empty-with-props
+     nil
+     org-mcp-test--timestamp-id)))
+
+(ert-deftest
+    org-mcp-test-edit-body-empty-with-deeper-heading-returns-target-uri ()
+  "Test that empty-body edit with new content containing a deeper
+heading returns the edit target's URI, not the deeper heading's.
+The empty branch of `replace-body-content' has different
+save-excursion marker mechanics from the non-empty branch covered
+by `edit-body-accept-lower-level-headline'.  Combined with the
+deeper-heading flavor of the URI-return bug, this exercises a code
+path neither `edit-body-empty' (no deeper heading in body) nor
+`edit-body-accept-lower-level-headline' (non-empty body) hits."
+  (org-mcp-test--with-id-setup test-file
+      org-mcp-test--content-with-id-no-body
+      `(,org-mcp-test--timestamp-id)
+    (org-mcp-test--call-edit-body-and-check
+     test-file
+     (format "org-id://%s" org-mcp-test--timestamp-id)
+     ""
+     "intro text\n** Sub heading"
+     org-mcp-test--pattern-edit-body-empty-with-deeper-heading
+     nil
+     org-mcp-test--timestamp-id)))
 
 (ert-deftest org-mcp-test-edit-body-nested-headlines ()
-  "Test org-edit-body preserves nested headlines."
+  "Test that body edit on a parent returns the parent's URI and
+preserves its child subtree.  The first-child flavor of the
+URI-return bug: after body insertion, point landed on `** First
+Child' (the parent's first child) and `org-id-get-create' attached
+a fresh `:ID:' to it, returning that URI instead of the parent's
+existing one.  Save-excursion in `tool-edit-body' now preserves
+point on the parent so its existing `:ID:' is returned."
   (org-mcp-test--with-temp-org-files
       ((test-file org-mcp-test--content-nested-siblings))
     (org-mcp-test--call-edit-body-and-check
@@ -2797,7 +2848,9 @@ out."
      (format "org-headline://%s#Parent%%20Task" test-file)
      "Some parent content."
      "Updated parent content"
-     org-mcp-test--pattern-edit-body-nested-headlines)))
+     org-mcp-test--pattern-edit-body-nested-headlines
+     nil
+     org-mcp-test--content-nested-siblings-parent-id)))
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-in-middle ()
   "Test org-edit-body rejects new_body with headline marker in middle."
@@ -2813,7 +2866,15 @@ out."
      nil)))
 
 (ert-deftest org-mcp-test-edit-body-accept-lower-level-headline ()
-  "Test org-edit-body accepts new_body with lower-level headline."
+  "Test that body containing a strictly-deeper heading is accepted
+and that the returned URI points to the edit target, not to the
+body-internal heading.  `validate-body-no-headlines' only rejects
+headings at or above the target level, so a level-3 sub-heading
+inside a level-2 edit is legitimate child structure.  After
+insertion, point can land past the deeper heading;
+`org-id-get-create' in `complete-and-save' must still attach `:ID:'
+to the edit target and return the target's URI -- otherwise the
+deeper heading captures the URI and a fresh `:ID:' drawer."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
       `(,org-mcp-test--content-with-id-id)
@@ -2823,7 +2884,9 @@ out."
      "Second child content."
      "some text
 *** Subheading content"
-     org-mcp-test--pattern-edit-body-accept-lower-level)))
+     org-mcp-test--pattern-edit-body-accept-lower-level
+     nil
+     org-mcp-test--content-with-id-id)))
 
 (ert-deftest org-mcp-test-edit-body-reject-higher-level-headline ()
   "Test org-edit-body rejects new_body with higher-level headline.
