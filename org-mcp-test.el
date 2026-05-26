@@ -961,7 +961,8 @@ VAR is the variable to bind the temp file path to.
 CONTENT is the initial content to write to the file.
 FILENAME-PREFIX is optional, defaults to \"org-mcp-test\".
 All created files are automatically added to `org-mcp-allowed-files'.
-BODY is executed with org-mcp enabled."
+BODY is executed with org-mcp enabled.
+Returns the value of the last form in BODY."
   (declare (indent 1))
   (let* ((vars (mapcar #'car file-specs))
          (temp-vars (mapcar (lambda (v) (gensym (symbol-name v)))
