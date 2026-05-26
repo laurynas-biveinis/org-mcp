@@ -4,6 +4,14 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Fixed `org-update-todo-state' failing on no-state heading with `current_state=""'
+    `string=' treats nil and `""' as distinct, so the documented
+    "use empty string for no TODO state" path errored with
+    "State mismatch" while the undocumented JSON null path
+    silently worked.  `""' now matches a heading with no TODO
+    state, and `current_state' rejects JSON null at the
+    tool-boundary validator.
+
 *** Stopped `org-edit-body' from returning the URI of a non-target heading
     The returned `org-id://' URI previously identified the parent's
     first child, or a strictly-deeper heading inside the new body.

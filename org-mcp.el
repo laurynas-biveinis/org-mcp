@@ -1140,26 +1140,30 @@ MCP Parameters:
   new_state - New TODO state to set
               Must be a valid keyword from `org-todo-keywords'"
   (org-mcp--validate-string-field uri "uri")
-  (org-mcp--validate-string-field current_state "current_state" t)
+  (org-mcp--validate-string-field current_state "current_state")
   (org-mcp--validate-string-field new_state "new_state")
   (pcase-let ((`(,file-path . ,headline-path)
                (org-mcp--parse-resource-uri uri)))
     (org-mcp--validate-todo-state new_state "new_state")
     (org-mcp--modify-and-save file-path "update"
-                              `((previous_state
-                                 .
-                                 ,(or current_state ""))
+                              `((previous_state . ,current_state)
                                 (new_state . ,new_state))
       (org-mcp--validate-file-header)
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
 
-      ;; Check current state matches
+      ;; Treat "" and nil as the same "no TODO state":
+      ;; `org-get-todo-state' returns nil; the wire protocol uses "".
       (beginning-of-line)
-      (let ((actual-state (org-get-todo-state)))
-        (unless (string= actual-state current_state)
+      (let ((actual-state (org-get-todo-state))
+            (expected-state
+             (and (not (string-empty-p current_state))
+                  current_state)))
+        (unless (equal actual-state expected-state)
           (org-mcp--state-mismatch-error
-           (or current_state "(no state)")
+           (if (string-empty-p current_state)
+               "(no state)"
+             current_state)
            (or actual-state "(no state)") "State")))
 
       ;; Update the state

@@ -1818,6 +1818,46 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
         (org-mcp-test--call-update-todo-state-expecting-error
          test-file resource-uri "IN-PROGRESS" "DONE")))))
 
+(ert-deftest org-mcp-test-update-todo-state-empty-on-no-state-heading ()
+  "Test that `current_state=\"\"' matches a heading with no TODO state.
+The documented contract -- pass `\"\"' to indicate the heading has
+no TODO state -- previously failed because `string='
+treated nil (what `org-get-todo-state' returns) and `\"\"' as
+distinct, so the only working path for a no-state heading was the
+undocumented JSON null.  Locks the fix that normalises `\"\"' to nil
+before the state-match comparison."
+  (let ((test-content org-mcp-test--content-nested-siblings))
+    (org-mcp-test--with-temp-org-files
+        ((test-file test-content))
+      (let* ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
+             (resource-uri
+              (format "org-headline://%s#Parent%%20Task" test-file))
+             (params
+              `((uri . ,resource-uri)
+                (current_state . "")
+                (new_state . "TODO")))
+             (result-text
+              (mcp-server-lib-ert-call-tool
+               "org-update-todo-state" params))
+             (result (json-read-from-string result-text)))
+        (should (equal (alist-get 'success result) t))
+        (should (equal (alist-get 'previous_state result) ""))
+        (should (equal (alist-get 'new_state result) "TODO"))))))
+
+(ert-deftest org-mcp-test-update-todo-state-empty-on-with-state-mismatches ()
+  "Test that `current_state=\"\"' against a TODO-bearing heading errors.
+The complement of `empty-on-no-state-heading': the comparison must
+remain strict when the heading actually has a TODO state, so a
+caller asserting `\"\"' on a `TODO' heading still gets a state
+mismatch."
+  (let ((test-content org-mcp-test--content-with-id-todo))
+    (org-mcp-test--with-temp-org-files
+        ((test-file test-content))
+      (let ((resource-uri
+             (format "org-headline://%s#Task%%20with%%20ID" test-file)))
+        (org-mcp-test--call-update-todo-state-expecting-error
+         test-file resource-uri "" "DONE")))))
+
 (ert-deftest org-mcp-test-update-todo-with-timestamp-id ()
   "Test updating TODO state using timestamp-format ID (not UUID)."
   (let ((test-content org-mcp-test--content-timestamp-id))
@@ -3449,6 +3489,19 @@ low-level JSON-RPC pipeline so a tool-error response surfaces as a
   (org-mcp-test--assert-tool-non-string
    "org-update-todo-state"
    `((uri . "org-id://x") (current_state . 42) (new_state . "DONE"))))
+
+(ert-deftest org-mcp-test-update-todo-state-null-current-state-rejected ()
+  "Test that JSON null (nil) `current_state' is rejected at the tool boundary.
+The wire-protocol contract is `(string, required)' -- JSON null is
+not a string and must error with the standard
+`validate-string-field' message.  Previously the validator was
+called with `allow-nil=t' and silently accepted nil, then coerced
+it to `\"\"' in the response: an undocumented working path that
+happened to match no-TODO-state headings because `(string= nil
+nil)' returns t.  Locks the validator-tightening half of the fix."
+  (org-mcp-test--assert-tool-non-string
+   "org-update-todo-state"
+   `((uri . "org-id://x") (current_state . nil) (new_state . "DONE"))))
 
 (ert-deftest org-mcp-test-update-todo-state-non-string-new-state ()
   "Test that a non-string `new_state' is rejected at the tool boundary."
