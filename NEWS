@@ -27,38 +27,23 @@ org-mcp NEWS -- history of user-visible changes
     `org-mcp--split-headline-uri' now collapses both an empty
     fragment (`org-headline://FILE#') and a single trailing `/' on
     the file path to the same `(FILE . nil)' pair as the bare
-    `org-headline://FILE'.  Previously the empty fragment surfaced
-    as `Headline not found' on resource reads, and the trailing
-    slash stayed in the decoded file name.  All of
-    `org-headline://file.org', `org-headline://file.org/',
-    `org-headline://file.org#', `org-headline://file.org/#',
-    `org-headline://file.org#H' and `org-headline://file.org/#H'
-    now resolve to equivalent `(FILE . HEADLINE)' pairs.
+    `org-headline://FILE'.  All of `org-headline://file.org',
+    `org-headline://file.org/', `org-headline://file.org#',
+    `org-headline://file.org/#', `org-headline://file.org#H' and
+    `org-headline://file.org/#H' now resolve to equivalent
+    `(FILE . HEADLINE)' pairs.
 
 *** Removed trailing blank line at end of file in `org-add-todo' with body
     Adding a TODO with a non-empty `body' under a parent heading
     (either via `after_uri' against the parent's last child, or with
     `position="end"' when the parent is the file's last subtree) to a
-    file that did not end with a trailing newline previously produced
-    a file ending in two newlines -- a trailing blank line.  The
-    underlying cause was that `org-mcp' bakes a trailing newline into
-    the inserted heading line, and the body-insertion block emitted
-    the body before that baked newline, leaving the heading's newline
-    as a redundant trailing one after the body's own terminator.  The
-    redundant newline is now dropped, so the file ends with exactly
-    one newline.  Mid-file placements still leave a single blank line
-    between the body and the next heading, matching prior behaviour.
+    file that does not end with a trailing newline now produces a
+    file ending in exactly one newline.  Mid-file placements still
+    leave a single blank line between the body and the next heading.
 
 *** Treated empty `body' string as no-body in `org-add-todo'
     Passing `body=""' (an empty string) now produces the same file
-    as omitting `body' entirely.  Previously the body-insertion
-    block emitted `(insert "\n" "")' (one newline) and then a
-    trailing guard `(unless (string-suffix-p "\n" "") (insert
-    "\n"))' that also fired -- yielding two unwanted blank lines
-    after the new heading.  `org-mcp--validate-string-field' accepts
-    both nil and the empty string for `body' (allow-nil=t), but the
-    implementation did not collapse "" to nil before the insertion
-    block; now it does.
+    as omitting `body' entirely.
 
 *** Cached ID-fallback resolution to avoid repeated full-file scans
     Successful ID-fallback scans now register the (id, file) pair
@@ -86,41 +71,30 @@ org-mcp NEWS -- history of user-visible changes
 
 *** Strict `:END:' drawer terminator recognition
     Only a line that consists of exactly `:END:' (optionally followed
-    by spaces or tabs) counts as the drawer terminator.  Previously
-    any line starting with `:END:' was accepted, so a typo such as
-    `:END:typo' preceding the real `:END:' was mistaken for the
-    closer.
+    by spaces or tabs) counts as the drawer terminator.  A line such
+    as `:END:typo' does not close the drawer.
 
 *** Strict drawer opener recognition in the file-header walker
     Only a line that consists of exactly `:NAME:' (any drawer
     keyword, optionally followed by spaces or tabs) opens a drawer.
-    Previously a line such as `:PROPERTIES: stray text' at column 0
-    would have been treated as a drawer opener and the walker would
-    then have looked for a matching `:END:', spuriously diagnosing
-    an unterminated drawer.  Such a line is now treated as ordinary
-    content terminating the file's header block, matching how Org's
-    own parser classifies the line.
+    A line such as `:PROPERTIES: stray text' at column 0 is treated
+    as ordinary content terminating the file's header block,
+    matching how Org's own parser classifies the line.
 
 *** Leading whitespace accepted on file-header lines
     Drawer openers (`:NAME:'), drawer closers (`:END:'), and
     `#'-prefixed lines (`#+'-keywords, `# '-comments, `#hashtag'
     paragraphs) are now accepted by the file-header walker with
-    optional leading whitespace (spaces or tabs).  Org's parser
-    already accepts indented forms of all these constructs as the
-    same syntactic element; previously the walker required column 0,
-    so an indented `:PROPERTIES:' drawer at file level would have
-    been mistaken for ordinary content rather than walked.  Headings
-    themselves still require column 0 (Org rule).
+    optional leading whitespace (spaces or tabs), matching how Org's
+    parser already accepts indented forms.  Headings themselves
+    still require column 0 (Org rule).
 
 *** Any drawer keyword recognised in the file-header walker
     The file-header walker now recognises any well-formed drawer
     opener -- `:PROPERTIES:', `:LOGBOOK:', or any custom `:NAME:'
-    keyword -- and consumes it through its `:END:'.  Previously a
-    custom or non-`:PROPERTIES:' drawer at file level would not have
-    been recognised, so an unterminated `:LOGBOOK:' (for example)
-    would have been silently accepted as ordinary content rather
-    than diagnosed.  A bare `:END:' with no preceding opener is still
-    treated as ordinary content terminating the header.
+    keyword -- and consumes it through its `:END:'.  A bare `:END:'
+    with no preceding opener is still treated as ordinary content
+    terminating the header.
 
 *** Uniform type validation for wire-protocol string parameters
     Every MCP tool now rejects non-string values for string-typed
@@ -128,21 +102,15 @@ org-mcp NEWS -- history of user-visible changes
     (type: T)' error.
 
 *** Fixed spurious blank line in `org-add-todo' when parent is followed by content
-    Adding a child under a parent heading that has any following
-    content (a top-level heading or any parent-level sibling)
-    inserted an unwanted blank line between the new heading and the
-    next following heading.  The fix removes a spurious
-    `backward-char' inside the end-of-subtree positioning step so the
-    new heading lands flush against the following content.
+    When adding a child under a parent heading that has following
+    content (a top-level heading or any parent-level sibling), the
+    new heading now lands flush against the following content.
 
 *** Fixed default placement for top-level `org-add-todo'
     When called at top level (parent URI with no fragment) on a file
-    that already contained at least one top-level heading, the
-    default placement inserted the new heading before the first
-    existing heading rather than at end of file, contradicting the
-    tool's own documented behavior, which has always promised "end
-    of file" placement.  The default now appends at end of file as
-    documented.
+    that already contains top-level headings, the default placement
+    now appends the new heading at end of file, as the tool's
+    description documents.
 
 *** Rejected empty or whitespace-only `after_uri' in `org-add-todo'
     `after_uri=""' and any whitespace-only value (regular spaces,
@@ -153,24 +121,17 @@ org-mcp NEWS -- history of user-visible changes
 
 *** Case-sensitive body matching in `org-edit-body'
     The MCP tool `org-edit-body' now matches the `old_body' parameter
-    case-sensitively.  Previously the occurrence counter ran
-    case-sensitively but the replacement ran case-insensitively, so
-    when the body contained a case-mismatched substring the
-    replacement could touch a copy the counter never saw, while the
-    intended copy was left untouched.
+    case-sensitively.
 
 *** Marked `org-edit-body's `replace_all' as optional in the JSON Schema
     The published JSON Schema now reports `replace_all' as not
     required, matching the tool's documented default of `false'.
 
 *** Fixed `org-edit-body' silently replacing all on `replace_all=false'
-    A client sending the JSON boolean `false' for the `replace_all'
-    parameter (e.g. `{"replace_all": false}') previously bypassed the
-    multiple-occurrence safety guard and silently replaced every
-    occurrence of the search string even though the client
-    explicitly opted out of replace-all behaviour.  JSON `false' is
-    now correctly recognised, so the guard fires on ambiguous
-    matches as documented.
+    The JSON boolean `false' is now recognised for the `replace_all'
+    parameter (e.g. `{"replace_all": false}'), so the
+    multiple-occurrence safety guard fires on ambiguous matches as
+    documented.
 
 * Changes in org-mcp 0.9.0 (2025-11-11)
 
