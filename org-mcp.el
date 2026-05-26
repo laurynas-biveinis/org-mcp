@@ -693,16 +693,17 @@ Throws an MCP tool error if validation fails."
      "Headline title cannot contain newlines")))
 
 (defun org-mcp--validate-body-no-headlines (body level)
-  "Validate that BODY doesn't contain headlines at LEVEL or higher.
-LEVEL is the Org outline level (1 for *, 2 for **, etc).
+  "Validate that BODY doesn't contain headlines at LEVEL or shallower.
+LEVEL is the Org outline level (1 for *, 2 for **, etc); \"shallower\"
+means fewer stars (closer to root in the outline hierarchy).
 Throws an MCP tool error if invalid headlines are found."
-  ;; Build regex to match headlines at the current level or higher
+  ;; Build regex to match headlines at the current level or shallower
   ;; For level 3, this matches ^*, ^**, or ^***
   ;; Matches asterisks + space/tab (headlines need content)
   (let ((regex (format "^\\*\\{1,%d\\}[ \t]" level)))
     (when (string-match regex body)
       (org-mcp--tool-validation-error
-       "Body cannot contain headlines at level %d or higher"
+       "Body cannot contain headlines at level %d or shallower (fewer stars)"
        level))))
 
 (defun org-mcp--validate-body-no-unbalanced-blocks (body)
@@ -1191,8 +1192,8 @@ MCP Parameters:
          Must follow Org tag rules (alphanumeric, _, @)
          Respects mutually exclusive tag groups
   body - Optional body text content
-         Cannot contain headlines at same or higher level as the
-         new item
+         Cannot contain headlines at the new item's level or
+         shallower (fewer stars)
          If #+BEGIN/#+END blocks are present, they must be balanced
   parent_uri - Parent item URI
                For top-level: org-headline://{absolute-path}
@@ -1398,7 +1399,8 @@ MCP Parameters:
              in that case the node body must be empty or
              whitespace-only, otherwise the tool errors
   new_body - Replacement text
-             Cannot introduce headlines at same or higher level
+             Cannot introduce headlines at the edit target's
+             level or shallower (fewer stars)
              Must maintain balanced #+BEGIN/#+END blocks
   replace_all - Replace all occurrences (optional, default false)
                 When false, old_body must be unique in the body"
