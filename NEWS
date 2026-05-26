@@ -4,14 +4,9 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
-*** Always return the edit target's URI from `org-edit-body'
-    After body insertion, point could land on a different heading
-    (the parent's first child, or -- when the new body contained a
-    strictly-deeper heading -- the body-internal heading itself).
-    `org-id-get-create' (in `complete-and-save') would then attach
-    a fresh `:ID:' to that heading and return its URI.  Point is
-    now preserved on the edit target across the body edit, so the
-    returned URI always identifies the edit target.
+*** Stopped `org-edit-body' from returning the URI of a non-target heading
+    The returned `org-id://' URI previously identified the parent's
+    first child, or a strictly-deeper heading inside the new body.
 
 *** Stopped `org-edit-body' from concatenating new content with the preceding line
     With `old_body=""' on a heading whose body is empty in a file
