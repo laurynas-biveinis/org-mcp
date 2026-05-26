@@ -1433,7 +1433,10 @@ RESOURCE-URI is the URI of the node to edit.
 OLD-BODY is the substring to search for within the node's body.
 NEW-BODY is the replacement text.
 EXPECTED-PATTERN is a regexp that the file content should match.
-REPLACE-ALL if true, replace all occurrences (default: nil).
+REPLACE-ALL if true, replace all occurrences (default: nil).  The
+`replace_all' key is always emitted, so passing nil exercises the
+explicit-`null' wire form; tests needing absent-key build the
+params alist directly.
 EXPECTED-ID if provided, check the returned URI has this exact ID."
   (let* ((params
           `((resource_uri . ,resource-uri)
@@ -1457,7 +1460,10 @@ TEST-FILE is the test file path to verify remains unchanged.
 RESOURCE-URI is the URI of the node to edit.
 OLD-BODY is the substring to search for within the node's body.
 NEW-BODY is the replacement text.
-REPLACE-ALL if true, replace all occurrences (default: nil)."
+REPLACE-ALL if true, replace all occurrences (default: nil).  The
+`replace_all' key is always emitted, so passing nil exercises the
+explicit-`null' wire form; tests needing absent-key build the
+params alist directly."
   (org-mcp-test--assert-error-and-file
    test-file
    (let* ((params
