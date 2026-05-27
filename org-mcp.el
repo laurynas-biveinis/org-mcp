@@ -53,9 +53,22 @@
 
 (defun org-mcp--extract-uri-suffix (uri prefix)
   "Extract suffix from URI after PREFIX.
-Returns the suffix string if URI starts with PREFIX, nil otherwise."
+Returns the suffix string if URI starts with PREFIX and the suffix
+carries meaningful content (i.e. is not empty, whitespace-only, or
+NBSP-only) and does not itself contain another URI scheme separator
+`://', nil otherwise.  A bare prefix URI (e.g. `org-id://') or one
+whose suffix is only blank characters cannot identify a resource;
+a doubly-prefixed URI like `org-id://org-headline://foo' indicates
+a malformed input rather than an ID lookup.  Returning nil for
+both cases makes the dispatch helpers classify them as malformed
+URIs at the validation boundary instead of dispatching a
+no-meaningful-content lookup downstream.  NBSP (U+00A0) is matched
+explicitly because Emacs 27.2's `[[:space:]]' class excludes it."
   (when (string-prefix-p prefix uri)
-    (substring uri (length prefix))))
+    (let ((suffix (substring uri (length prefix))))
+      (unless (string-match-p "\\`[[:space:] ]*\\'" suffix)
+        (unless (string-match-p "://" suffix)
+          suffix)))))
 
 ;; Error handling helpers
 

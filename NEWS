@@ -60,6 +60,15 @@ org-mcp NEWS -- history of user-visible changes
     the allowed list'.  The resolved file path is intentionally not
     surfaced to avoid disclosing files outside `org-mcp-allowed-files'.
 
+*** Rejected malformed `org-id://' and `org-headline://' URIs at the dispatch boundary
+    A URI whose suffix after the prefix carries no meaningful content
+    (empty, whitespace-only, or NBSP-only) or itself contains another
+    URI scheme separator (e.g. `org-id://org-headline://foo') is now
+    rejected with `Invalid resource URI format' at the validation
+    boundary, instead of dispatching to a no-meaningful-content
+    lookup that surfaced as `Cannot find ID '<chars>'' or a
+    downstream file-access error.
+
 *** Rejected unterminated file-header drawer across modifying tools
     Every modifying MCP tool now rejects a file whose header block
     contains a `:NAME:' drawer opener with no matching `:END:'.

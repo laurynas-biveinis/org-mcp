@@ -2192,6 +2192,87 @@ and that following heading.  Locks in the fix to
    (file-name-nondirectory test-file)
    org-mcp-test--regex-child-end-no-blank-before-other-top))
 
+(defun org-mcp-test--assert-add-todo-error-message (parent-uri expected-substr)
+  "Call `org-add-todo' on an empty file and assert the tool error message.
+PARENT-URI is the parent_uri value to pass through the wire-protocol
+boundary.  EXPECTED-SUBSTR is a literal substring of the expected
+`mcp-server-lib-tool-error' message; matched via `regexp-quote'.
+Used to lock the validation-boundary error class for malformed URIs
+that previously surfaced as a misleading downstream error."
+  (org-mcp-test--with-temp-org-files
+      ((test-file ""))
+    (let* ((params
+            (org-mcp-test--build-add-todo-params
+             "Task" "TODO" nil nil parent-uri nil))
+           (request
+            (mcp-server-lib-create-tools-call-request
+             "org-add-todo" 1 params))
+           (response
+            (mcp-server-lib-process-jsonrpc-parsed
+             request mcp-server-lib-ert-server-id))
+           (err
+            (should-error
+             (mcp-server-lib-ert-process-tool-response response)
+             :type 'mcp-server-lib-tool-error)))
+      (should
+       (string-match-p
+        (regexp-quote expected-substr)
+        (error-message-string err))))))
+
+(ert-deftest org-mcp-test-add-todo-bare-org-id-parent-uri-rejected ()
+  "Bare `org-id://' parent_uri is rejected at the validation boundary.
+A bare prefix carries no UUID, so it cannot identify a parent.  This
+locks the error class as the URI-format validation error rather than
+the misleading downstream `Cannot find ID '\\='\\='' shape that a
+no-meaningful-content lookup would surface."
+  (org-mcp-test--assert-add-todo-error-message
+   "org-id://"
+   "Invalid resource URI format: org-id://"))
+
+(ert-deftest org-mcp-test-add-todo-bare-org-headline-parent-uri-rejected ()
+  "Bare `org-headline://' parent_uri is rejected at the validation boundary.
+A bare prefix carries no filename, so it cannot identify a parent.
+This locks the error class as the URI-format validation error rather
+than a downstream file-access error from passing an empty filename
+through `org-mcp--validate-file-access'."
+  (org-mcp-test--assert-add-todo-error-message
+   "org-headline://"
+   "Invalid resource URI format: org-headline://"))
+
+(ert-deftest org-mcp-test-add-todo-whitespace-org-id-parent-uri-rejected ()
+  "Whitespace-only `org-id://' parent_uri is rejected at the dispatch boundary.
+The suffix after the prefix carries no meaningful content -- semantically
+the same as a bare prefix -- so the dispatch boundary must classify it
+as a URI-format error, not let it fall through to a downstream
+`Cannot find ID '   '' shape with a wasted full-allowed-files scan."
+  (org-mcp-test--assert-add-todo-error-message
+   "org-id://   "
+   "Invalid resource URI format: org-id://   "))
+
+(ert-deftest org-mcp-test-add-todo-nbsp-org-headline-parent-uri-rejected ()
+  "NBSP-only `org-headline://' parent_uri is rejected at the dispatch boundary.
+NBSP (U+00A0) carries no meaningful content for a URI suffix.  Emacs
+27.2's `[[:space:]]' class does NOT match NBSP, so a `string-blank-p'
+check would let this slip through; the dispatch boundary must
+explicitly match NBSP so a no-meaningful-content suffix is rejected
+with the URI-format validation error regardless of which blank
+character was used."
+  (org-mcp-test--assert-add-todo-error-message
+   "org-headline:// "
+   "Invalid resource URI format: org-headline:// "))
+
+(ert-deftest org-mcp-test-add-todo-doubly-prefixed-parent-uri-rejected ()
+  "Doubly-prefixed `org-id://org-headline://...' parent_uri is rejected.
+A suffix that itself contains another URI scheme separator
+indicates a doubly-prefixed (pasted-twice) URI rather than an ID
+to resolve.  Without an explicit guard at `extract-uri-suffix'
+the inner scheme is treated as the ID and surfaces downstream as
+`Cannot find ID 'org-headline://foo'' -- misleading because the
+actual problem is the URI shape, not the ID."
+  (org-mcp-test--assert-add-todo-error-message
+   "org-id://org-headline://foo"
+   "Invalid resource URI format: org-id://org-headline://foo"))
+
 (ert-deftest org-mcp-test-add-todo-empty-after-uri-rejected ()
   "Test that adding a child TODO with empty `after_uri' is rejected.
 Empty string is distinct from absent/nil: absent appends as last
