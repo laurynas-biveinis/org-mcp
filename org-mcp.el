@@ -905,15 +905,17 @@ with no matching `:END:' or with a heading inside it, a
    (t
     nil)))
 
-(defun org-mcp--validate-file-header ()
-  "Walk the file's leading header block, signaling drawer errors.
+(defun org-mcp--validate-and-skip-file-header ()
+  "Validate the file's leading header block and return the position past it.
 Drives `org-mcp--skip-file-header-element' from `point-min' inside
 `save-excursion', so point and validation errors are decoupled from
 the caller's positioning concerns.  Intended to be called once per
 modifying tool invocation, before any insertion or navigation, so
-that file-header integrity is checked uniformly regardless of whether
-the call targets the top level or a parent heading.  Returns the
-buffer position immediately past the header block."
+that file-header integrity is checked uniformly regardless of
+whether the call targets the top level or a parent heading.  The
+returned position is the buffer offset immediately past the
+header block; callers that only care about the side-effect
+validation can ignore it."
   (save-excursion
     (goto-char (point-min))
     (while (org-mcp--skip-file-header-element))
@@ -1214,7 +1216,7 @@ MCP Parameters:
     (org-mcp--modify-and-save file-path "update"
                               `((previous_state . ,current_state)
                                 (new_state . ,new_state))
-      (org-mcp--validate-file-header)
+      (org-mcp--validate-and-skip-file-header)
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
 
@@ -1293,7 +1295,7 @@ MCP Parameters:
                                    ,(file-name-nondirectory
                                      file-path))
                                   (title . ,title))
-        (org-mcp--validate-file-header)
+        (org-mcp--validate-and-skip-file-header)
         (let ((parent-level
                (org-mcp--navigate-to-parent-or-top
                 parent-path parent-id)))
@@ -1429,7 +1431,7 @@ MCP Parameters:
     (org-mcp--modify-and-save file-path "rename"
                               `((previous_title . ,current_title)
                                 (new_title . ,new_title))
-      (org-mcp--validate-file-header)
+      (org-mcp--validate-and-skip-file-header)
       ;; Navigate to the headline
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
@@ -1489,7 +1491,7 @@ MCP Parameters:
                  (org-mcp--parse-resource-uri resource_uri)))
 
       (org-mcp--modify-and-save file-path "edit body" nil
-        (org-mcp--validate-file-header)
+        (org-mcp--validate-and-skip-file-header)
         (org-mcp--goto-headline-from-uri
          headline-path
          (string-prefix-p org-mcp--uri-id-prefix resource_uri))
