@@ -893,10 +893,8 @@ after `:END:'; the file ends with a trailing newline.")
            "Content added after properties\\.\n"
            "\\'")
           org-mcp-test--timestamp-id)
-  "Whole-file regex for `edit-body-empty-with-properties': new body
-added under a heading whose only metadata is its `:ID:' drawer.
-The drawer is preserved verbatim (no orphaned-ID cascade); the
-body is on its own line after `:END:'; the file ends with a
+  "Whole-file regex: heading with only `:ID:' drawer metadata; new
+body content on its own line after `:END:'; file ends with a
 trailing newline.")
 
 (defconst org-mcp-test--pattern-edit-body-empty-with-deeper-heading
@@ -934,11 +932,9 @@ as the URI.")
    "some text\n"
    "\\*\\*\\* Subheading content\n"
    "\\*\\* Third Child #3\n?\\'")
-  "Whole-file regex for edit-body accepting lower-level headlines.
-The body-internal `*** Subheading content' heading carries no
-`:ID:' drawer; `org-id-get-create' attaches `:ID:' to the edit
-target (`** Second Child', which already has one), not to the
-deeper body-internal heading.")
+  "Whole-file regex: `* Parent Task' (with `:ID:' drawer) plus
+`** Second Child' (also with `:ID:') whose body contains a
+deeper `*** Subheading content' carrying no `:ID:' drawer.")
 
 (defconst org-mcp-test--pattern-tool-read-headline-single
   (concat
@@ -3082,7 +3078,10 @@ out."
      nil)))
 
 (ert-deftest org-mcp-test-edit-body-empty-with-properties ()
-  "Test adding content to empty body with properties drawer."
+  "Test adding content to empty body with properties drawer.
+The pre-existing `:ID:' drawer is preserved verbatim across the
+edit -- no orphaned-ID cascade attaches a fresh `:ID:' to the
+inserted content."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-with-id-no-body
       `(,org-mcp-test--timestamp-id)
