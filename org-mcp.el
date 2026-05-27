@@ -719,6 +719,15 @@ Throws an MCP tool error if invalid headlines are found."
        "Body cannot contain headlines at level %d or shallower (fewer stars)"
        level))))
 
+(defconst org-mcp--block-name-regex "\\(\\S-+\\)"
+  "Capture group matching the name in an Org block opener or closer.
+Per Org's grammar a block name (the suffix in `#+BEGIN_NAME' /
+`#+END_NAME', or the name argument in `#+BEGIN: NAME PARAMS') may
+contain any non-whitespace characters: dots and colons are
+accepted by Org's parser.  Shared between the file-header walker
+and `org-mcp--validate-body-no-unbalanced-blocks' to keep the two
+sites' character classes from drifting apart.")
+
 (defun org-mcp--validate-body-no-unbalanced-blocks (body)
   "Validate that BODY doesn't contain unbalanced blocks.
 Uses a state machine: tracks if we're in a block, and which one.
@@ -734,10 +743,10 @@ Throws an MCP tool error if unbalanced blocks are found."
     (let ((case-fold-search t)
           (current-block nil)) ; Current block type or nil
       ;; Scan forward for all block markers
-      ;; Block names can be any non-whitespace chars
-      (while (re-search-forward "^#\\+\\(BEGIN\\|END\\)_\\(\\S-+\\)"
-                                nil
-                                t)
+      (while (re-search-forward (concat
+                                 "^#\\+\\(BEGIN\\|END\\)_"
+                                 org-mcp--block-name-regex)
+                                nil t)
         (let ((marker-type (upcase (match-string 1)))
               (block-type (upcase (match-string 2))))
           (cond
@@ -807,11 +816,54 @@ Caller preconditions, NOT re-checked here:
   element.
 
 Throws a validation error via `org-mcp--tool-validation-error'
-naming the actual keyword if a drawer opener has no matching
-`:END:'."
+on a malformed structural element in the file header: a drawer
+with no matching `:END:' or with a heading inside it, a
+`#+BEGIN_NAME' block with no matching `#+END_NAME', or a
+`#+BEGIN:' dynamic block with no matching `#+END:'."
   (cond
    ((eobp)
     nil)
+   ;; Block-pair branch must precede the generic `#'-prefix branch
+   ;; below: a `#+BEGIN_*' line is structurally an opener, not a
+   ;; standalone `#'-prefixed line, so consume the whole block
+   ;; through its matching `#+END_*' to keep drawer-looking and
+   ;; heading-looking lines in the block body from being re-parsed.
+   ;; Handles both block shapes Org accepts in the file header: a
+   ;; named block `#+BEGIN_NAME ... #+END_NAME' (NAME matches), and
+   ;; a dynamic block `#+BEGIN: NAME PARAMS ... #+END:' (closer is
+   ;; just `#+END:', name not echoed).  `match-string 1' is the
+   ;; named-block name; nil iff the opener is the colon form.
+   ((let ((case-fold-search t))
+      (looking-at
+       (concat
+        "^[ \t]*#\\+begin\\(?::\\|_"
+        org-mcp--block-name-regex
+        "\\)")))
+    (let* ((block-name (match-string 1))
+           (case-fold-search t)
+           (end-regex
+            (if block-name
+                (format "^[ \t]*#\\+end_%s[ \t]*$"
+                        (regexp-quote block-name))
+              "^[ \t]*#\\+end:[ \t]*$"))
+           (error-msg
+            (if block-name
+                (format "Unterminated #+BEGIN_%s block in file header"
+                        block-name)
+              "Unterminated #+BEGIN: dynamic block in file header")))
+      (forward-line)
+      (while (and (not (eobp)) (not (looking-at end-regex)))
+        (forward-line))
+      ;; Stricter than Org's parser (which degrades an unterminated
+      ;; block to a paragraph at parse time): an unterminated block
+      ;; in the file's header is much more likely a typo than
+      ;; intent, so error early -- matching the drawer-unterminated
+      ;; posture below and the project's general "reject malformed
+      ;; header structure at the validation boundary" stance.
+      (unless (looking-at end-regex)
+        (org-mcp--tool-validation-error "%s" error-msg))
+      (forward-line)
+      t))
    ;; Broader than Org's comment grammar (`^# ' / `^#$') by design.
    ;; Consume any `#'-prefixed line (with optional leading whitespace,
    ;; matching Org's parser), including `#hashtag' paragraphs Org
@@ -1700,7 +1752,9 @@ Validates the file's leading header block on every call; any
 `:NAME:' line at column 0 (with optional leading whitespace and
 any keyword) is treated as a drawer opener and must have a
 matching `:END:'.  An unterminated drawer, or a drawer containing
-a heading, is rejected as a validation error.
+a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
+opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
+block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1723,7 +1777,9 @@ Validates the file's leading header block on every call; any
 `:NAME:' line at column 0 (with optional leading whitespace and
 any keyword) is treated as a drawer opener and must have a
 matching `:END:'.  An unterminated drawer, or a drawer containing
-a heading, is rejected as a validation error.
+a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
+opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
+block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1752,7 +1808,9 @@ Validates the file's leading header block on every call; any
 `:NAME:' line at column 0 (with optional leading whitespace and
 any keyword) is treated as a drawer opener and must have a
 matching `:END:'.  An unterminated drawer, or a drawer containing
-a heading, is rejected as a validation error.
+a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
+opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
+block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1776,7 +1834,9 @@ Validates the file's leading header block on every call; any
 `:NAME:' line at column 0 (with optional leading whitespace and
 any keyword) is treated as a drawer opener and must have a
 matching `:END:'.  An unterminated drawer, or a drawer containing
-a heading, is rejected as a validation error.
+a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
+opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
+block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)

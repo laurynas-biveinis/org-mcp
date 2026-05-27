@@ -185,6 +185,46 @@ recognised by the file-header walker.")
   "File with a heading line trapped inside an unterminated
 `:PROPERTIES:' drawer in the header block.")
 
+(defconst org-mcp-test--content-leading-source-block-with-drawer-syntax
+  "#+BEGIN_SRC text
+:LOGBOOK:
+#+END_SRC
+* Real Heading
+"
+  "File with a leading `#+BEGIN_SRC' block whose body contains a
+`:LOGBOOK:'-looking line that is literal source content, not a
+real drawer.  Followed by a single top-level heading.")
+
+(defconst org-mcp-test--content-leading-source-block-unterminated
+  "#+BEGIN_SRC text
+some content
+* Real Heading
+"
+  "File with an unterminated `#+BEGIN_SRC' block at file head: no
+matching `#+END_SRC' before the first heading or end of buffer.")
+
+(defconst org-mcp-test--content-leading-dynamic-block-with-drawer-syntax
+  "#+BEGIN: clocktable :scope file
+:LOGBOOK:
+#+END:
+* Real Heading
+"
+  "File with a leading dynamic block (`#+BEGIN: ... #+END:'
+colon-terminated, no underscore) whose body contains a
+`:LOGBOOK:'-looking line that is literal block content, not a
+real drawer.  Followed by a single top-level heading.")
+
+(defconst org-mcp-test--content-leading-block-with-dotted-name
+  "#+BEGIN_my.block
+:LOGBOOK:
+#+END_my.block
+* Real Heading
+"
+  "File with a leading named block whose name (`my.block') contains
+a `.', which Org's parser accepts but a narrower `[-_[:alnum:]]'
+character class would reject.  Body contains a `:LOGBOOK:'-looking
+line that is literal block content, not a real drawer.")
+
 (defconst org-mcp-test--content-parent-child-then-other-top
   "* Parent Task
 Parent body.
@@ -401,6 +441,51 @@ into a file that already contains headings.")
   "Pattern asserting that a child appended at end of parent appears
 between `** Existing Child' and `* Other Top' with no blank line
 before `* Other Top'.")
+
+(defconst org-mcp-test--regex-child-after-leading-source-block
+  (concat
+   "\\`#\\+BEGIN_SRC text\n"
+   ":LOGBOOK:\n"
+   "#\\+END_SRC\n"
+   "\\* Real Heading\n"
+   "\\*\\* TODO New Child +.*:work:.*\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Pattern after adding a child under `Real Heading' in a file with
+a leading `#+BEGIN_SRC' block.  The source block (including its
+`:LOGBOOK:'-looking body line) is preserved verbatim; the new
+child lands as a level-2 heading under `Real Heading' with an
+auto-generated `:ID:' drawer on the new heading.")
+
+(defconst org-mcp-test--regex-child-after-leading-dynamic-block
+  (concat
+   "\\`#\\+BEGIN: clocktable :scope file\n"
+   ":LOGBOOK:\n"
+   "#\\+END:\n"
+   "\\* Real Heading\n"
+   "\\*\\* TODO New Child +.*:work:.*\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Pattern after adding a child under `Real Heading' in a file with
+a leading `#+BEGIN: clocktable' dynamic block.  The dynamic block
+(including its `:LOGBOOK:'-looking body line) is preserved
+verbatim; the new child lands as a level-2 heading under `Real
+Heading' with an auto-generated `:ID:' drawer on the new
+heading.")
+
+(defconst org-mcp-test--regex-child-after-leading-dotted-block
+  (concat
+   "\\`#\\+BEGIN_my\\.block\n"
+   ":LOGBOOK:\n"
+   "#\\+END_my\\.block\n"
+   "\\* Real Heading\n"
+   "\\*\\* TODO New Child +.*:work:.*\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Pattern after adding a child under `Real Heading' in a file with
+a leading `#+BEGIN_my.block' opener (block name containing `.').
+The block is preserved verbatim; the new child lands as a level-2
+heading under `Real Heading' with an auto-generated `:ID:' drawer.")
 
 (defconst org-mcp-test--regex-second-child-same-level
   (concat
@@ -2174,6 +2259,77 @@ already succeeded by the time the cache write is attempted."
    (format "org-headline://%s#Parent%%20Task" test-file)
    (file-name-nondirectory test-file)
    org-mcp-test--regex-child-under-parent))
+
+(ert-deftest org-mcp-test-add-todo-leading-source-block-with-drawer-syntax ()
+  "Walker treats `#+BEGIN_SRC' / `#+END_SRC' as a single bounded element.
+A `:LOGBOOK:'-looking line inside a leading source block is literal
+source content, not a real drawer.  Without block-pair awareness the
+walker enters the drawer branch on `:LOGBOOK:', fails to find
+`:END:' before `* Real Heading', and falsely errors with `Heading
+line inside :LOGBOOK: drawer in file header block'.  Locks the
+block-pair behavior by adding a child under `Real Heading' and
+verifying the source block is preserved verbatim."
+  (org-mcp-test--add-todo-and-check
+   org-mcp-test--content-leading-source-block-with-drawer-syntax
+   "New Child"
+   "TODO"
+   '("work")
+   nil ; no body
+   (format "org-headline://%s#Real%%20Heading" test-file)
+   (file-name-nondirectory test-file)
+   org-mcp-test--regex-child-after-leading-source-block))
+
+(ert-deftest org-mcp-test-add-todo-leading-source-block-unterminated ()
+  "Walker errors on an unterminated `#+BEGIN_*' block in the file header.
+A `#+BEGIN_SRC' opener with no matching `#+END_SRC' before end of
+buffer is malformed.  Locks symmetric error handling between
+unterminated drawers (already pinned) and unterminated blocks: the
+walker silently consumes everything to end-of-buffer without an
+error otherwise, so an unterminated block could swallow the rest of
+the file -- including legitimate headings -- before the walker
+terminated."
+  (org-mcp-test--call-add-todo-expecting-error
+   org-mcp-test--content-leading-source-block-unterminated
+   "New Task" "TODO" '("work") nil
+   (format "org-headline://%s#Real%%20Heading" test-file)))
+
+(ert-deftest org-mcp-test-add-todo-leading-dynamic-block-with-drawer-syntax ()
+  "Walker treats `#+BEGIN:' / `#+END:' dynamic blocks as bounded elements.
+Org has two block syntaxes: named blocks (`#+BEGIN_SRC' /
+`#+END_SRC') and dynamic blocks (`#+BEGIN: clocktable' / `#+END:',
+colon-terminated, name after `:' rather than after `_').  Both
+shapes can hold drawer-looking or heading-looking literal content
+in their bodies, so both must be recognised by the walker;
+otherwise a clocktable or columnview in the file header reopens
+the same `Heading line inside :NAME: drawer in file header
+block' false positive that the named-block handling closes."
+  (org-mcp-test--add-todo-and-check
+   org-mcp-test--content-leading-dynamic-block-with-drawer-syntax
+   "New Child"
+   "TODO"
+   '("work")
+   nil ; no body
+   (format "org-headline://%s#Real%%20Heading" test-file)
+   (file-name-nondirectory test-file)
+   org-mcp-test--regex-child-after-leading-dynamic-block))
+
+(ert-deftest org-mcp-test-add-todo-leading-block-with-dotted-name ()
+  "Walker recognises block names containing non-alphanumeric chars.
+Org's parser accepts any non-whitespace in block names (e.g.
+`#+BEGIN_my.block').  A narrower walker character class such as
+`[-_[:alnum:]]' would let such an opener fall through to the
+generic `#'-prefix branch and re-introduce the CR-004
+false-positive for exotic names.  Locks the alignment with the
+body-block validator's `\\\\S-+' convention."
+  (org-mcp-test--add-todo-and-check
+   org-mcp-test--content-leading-block-with-dotted-name
+   "New Child"
+   "TODO"
+   '("work")
+   nil ; no body
+   (format "org-headline://%s#Real%%20Heading" test-file)
+   (file-name-nondirectory test-file)
+   org-mcp-test--regex-child-after-leading-dotted-block))
 
 (ert-deftest org-mcp-test-add-todo-child-end-parent-followed-by-other ()
   "Test child insert avoids a spurious blank line before a following heading.
