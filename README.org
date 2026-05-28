@@ -86,6 +86,7 @@ Returns: JSON structure like:
   - =filename= is the absolute path (with # encoded as %23)
   - =path= is URL-encoded headline titles separated by =/=
   - Headlines containing # must be encoded as %23 in the path
+  - Trailing =/= on =filename= and empty =#= fragments are stripped (=FILE=, =FILE/=, =FILE#=, and =FILE/#= all resolve identically)
 - *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
 - *Returns:* Plain text content of the specified headline section including all subheadings
 - *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
@@ -143,6 +144,10 @@ Access via MCP:
 
 Note: All write tools will create Org IDs for any touched nodes that did not have
 them originally. The IDs will be returned in the tool response.
+
+Note: Full semantics for each tool live in its MCP =description= string,
+surfaced by clients via =tools/list=; the summaries below mirror those
+descriptions.
 
 *** org-get-todo-config
 - *Description:* Get TODO keyword configuration for understanding task states
@@ -288,8 +293,9 @@ Example:
   - =todo_state= (string, required): TODO state from =org-todo-keywords=
   - =tags= (string or array, required): Tags to add (e.g., "urgent" or ["work", "urgent"])
   - =body= (string, optional): Body text content to add under the heading
-  - =parent_uri= (string, required): URI of parent item. Use =org-headline://filename.org/= for top-level items in a file
-  - =after_uri= (string, optional): URI of sibling to insert after; omit to append as last child. See the MCP tool description for accepted formats and rejection rules.
+  - =parent_uri= (string, required): URI of parent item. Use =org-headline://filename.org/= for top-level items in a file (also accepted: =org-headline://filename.org=, =org-headline://filename.org#=, =org-headline://filename.org/#= — not recommended).
+  - =after_uri= (string, optional): URI of sibling to insert after; omit to append as last child. Cannot be combined with a top-level =parent_uri= or with =position=, and cannot reference =parent_uri= itself. See the MCP tool description for accepted formats.
+  - =position= (string, optional): Where to place the new item: ="start"= or ="end"= (default ="end"=). At top level, ="start"= inserts after leading =#=-prefixed lines and drawers, before the first existing heading. See the MCP tool description for full placement rules and the mutex with =after_uri=.
 - *Returns:* Object with success status, new item URI, file name, and title
 - *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 

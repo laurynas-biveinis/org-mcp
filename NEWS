@@ -2,6 +2,14 @@ org-mcp NEWS -- history of user-visible changes
 
 * Changes in org-mcp 0.10.0 (unreleased)
 
+** New Features
+
+*** Added `position' parameter to `org-add-todo'
+    Optional `position' ("start" or "end", default "end") selects
+    placement: first-child / last-child under a child `parent_uri',
+    or start-of-file / end-of-file under a top-level `parent_uri'.
+    Cannot be combined with `after_uri'.
+
 ** Bug Fixes
 
 *** Fixed `org-update-todo-state' failing on no-state heading with `current_state=""'
@@ -22,6 +30,25 @@ org-mcp NEWS -- history of user-visible changes
     onto the heading line (or onto the property drawer's `:END:').
     Now the content lands on its own line, and `org-edit-body'
     always leaves the file ending in a newline.
+
+*** Returned new-heading URI when `org-add-todo' `body' contains deeper headlines
+    `body' may contain headlines deeper than the new heading
+    (legitimate child structure), but the returned `org-id://' URI
+    previously pointed to the deepest such headline instead of the
+    newly added one.
+
+*** Rejected `after_uri' with a top-level `parent_uri' in `org-add-todo'
+    A top-level `parent_uri' (no fragment) combined with `after_uri'
+    is now rejected as a validation error.
+
+*** Rejected `after_uri' equal to `parent_uri' in `org-add-todo'
+    Passing an `after_uri' whose `:ID:' resolves to `parent_uri'
+    itself is now rejected as a validation error.
+
+*** Restricted `org-add-todo' `position="start"' top-level anchor to level-1 headings
+    The anchor previously matched any-level heading at column 0;
+    an orphan deeper heading before the first level-1 was silently
+    reparented under the new heading.
 
 *** Normalised redundant separators in `org-headline://' URIs
     `org-mcp--split-headline-uri' now collapses both an empty
