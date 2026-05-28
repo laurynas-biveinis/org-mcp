@@ -25,3 +25,12 @@ test-specific rationale ("why this test exists", "what regression this locks
 in", "what bug this catches") in the `ert-deftest` docstring instead.
 Fixtures are reusable; coupling them to one test's narrative rots when other
 tests reuse the same fixture.
+
+## Assertions
+
+Use `cl-assert` for provably-unreachable conditions — invariants the
+surrounding code has already guaranteed, where a failure is an honest
+unforeseen bug, not input validation firing. Do not replace such asserts with
+MCP tool-error helpers (e.g. `unless ... org-mcp--tool-validation-error`) over
+error-UX concerns: by construction the assert never fires under correct code,
+so its opaque error surface is irrelevant.
