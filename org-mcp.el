@@ -4,7 +4,7 @@
 
 ;; Author: Laurynas Biveinis <laurynas.biveinis@gmail.com>
 ;; Keywords: convenience, files, matching, outlines
-;; Version: 0.9.0
+;; Version: 0.10.0
 ;; Package-Requires: ((emacs "27.1") (mcp-server-lib "0.2.0"))
 ;; Homepage: https://github.com/laurynas-biveinis/org-mcp
 
@@ -51,11 +51,29 @@
 (defconst org-mcp--uri-id-prefix "org-id://"
   "URI prefix for ID-based resources.")
 
+(defun org-mcp--blank-or-nbsp-only-p (s)
+  "Return non-nil if S is empty or has only whitespace and NBSP chars.
+NBSP is matched explicitly because Emacs 27.2's `[[:space:]]'
+excludes U+00A0."
+  (string-match-p "\\`[[:space:]\u00A0]*\\'" s))
+
 (defun org-mcp--extract-uri-suffix (uri prefix)
   "Extract suffix from URI after PREFIX.
-Returns the suffix string if URI starts with PREFIX, nil otherwise."
+Returns the suffix string if URI starts with PREFIX and the suffix
+carries meaningful content (i.e. is not empty, whitespace-only, or
+NBSP-only) and does not itself contain another URI scheme separator
+`://', nil otherwise.  A bare prefix URI (e.g. `org-id://') or one
+whose suffix is only blank characters cannot identify a resource;
+a doubly-prefixed URI like `org-id://org-headline://foo' indicates
+a malformed input rather than an ID lookup.  Returning nil for
+both cases makes the dispatch helpers classify them as malformed
+URIs at the validation boundary instead of dispatching a
+no-meaningful-content lookup downstream."
   (when (string-prefix-p prefix uri)
-    (substring uri (length prefix))))
+    (let ((suffix (substring uri (length prefix))))
+      (unless (org-mcp--blank-or-nbsp-only-p suffix)
+        (unless (string-match-p "://" suffix)
+          suffix)))))
 
 ;; Error handling helpers
 
@@ -72,6 +90,22 @@ Returns the suffix string if URI starts with PREFIX, nil otherwise."
 (defun org-mcp--tool-validation-error (message &rest args)
   "Throw validation error MESSAGE with ARGS for tool operations."
   (mcp-server-lib-tool-throw (apply #'format message args)))
+
+(defun org-mcp--validate-string-field
+    (value field-name &optional allow-nil)
+  "Validate VALUE is a string and signal a tool error if not.
+FIELD-NAME is the wire-protocol parameter name embedded into the
+error message so the caller can pinpoint which input to fix.  When
+ALLOW-NIL is non-nil, nil VALUE is also accepted -- use this for
+optional parameters.  Strings are otherwise unconstrained here;
+emptiness, allowed-value, and format checks belong to caller-side
+validators that may assume VALUE is a string after this guard."
+  (unless (if allow-nil
+              (or (null value) (stringp value))
+            (stringp value))
+    (org-mcp--tool-validation-error
+     "Field %s must be a string, got: %S (type: %s)"
+     field-name value (type-of value))))
 
 (defun org-mcp--resource-validation-error (message &rest args)
   "Signal validation error MESSAGE with ARGS for resource operations."
@@ -95,20 +129,29 @@ IDENTIFIER is the resource identifier."
    mcp-server-lib-jsonrpc-error-invalid-params
    (format "%s not found: '%s'" resource-type identifier)))
 
-(defun org-mcp--tool-file-access-error (locator)
-  "Throw file access error for tool operations.
-LOCATOR is the resource identifier (file path or ID) that was
-denied access."
+(defun org-mcp--tool-id-disallowed-error (id)
+  "Throw tool error: ID resolves to a non-allowed file.
+The resolved file path is intentionally not included in the error
+message to avoid disclosing files the user excluded from
+`org-mcp-allowed-files'."
   (mcp-server-lib-tool-throw
-   (format "'%s': the referenced file not in allowed list" locator)))
+   (format "ID '%s' resolves to a file not in the allowed list" id)))
 
-(defun org-mcp--resource-file-access-error (locator)
-  "Signal file access error for resource operations.
-LOCATOR is the resource identifier (file path or ID) that was
-denied access."
+(defun org-mcp--resource-file-access-error (filename)
+  "Signal file access error for a filename-based resource request.
+FILENAME is the path that was rejected."
   (mcp-server-lib-resource-signal-error
    mcp-server-lib-jsonrpc-error-invalid-params
-   (format "'%s': the referenced file not in allowed list" locator)))
+   (format "'%s': the referenced file not in allowed list" filename)))
+
+(defun org-mcp--resource-id-disallowed-error (id)
+  "Signal resource error: ID resolves to a non-allowed file.
+The resolved file path is intentionally not included in the error
+message to avoid disclosing files the user excluded from
+`org-mcp-allowed-files'."
+  (mcp-server-lib-resource-signal-error
+   mcp-server-lib-jsonrpc-error-invalid-params
+   (format "ID '%s' resolves to a file not in the allowed list" id)))
 
 ;; Helpers
 
@@ -118,20 +161,18 @@ denied access."
     (insert-file-contents file-path)
     (buffer-string)))
 
-(defun org-mcp--paths-equal-p (path1 path2)
-  "Return t if PATH1 and PATH2 refer to the same file.
-Handles symlinks and path variations by normalizing both paths."
-  (string= (file-truename path1) (file-truename path2)))
-
 (defun org-mcp--find-allowed-file (filename)
   "Find FILENAME in `org-mcp-allowed-files'.
-Returns the expanded path if found, nil if not in the allowed list."
-  (when-let* ((found
-               (cl-find
-                (file-truename filename)
-                org-mcp-allowed-files
-                :test #'org-mcp--paths-equal-p)))
-    (expand-file-name found)))
+Returns the expanded path if found, nil if not in the allowed list.
+Compares truenames to handle symlinks and path variations."
+  (let ((target (file-truename filename)))
+    (when-let* ((found
+                 (cl-find
+                  target
+                  org-mcp-allowed-files
+                  :key #'file-truename
+                  :test #'string=)))
+      (expand-file-name found))))
 
 (defun org-mcp--refresh-file-buffers (file-path)
   "Refresh all buffers visiting FILE-PATH.
@@ -208,14 +249,34 @@ OPERATION is a string describing the operation for error messages."
 (defmacro org-mcp--modify-and-save
     (file-path operation response-alist &rest body)
   "Execute BODY to modify Org file at FILE-PATH, then save result.
-First validates that FILE-PATH has no unsaved changes (using
-OPERATION for error messages).  Then executes BODY in a temp buffer
-set up for the Org file.  After BODY executes, creates an Org ID if
-needed, saves the buffer, refreshes any visiting buffers, and
-returns the result of `org-mcp--complete-and-save' with FILE-PATH
-and RESPONSE-ALIST.
-BODY can access FILE-PATH, OPERATION, and RESPONSE-ALIST as
-variables."
+OPERATION is a string describing the operation for error messages.
+RESPONSE-ALIST is an alist of response fields appended to the JSON
+return value.
+
+Macro behaviour:
+- Validates FILE-PATH has no unsaved changes (errors via
+  `org-mcp--fail-if-modified' if so).
+- Sets up a temp buffer with FILE-PATH's contents in `org-mode',
+  with `set-visited-file-name' pointing at FILE-PATH and point at
+  `point-min'.
+- Executes BODY in that buffer.
+- After BODY returns, calls `org-mcp--complete-and-save' which
+  ensures the entry containing point has an Org ID (creating one
+  if needed), writes the buffer to FILE-PATH, refreshes any
+  visiting Emacs buffer, and returns JSON with the entry's
+  `org-id://' URI.
+
+BODY contract:
+- May access FILE-PATH, OPERATION, and RESPONSE-ALIST as
+  variables.
+- Must NOT call `org-mcp--complete-and-save' itself; the macro
+  appends it after BODY.  Calling it inside BODY would write the
+  file twice and return a stale JSON shape.
+- Must leave point at or within the entry whose `org-id://' URI
+  should be returned to the caller.
+- BODY's return value is discarded; the macro's return value is
+  the JSON from `org-mcp--complete-and-save'.
+- Errors signalled in BODY propagate up unmodified (no rollback)."
   (declare (indent 3) (debug (form form form body)))
   `(progn
      (org-mcp--fail-if-modified ,file-path ,operation)
@@ -227,28 +288,65 @@ variables."
        ,@body
        (org-mcp--complete-and-save ,file-path ,response-alist))))
 
+(defun org-mcp--lookup-id-file (id)
+  "Resolve Org ID to an allowed file path without signalling errors.
+Returns a cons (STATUS . FILE) where STATUS is one of:
+  `:found'      ID found and FILE is in `org-mcp-allowed-files'.
+  `:disallowed' ID found but the resolved file is not in the
+                allowed list.
+  `:missing'    ID not found in `org-id-locations' nor in any
+                allowed file.
+FILE is meaningful only for `:found' (the expanded path).  For
+`:disallowed' and `:missing' FILE is nil; the resolved-but-
+unauthorised path is intentionally not carried in the result so
+callers cannot inadvertently leak file locations outside
+`org-mcp-allowed-files' through error messages.
+
+First consults `org-id-find-id-file'; if that misses, falls back
+to scanning every entry in `org-mcp-allowed-files' for an `:ID:'
+property matching ID.  On a successful fallback the resolved
+\(id, file) pair is registered into `org-id-locations' so subsequent
+lookups for the same ID hit the DB at O(1) instead of re-scanning;
+this cache write is gated on `org-id-track-globally', so users who
+have explicitly opted out of global ID tracking do not get implicit
+DB mutations.  The cache write is performed best-effort -- any
+signal from `org-id-add-location' is swallowed so a write failure
+cannot poison a successful resolution.
+
+Callers translate the status into a tool error or a resource error
+of the appropriate shape."
+  (if-let* ((id-file (org-id-find-id-file id)))
+      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+          (cons :found allowed-file)
+        (cons :disallowed nil))
+    (if-let* ((file
+               (catch 'found
+                 (dolist (allowed-file org-mcp-allowed-files)
+                   (when (file-exists-p allowed-file)
+                     (org-mcp--with-org-file allowed-file
+                       (when (org-find-property "ID" id)
+                         (throw 'found
+                                (expand-file-name
+                                 allowed-file)))))))))
+        (progn
+          (when org-id-track-globally
+            (ignore-errors
+              (org-id-add-location id file)))
+          (cons :found file))
+      (cons :missing nil))))
+
 (defun org-mcp--find-allowed-file-with-id (id)
   "Find an allowed file containing the Org ID.
-First looks up in the org-id database, then validates the file is in
-the allowed list.
 Returns the expanded file path if found and allowed.
 Throws a tool error if ID exists but file is not allowed, or if ID
-is not found."
-  (if-let* ((id-file (org-id-find-id-file id)))
-      ;; ID found in database, check if file is allowed
-      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-          allowed-file
-        (org-mcp--tool-file-access-error id))
-    ;; ID not in database - might not exist or DB is stale
-    ;; Fall back to searching allowed files manually
-    (let ((found-file nil))
-      (dolist (allowed-file org-mcp-allowed-files)
-        (unless found-file
-          (when (file-exists-p allowed-file)
-            (org-mcp--with-org-file allowed-file
-              (when (org-find-property "ID" id)
-                (setq found-file (expand-file-name allowed-file)))))))
-      (or found-file (org-mcp--id-not-found-error id)))))
+is not found in the database or in any allowed file (see
+`org-mcp--lookup-id-file' for the shared resolution logic, which
+includes the fallback scan of `org-mcp-allowed-files')."
+  (pcase-let ((`(,status . ,file) (org-mcp--lookup-id-file id)))
+    (pcase status
+      (:found file)
+      (:disallowed (org-mcp--tool-id-disallowed-error id))
+      (:missing (org-mcp--id-not-found-error id)))))
 
 (defmacro org-mcp--with-uri-prefix-dispatch
     (uri headline-body id-body)
@@ -328,14 +426,36 @@ Specifically decodes %23 back to #."
   "Split PATH-AFTER-PROTOCOL into (file-path . headline-path).
 PATH-AFTER-PROTOCOL is the part after `org-headline://'.
 Returns (FILE . HEADLINE) where FILE is the decoded file path and
-HEADLINE is the part after the fragment separator.
-File paths with # characters should be encoded as %23."
-  (if-let* ((hash-pos (string-match "#" path-after-protocol)))
-      (cons
-       (org-mcp--decode-file-path
-        (substring path-after-protocol 0 hash-pos))
-       (substring path-after-protocol (1+ hash-pos)))
-    (cons (org-mcp--decode-file-path path-after-protocol) nil)))
+HEADLINE is the part after the fragment separator, or nil when the
+fragment is absent or empty.
+File paths with # characters should be encoded as %23.
+A single trailing `/' on the decoded file path is stripped
+regardless of whether a fragment is present, and an empty
+fragment collapses to a nil HEADLINE, so all of
+`org-headline://file.org', `org-headline://file.org/',
+`org-headline://file.org#', `org-headline://file.org/#',
+`org-headline://file.org#H' and `org-headline://file.org/#H'
+resolve to equivalent (FILE . HEADLINE) pairs."
+  (let* ((hash-pos (string-match "#" path-after-protocol))
+         (file-encoded
+          (if hash-pos
+              (substring path-after-protocol 0 hash-pos)
+            path-after-protocol))
+         (file-decoded (org-mcp--decode-file-path file-encoded))
+         ;; `> 1' leaves "/" alone — never collapse it to "".
+         (file
+          (if (and (> (length file-decoded) 1)
+                   (eq
+                    (aref file-decoded (1- (length file-decoded)))
+                    ?/))
+              (substring file-decoded 0 -1)
+            file-decoded))
+         (headline
+          (and hash-pos
+               (let ((fragment
+                      (substring path-after-protocol (1+ hash-pos))))
+                 (and (> (length fragment) 0) fragment)))))
+    (cons file headline)))
 
 (defun org-mcp--parse-resource-uri (uri)
   "Parse URI and return (file-path . headline-path).
@@ -360,6 +480,38 @@ Validates file access and returns expanded file path."
         (setq file-path (org-mcp--find-allowed-file-with-id id))
         (setq headline-path (list id))))
     (cons file-path headline-path)))
+
+(defun org-mcp--parse-parent-uri (parent-uri)
+  "Parse PARENT-URI into a (FILE-PATH PARENT-PATH PARENT-ID) list.
+PARENT-PATH and PARENT-ID are mutually exclusive: at most one is
+non-nil.  For `org-headline://' URIs, PARENT-PATH is a list of
+unhex-decoded path components, or nil if the fragment is empty
+or absent.  For `org-id://' URIs, PARENT-ID is the bare ID; an
+`org-id://' URI is interpreted by `org-mcp--tool-add-todo' as a
+child insert, so top-level insertion requires `org-headline://'
+with empty or absent fragment.
+Throws a validation error if PARENT-URI is malformed or if its
+file is not in the allowed list."
+  (let (file-path
+        parent-path
+        parent-id)
+    (org-mcp--with-uri-prefix-dispatch
+        parent-uri
+      ;; Handle org-headline:// URIs
+      (let* ((split-result (org-mcp--split-headline-uri headline))
+             (filename (car split-result))
+             (path-str (cdr split-result))
+             (allowed-file (org-mcp--validate-file-access filename)))
+        (setq file-path (expand-file-name allowed-file))
+        (when path-str
+          (setq parent-path
+                (mapcar
+                 #'url-unhex-string (split-string path-str "/")))))
+      ;; Handle org-id:// URIs
+      (progn
+        (setq file-path (org-mcp--find-allowed-file-with-id id))
+        (setq parent-id id)))
+    (list file-path parent-path parent-id)))
 
 (defun org-mcp--navigate-to-headline (headline-path)
   "Navigate to headline in HEADLINE-PATH.
@@ -401,7 +553,7 @@ Point should be at the headline."
   (let ((start (line-beginning-position)))
     (org-end-of-subtree t t)
     ;; Remove trailing newline if present
-    (when (and (> (point) start) (= (char-before) ?\n))
+    (when (and (> (point) start) (eq (char-before) ?\n))
       (backward-char))
     (buffer-substring-no-properties start (point))))
 
@@ -434,8 +586,12 @@ Returns the content string or nil if not found."
       (goto-char pos)
       (org-mcp--extract-headline-content))))
 
-(defun org-mcp--validate-todo-state (state)
-  "Validate STATE is a valid TODO keyword."
+(defun org-mcp--validate-todo-state (state field-name)
+  "Validate STATE is a valid TODO keyword.
+FIELD-NAME is the JSON wire-protocol name of the parameter being
+validated (e.g. `\"todo_state\"' or `\"new_state\"'); it is embedded
+into the validation error so the consumer can pinpoint which input
+to fix."
   (let ((valid-states
          (delete
           "|"
@@ -443,17 +599,18 @@ Returns the content string or nil if not found."
            (apply #'append (mapcar #'cdr org-todo-keywords))))))
     (unless (member state valid-states)
       (org-mcp--tool-validation-error
-       "Invalid TODO state: '%s' - valid states: %s"
-       state (mapconcat #'identity valid-states ", ")))))
+       "Field %s must be one of %s, got: '%s'"
+       field-name (mapconcat #'identity valid-states ", ") state))))
 
 (defun org-mcp--validate-and-normalize-tags (tags)
-  "Validate and normalize TAGS.
-TAGS can be a single tag string or list of tag strings.
-Returns normalized tag list.
+  "Validate TAGS and return a normalized list of tag strings.
+TAGS is the JSON-decoded `tags' value: nil, a string, or a vector
+\(see `org-mcp--normalize-tags-to-list').
 Validates:
 - Tag names follow Org rules (alphanumeric, underscore, at-sign)
-- Tags are in configured tag alist (if configured)
-- Tags don't violate mutual exclusivity groups
+- Tags are in `org-tag-alist' or `org-tag-persistent-alist'
+  (if either is configured)
+- Tags don't violate mutual exclusivity groups in either alist
 Signals error for invalid tags."
   (let ((tag-list (org-mcp--normalize-tags-to-list tags))
         (allowed-tags
@@ -542,11 +699,7 @@ Errors if multiple tags from same mutex group."
 (defun org-mcp--validate-headline-title (title)
   "Validate that TITLE is not empty or whitespace-only.
 Throws an MCP tool error if validation fails."
-  (when (or (string-empty-p title)
-            (string-match-p "^[[:space:]]*$" title)
-            ;; Explicitly match NBSP for Emacs 27.2 compatibility
-            ;; In Emacs 27.2, [[:space:]] doesn't match NBSP (U+00A0)
-            (string-match-p "^[\u00A0]*$" title))
+  (when (org-mcp--blank-or-nbsp-only-p title)
     (org-mcp--tool-validation-error
      "Headline title cannot be empty or contain only whitespace"))
   (when (string-match-p "[\n\r]" title)
@@ -554,17 +707,28 @@ Throws an MCP tool error if validation fails."
      "Headline title cannot contain newlines")))
 
 (defun org-mcp--validate-body-no-headlines (body level)
-  "Validate that BODY doesn't contain headlines at LEVEL or higher.
-LEVEL is the Org outline level (1 for *, 2 for **, etc).
+  "Validate that BODY doesn't contain headlines at LEVEL or shallower.
+LEVEL is the Org outline level (1 for *, 2 for **, etc); \"shallower\"
+means fewer stars (closer to root in the outline hierarchy).
 Throws an MCP tool error if invalid headlines are found."
-  ;; Build regex to match headlines at the current level or higher
+  ;; Build regex to match headlines at the current level or shallower
   ;; For level 3, this matches ^*, ^**, or ^***
-  ;; Matches asterisks + space/tab (headlines need content)
-  (let ((regex (format "^\\*\\{1,%d\\}[ \t]" level)))
+  ;; Literal space (not [ \t]): Org's heading grammar requires a
+  ;; space after the stars; `*\tfoo' is a paragraph, not a heading.
+  (let ((regex (format "^\\*\\{1,%d\\} " level)))
     (when (string-match regex body)
       (org-mcp--tool-validation-error
-       "Body cannot contain headlines at level %d or higher"
+       "Body cannot contain headlines at level %d or shallower (fewer stars)"
        level))))
+
+(defconst org-mcp--block-name-regex "\\(\\S-+\\)"
+  "Capture group matching the name in an Org block opener or closer.
+Per Org's grammar a block name (the suffix in `#+BEGIN_NAME' /
+`#+END_NAME', or the name argument in `#+BEGIN: NAME PARAMS') may
+contain any non-whitespace characters: dots and colons are
+accepted by Org's parser.  Shared between the file-header walker
+and `org-mcp--validate-body-no-unbalanced-blocks' to keep the two
+sites' character classes from drifting apart.")
 
 (defun org-mcp--validate-body-no-unbalanced-blocks (body)
   "Validate that BODY doesn't contain unbalanced blocks.
@@ -574,13 +738,17 @@ Throws an MCP tool error if unbalanced blocks are found."
   (with-temp-buffer
     (insert body)
     (goto-char (point-min))
-    (let
-        ((current-block nil)) ; Current block type or nil
+    ;; Org accepts block markers in any case (`#+BEGIN_SRC',
+    ;; `#+begin_src', `#+Begin_Src', ...).  Pin `case-fold-search' to
+    ;; `t' so the regex below catches all of them; the surrounding
+    ;; `upcase' calls canonicalize the captured marker.
+    (let ((case-fold-search t)
+          (current-block nil)) ; Current block type or nil
       ;; Scan forward for all block markers
-      ;; Block names can be any non-whitespace chars
-      (while (re-search-forward
-              "^#\\+\\(BEGIN\\|END\\|begin\\|end\\)_\\(\\S-+\\)"
-              nil t)
+      (while (re-search-forward (concat
+                                 "^#\\+\\(BEGIN\\|END\\)_"
+                                 org-mcp--block-name-regex)
+                                nil t)
         (let ((marker-type (upcase (match-string 1)))
               (block-type (upcase (match-string 2))))
           (cond
@@ -612,142 +780,324 @@ Throws an MCP tool error if unbalanced blocks are found."
          current-block)))))
 
 (defun org-mcp--normalize-tags-to-list (tags)
-  "Normalize TAGS parameter to a list format.
-TAGS can be:
-- nil or empty list -> returns nil
-- vector (JSON array) -> converts to list
-- string -> wraps in list
-- list -> returns as-is
-Throws error for invalid types."
+  "Normalize JSON-decoded TAGS parameter to a list of tag strings.
+The MCP wire layer feeds `tags' as one of:
+- nil (JSON `null' or absent field) -> returns nil
+- vector (JSON array)               -> converts to list
+- string (JSON string)              -> wraps in singleton list
+Throws error for any other type."
   (cond
    ((null tags)
-    nil) ; No tags (nil or empty list)
+    nil)
    ((vectorp tags)
-    (append tags nil)) ; Convert JSON array (vector) to list
-   ((listp tags)
-    tags) ; Already a list
+    (append tags nil))
    ((stringp tags)
-    (list tags)) ; Single tag string
+    (list tags))
    (t
     (org-mcp--tool-validation-error "Invalid tags format: %s" tags))))
 
-(defun org-mcp--navigate-to-parent-or-top (parent-path parent-id)
-  "Navigate to parent headline or top of file.
-PARENT-PATH is a list of headline titles (or nil for top-level).
-PARENT-ID is an ID string (or nil).
-Returns parent level (integer) if parent exists, nil for top-level.
-Assumes point is in an Org buffer."
-  (if (or parent-path parent-id)
-      (progn
-        (org-mcp--goto-headline-from-uri
-         (or (and parent-id (list parent-id)) parent-path) parent-id)
-        ;; Save parent level before moving point
-        ;; Ensure we're at the beginning of headline
-        (org-back-to-heading t)
-        (org-current-level))
-    ;; No parent specified - top level
-    ;; Skip past any header comments (#+TITLE, #+AUTHOR, etc.)
-    (while (and (not (eobp)) (looking-at "^#\\+"))
-      (forward-line))
-    ;; Position correctly: if blank line after headers,
-    ;; skip it; if headline immediately after, stay
-    (when (and (not (eobp)) (looking-at "^[ \t]*$"))
-      ;; On blank line after headers, skip
-      (while (and (not (eobp)) (looking-at "^[ \t]*$"))
-        (forward-line)))
-    nil))
+(defun org-mcp--skip-file-header-element ()
+  "Skip one syntactic element of the file's leading header block.
+Each call consumes at most one element starting at point and
+returns non-nil if it consumed anything, nil otherwise.  Intended
+to be driven by `(while (org-mcp--skip-file-header-element))' so
+the loop terminates naturally at the first non-header line.
 
-(defun org-mcp--position-for-new-child (after-uri parent-end)
-  "Position point for inserting a new child under current heading.
-AFTER-URI is an optional org-id:// URI of a sibling to insert after.
-PARENT-END is the end position of the parent's subtree.
-Assumes point is at parent heading.
-If AFTER-URI is non-nil, positions after that sibling.
-If nil, positions at end of parent's subtree.
-Throws validation error if AFTER-URI is invalid or sibling not found."
-  (if (and after-uri (not (string-empty-p after-uri)))
-      (progn
-        ;; Parse afterUri to get the ID
-        (let ((after-id
-               (org-mcp--extract-uri-suffix
-                after-uri org-mcp--uri-id-prefix))
-              (found nil))
-          (unless after-id
-            (org-mcp--tool-validation-error
-             "Field after_uri is not %s: %s"
-             org-mcp--uri-id-prefix after-uri))
-          ;; Find the sibling with the specified ID
-          (org-back-to-heading t) ;; At parent
-          ;; Search sibling in parent's subtree
-          ;; Move to first child
-          (if (org-goto-first-child)
-              (progn
-                ;; Now search among siblings
-                (while (and (not found) (< (point) parent-end))
-                  (let ((current-id (org-entry-get nil "ID")))
-                    (when (string= current-id after-id)
-                      (setq found t)
-                      ;; Move to sibling end
-                      (org-end-of-subtree t t)))
-                  (unless found
-                    ;; Move to next sibling
-                    (unless (org-get-next-sibling)
-                      ;; No more siblings
-                      (goto-char parent-end)))))
-            ;; No children
-            (goto-char parent-end))
-          (unless found
-            (org-mcp--tool-validation-error
-             "Sibling with ID %s not found under parent"
-             after-id))))
-    ;; No after_uri - insert at end of parent's subtree
-    (org-end-of-subtree t t)
-    ;; If we're at the start of a sibling, go back one char
-    ;; to be at the end of parent's content
-    (when (looking-at "^\\*+ ")
-      (backward-char 1))))
+For the user-facing contract -- what counts as a header element,
+the leading-whitespace policy, why drawer keywords are uniformly
+consumed, why headings still require column 0 -- see the
+`:description' string registered for `org-mcp--tool-add-todo' in
+`org-mcp-enable' below.  This doc string covers the internal
+function contract only.
 
-(defun org-mcp--ensure-newline ()
-  "Ensure there is a newline or buffer start before point."
-  (unless (or (bobp) (looking-back "\n" 1))
+Caller preconditions, NOT re-checked here:
+- Point is at the beginning of a line.  The leading `^' in each
+  regex makes a match impossible unless point is at a line
+  beginning, so a mid-line call falls through to the nil branch
+  rather than mis-reading the rest of the line as a header
+  element.
+
+Throws a validation error via `org-mcp--tool-validation-error'
+on a malformed structural element in the file header: a drawer
+with no matching `:END:' or with a heading inside it, a
+`#+BEGIN_NAME' block with no matching `#+END_NAME', or a
+`#+BEGIN:' dynamic block with no matching `#+END:'."
+  (cond
+   ((eobp)
+    nil)
+   ;; Block-pair branch must precede the generic `#'-prefix branch
+   ;; below: a `#+BEGIN_*' line is structurally an opener, not a
+   ;; standalone `#'-prefixed line, so consume the whole block
+   ;; through its matching `#+END_*' to keep drawer-looking and
+   ;; heading-looking lines in the block body from being re-parsed.
+   ;; Handles both block shapes Org accepts in the file header: a
+   ;; named block `#+BEGIN_NAME ... #+END_NAME' (NAME matches), and
+   ;; a dynamic block `#+BEGIN: NAME PARAMS ... #+END:' (closer is
+   ;; just `#+END:', name not echoed).  `match-string 1' is the
+   ;; named-block name; nil iff the opener is the colon form.
+   ((let ((case-fold-search t))
+      (looking-at
+       (concat
+        "^[ \t]*#\\+begin\\(?::\\|_"
+        org-mcp--block-name-regex
+        "\\)")))
+    (let* ((block-name (match-string 1))
+           (case-fold-search t)
+           (end-regex
+            (if block-name
+                (format "^[ \t]*#\\+end_%s[ \t]*$"
+                        (regexp-quote block-name))
+              "^[ \t]*#\\+end:[ \t]*$"))
+           (error-msg
+            (if block-name
+                (format "Unterminated #+BEGIN_%s block in file header"
+                        block-name)
+              "Unterminated #+BEGIN: dynamic block in file header")))
+      (forward-line)
+      (while (and (not (eobp)) (not (looking-at end-regex)))
+        (forward-line))
+      ;; Stricter than Org's parser (which degrades an unterminated
+      ;; block to a paragraph at parse time): an unterminated block
+      ;; in the file's header is much more likely a typo than
+      ;; intent, so error early -- matching the drawer-unterminated
+      ;; posture below and the project's general "reject malformed
+      ;; header structure at the validation boundary" stance.
+      (unless (looking-at end-regex)
+        (org-mcp--tool-validation-error "%s" error-msg))
+      (forward-line)
+      t))
+   ;; Broader than Org's comment grammar (`^# ' / `^#$') by design.
+   ;; Consume any `#'-prefixed line (with optional leading whitespace,
+   ;; matching Org's parser), including `#hashtag' paragraphs Org
+   ;; parses as `paragraph' rather than `comment'.  Stopping here
+   ;; would insert the new heading before such a line and silently
+   ;; make it the new heading's section body -- the same rebinding
+   ;; class the drawer branch exists to prevent.
+   ((looking-at "^[ \t]*#")
+    (forward-line)
+    t)
+   ((looking-at "^[ \t]*$")
+    (forward-line)
+    t)
+   ((and (looking-at "^[ \t]*:\\([-_[:alnum:]]+\\):[ \t]*$")
+         ;; A bare `:END:' with no preceding opener is not a drawer
+         ;; opener -- fall through to ordinary content so the header
+         ;; terminates before it.
+         (not (string= (upcase (match-string 1)) "END")))
+    (let ((drawer-name (match-string 1))
+          ;; Match `:END:' case-insensitively to mirror Org's parser
+          ;; (which accepts `:end:', `:End:', etc.).  Pinned here --
+          ;; only the `:END:' checks below depend on case folding;
+          ;; the opener regex above uses `[:alnum:]' and is case-safe
+          ;; regardless.
+          (case-fold-search t))
+      (forward-line)
+      (while (and (not (eobp))
+                  (not (looking-at "^[ \t]*:END:[ \t]*$"))
+                  (not (looking-at "^\\*+ ")))
+        (forward-line))
+      (unless (looking-at "^[ \t]*:END:[ \t]*$")
+        (org-mcp--tool-validation-error
+         (if (looking-at "^\\*+ ")
+             (concat
+              "Heading line inside :%s: drawer in file"
+              " header block; drawers cannot contain"
+              " headings")
+           "Unterminated :%s: drawer in file header block")
+         drawer-name))
+      (forward-line)
+      t))
+   (t
+    nil)))
+
+(defun org-mcp--validate-and-skip-file-header ()
+  "Validate the file's leading header block and return the position past it.
+Drives `org-mcp--skip-file-header-element' from `point-min' inside
+`save-excursion', so point and validation errors are decoupled from
+the caller's positioning concerns.  Intended to be called once per
+modifying tool invocation, before any insertion or navigation, so
+that file-header integrity is checked uniformly regardless of
+whether the call targets the top level or a parent heading.  The
+returned position is the buffer offset immediately past the
+header block; callers that only care about the side-effect
+validation can ignore it."
+  (save-excursion
+    (goto-char (point-min))
+    (while (org-mcp--skip-file-header-element))
+    (point)))
+
+(defun org-mcp--navigate-to-parent (parent-path parent-id)
+  "Navigate point to a parent headline and return its level.
+PARENT-PATH is a list of headline titles, or PARENT-ID is an ID
+string identifying the parent.  Returns the parent's heading level
+as an integer.  Top-level inserts are handled by the caller
+directly using the position returned by
+`org-mcp--validate-and-skip-file-header'.
+
+Caller preconditions, NOT re-checked here:
+- Exactly one of PARENT-PATH or PARENT-ID is non-nil; this function
+  is only called when the caller has already decided the insertion
+  targets a child of an existing heading."
+  (org-mcp--goto-headline-from-uri
+   (or (and parent-id (list parent-id)) parent-path) parent-id)
+  (org-back-to-heading t)
+  (cl-assert
+   (or (null parent-id) (string= (org-entry-get nil "ID") parent-id)))
+  (org-current-level))
+
+;; The two `org-mcp--position-*' helpers below are positioners, not
+;; inserters: callers must run `org-mcp--ensure-line-start' before
+;; inserting a column-0 token, since each helper may leave point
+;; mid-line at `point-max' when the file lacks a trailing newline.
+
+(defun org-mcp--position-after-sibling (after-id)
+  "Position point at end of the AFTER-ID child of current heading.
+Scans the parent's children for one whose `:ID:' equals AFTER-ID and
+lands point at the end of that sibling's subtree, ready for insertion
+immediately after it.
+
+Caller preconditions, NOT re-checked here:
+- Point is at parent heading.
+- AFTER-ID is a non-nil bare UUID, already extracted from the
+  originating `org-id://{uuid}' URI by `org-mcp--validate-after-uri'
+  at the tool boundary.
+
+Throws a validation error if AFTER-ID matches the parent's own
+`:ID:', or if no child carries AFTER-ID.  The parent-self check
+lives here rather than at the tool boundary so the
+`org-headline://' parent case is covered alongside the
+`org-id://' one.  If the parent has no `:ID:', no `org-id://'
+`after_uri' can collide with it; the `when-let*' short-circuit
+skips the parent-self check on that branch.
+
+Post-condition on point: point lands at column 0 of the next heading
+or at `point-max' (mid-line when the file lacks a trailing newline);
+the caller normalizes this via `org-mcp--ensure-line-start'."
+  ;; When the parent has no `:ID:', `parent-id' is nil;
+  ;; short-circuiting here avoids the `(string= nil after-id)' = t
+  ;; coercion that fires when `after-id' is the literal string "nil".
+  (when-let* ((parent-id (org-entry-get nil "ID"))
+              ((string= parent-id after-id)))
+    (org-mcp--tool-validation-error
+     "Field after_uri %s%s refers to parent_uri itself, not a sibling"
+     org-mcp--uri-id-prefix after-id))
+  (let ((sibling-pos nil))
+    (save-excursion
+      (let ((more (org-goto-first-child)))
+        (while (and more (not sibling-pos))
+          (let ((sibling-id (org-entry-get nil "ID")))
+            (if (and sibling-id (string= sibling-id after-id))
+                (setq sibling-pos (point))
+              (setq more (org-get-next-sibling)))))))
+    (unless sibling-pos
+      (org-mcp--tool-validation-error
+       "Sibling with ID %s not found under parent"
+       after-id))
+    (goto-char sibling-pos)
+    (org-end-of-subtree t t)))
+
+(defun org-mcp--position-for-new-child (position)
+  "Position point for a new child of current heading per POSITION.
+POSITION is the symbol `start' to insert before the parent's first
+existing child \(falling back to end-of-subtree when the parent has
+no children), or `end' for end-of-subtree placement.
+
+Caller preconditions, NOT re-checked here:
+- Point is at parent heading.
+
+Post-condition on point:
+- POSITION is `start' and the parent has at least one child: point
+  lies on the first child's heading line (column 0).
+- POSITION is `start' with no children, or POSITION is `end': point
+  lies at parent-end -- column 0 of the next heading, or at
+  `point-max' (mid-line when the file lacks a trailing newline).
+
+The caller normalizes the mid-line case via
+`org-mcp--ensure-line-start'."
+  (unless (and (eq position 'start) (org-goto-first-child))
+    (org-end-of-subtree t t)))
+
+(defun org-mcp--ensure-line-start ()
+  "Ensure point is at the start of a line.
+Inserts a newline before point if needed.  Beginning-of-buffer
+counts as a line start, so no insertion is needed there."
+  (unless (or (bobp) (eq (char-before) ?\n))
     (insert "\n")))
 
-(defun org-mcp--insert-heading (title parent-level)
-  "Insert a new Org heading at the appropriate level.
-TITLE is the headline text to insert.
-PARENT-LEVEL is the parent's heading level (integer) if inserting
-as a child, or nil if inserting at top-level.
-Assumes point is positioned where the heading should be inserted.
-After insertion, point is left on the heading line at end-of-line."
-  (if parent-level
-      ;; We're inside a parent
-      (progn
-        (org-mcp--ensure-newline)
-        ;; Insert heading manually at parent level + 1
-        ;; We don't use `org-insert-heading' because when parent has
-        ;; no children, it creates a sibling of the parent instead of
-        ;; a child
-        (let ((heading-start (point)))
-          (insert (make-string (1+ parent-level) ?*) " " title "\n")
-          ;; Set point to heading for `org-todo' and `org-set-tags'
-          (goto-char heading-start)
-          (end-of-line)))
-    ;; Top-level heading
-    ;; Check if there are no headlines yet (empty buffer or only
-    ;; headers before us)
-    (let ((has-headline
+(defun org-mcp--insert-heading-line (level title)
+  "Insert heading with LEVEL stars and TITLE at point.
+Inserts with a trailing newline so following content starts on its
+own line; leaves point at end-of-line of the new heading so the
+caller can apply `org-todo' and `org-set-tags'.
+
+Uses manual `(insert ...)' to bypass `org-insert-heading's
+context-dependent adjustments at column-0 points (sibling-vs-
+child resolution; leading-separator insertion that creates a
+blank line).
+
+Safe to call at `point-max'; the trailing `\\n' becomes the file's
+final newline."
+  (org-mcp--ensure-line-start)
+  (let ((heading-start (point)))
+    (insert (make-string level ?*) " " title "\n")
+    (goto-char heading-start)
+    (end-of-line)))
+
+(defun org-mcp--insert-top-level-heading (title position header-end)
+  "Insert TITLE as a new top-level heading at POSITION.
+POSITION is `start' to insert before any existing top-level heading,
+or `end' to append at end of buffer.  HEADER-END is the buffer
+position past the file header block, as returned by
+`org-mcp--validate-and-skip-file-header', and anchors the heading search
+start past it so `^\\*' patterns inside the header block do not
+match.
+When the buffer past the header block contains no top-level heading
+\(empty file, header-only, or only zeroth-section content like a
+plain paragraph), `start' and `end' coincide at `point-max', so any
+zeroth-section content stays above the new heading rather than being
+absorbed into its section body.  After insertion, point is left at
+end-of-line of the new heading so the caller can apply `org-todo'
+and `org-set-tags'.
+
+Manual `(insert ...)' throughout, not `org-insert-heading' -- see
+`org-mcp--insert-heading-line' for the rationale."
+  (let ((first-heading-pos
+         (when (eq position 'start)
            (save-excursion
-             (goto-char (point-min))
-             (re-search-forward "^\\*+ " nil t))))
-      (if (not has-headline)
-          (progn
-            (org-mcp--ensure-newline)
-            (insert "* "))
-        ;; Has headlines - use `org-insert-heading'
-        ;; Ensure proper spacing before inserting
-        (org-mcp--ensure-newline)
-        (org-insert-heading nil nil t))
-      (insert title))))
+             (goto-char header-end)
+             (and (re-search-forward "^\\* " nil t)
+                  (match-beginning 0))))))
+    (goto-char (or first-heading-pos (point-max)))
+    (if first-heading-pos
+        (org-mcp--insert-heading-line 1 title)
+      (org-mcp--ensure-line-start)
+      ;; Manual insert (no trailing `\n').  Routing through
+      ;; `insert-heading-line' would defer EOF normalisation to
+      ;; the body-insertion block; manual keeps the EOF case local.
+      (insert "* " title))))
+
+(defun org-mcp--insert-body-after-heading (body)
+  "Insert BODY after the heading line at point.
+Moves to end-of-line, inserts `\\n' + BODY (adding a trailing
+`\\n' if BODY doesn't already end with one), and drops the
+heading's baked trailing `\\n' iff it was the buffer's last char
+so EOF ends up with exactly one trailing newline; mid-file
+placements keep the baked `\\n' as the blank-line separator
+before the next heading.  Computing the EOF predicate up front
+keeps the trim independent of any later code that might shift
+`point-max'.
+
+Caller preconditions, NOT re-checked here:
+- Point is on the heading line whose section is being extended.
+- BODY is a non-nil string."
+  (end-of-line)
+  (let ((heading-newline-at-eof
+         (and (eq (char-after) ?\n) (= (1+ (point)) (point-max)))))
+    (insert "\n" body)
+    (unless (string-suffix-p "\n" body)
+      (insert "\n"))
+    (when heading-newline-at-eof
+      (delete-char 1))))
 
 (defun org-mcp--replace-body-content
     (old-body new-body body-content replace-all body-begin body-end)
@@ -760,33 +1110,50 @@ BODY-BEGIN is the buffer position where body starts.
 BODY-END is the buffer position where body ends."
   (let ((new-body-content
          (cond
-          ;; Special case: empty oldBody with empty body
+          ;; Special case: empty old_body with empty body
           ((and (string= old-body "")
                 (string-match-p "\\`[[:space:]]*\\'" body-content))
            new-body)
-          ;; Normal replacement with replaceAll
-          (replace-all
-           (replace-regexp-in-string
-            (regexp-quote old-body) new-body body-content
-            t t))
-          ;; Normal single replacement
+          ;; Normal replacement.  Pin `case-fold-search' to nil so the
+          ;; search agrees with the occurrence counter in the caller
+          ;; (which already pins it to nil).
           (t
-           (let ((pos
-                  (string-match
-                   (regexp-quote old-body) body-content)))
-             (if pos
+           (let ((case-fold-search nil))
+             (if replace-all
+                 (replace-regexp-in-string
+                  (regexp-quote old-body) new-body body-content
+                  t t)
+               ;; The caller has already verified `old-body' occurs at
+               ;; least once under the same `case-fold-search' regime,
+               ;; so `string-match' is guaranteed to find a hit.
+               (let ((pos
+                      (string-match
+                       (regexp-quote old-body) body-content)))
+                 (cl-assert pos)
                  (concat
-                  (substring body-content 0 pos)
-                  new-body
-                  (substring body-content (+ pos (length old-body))))
-               body-content))))))
+                  (substring body-content 0 pos) new-body
+                  (substring body-content
+                             (+ pos (length old-body)))))))))))
 
     ;; Replace the body content
     (if (< body-begin body-end)
         (delete-region body-begin body-end)
       ;; Empty body - ensure we're at the right position
       (goto-char body-begin))
-    (insert new-body-content)))
+    ;; Guard against EOF-mid-line insertion: when the empty-body
+    ;; branch's body-begin is at point-max of a file lacking a
+    ;; trailing newline, point sits right after the heading's last
+    ;; char (or after the property drawer's `:END:'), and the bare
+    ;; `(insert ...)' would concatenate the new body onto that line.
+    (org-mcp--ensure-line-start)
+    (insert new-body-content)
+    ;; Final-newline guarantee: leave the inserted body terminated
+    ;; with `\n' so the file ends cleanly even when `new-body' does
+    ;; not.  Skip when the next char is already `\n' to avoid
+    ;; doubling up before a following heading.
+    (unless (or (string-suffix-p "\n" new-body-content)
+                (eq (char-after) ?\n))
+      (insert "\n"))))
 
 ;; Tool handlers
 
@@ -846,37 +1213,143 @@ CURRENT_STATE is the current TODO state (empty string for no state).
 NEW_STATE is the new TODO state to set.
 
 MCP Parameters:
-  uri - URI of the headline
+  uri - URI of the headline to update
         Formats:
-          - org-headline://{absolute-path}#{headline-path}
-          - org-id://{id}
-  current_state - Current TODO state (empty string for no state)
-  new_state - New TODO state (must be in `org-todo-keywords')"
-  (let* ((parsed (org-mcp--parse-resource-uri uri))
-         (file-path (car parsed))
-         (headline-path (cdr parsed)))
-    (org-mcp--validate-todo-state new_state)
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
+  current_state - Expected current TODO state
+                  Use empty string \"\" if headline has no TODO state
+                  Must match actual state or tool will error
+  new_state - New TODO state to set
+              Must be a valid keyword from `org-todo-keywords'"
+  (org-mcp--validate-string-field uri "uri")
+  (org-mcp--validate-string-field current_state "current_state")
+  (org-mcp--validate-string-field new_state "new_state")
+  (pcase-let ((`(,file-path . ,headline-path)
+               (org-mcp--parse-resource-uri uri)))
+    (org-mcp--validate-todo-state new_state "new_state")
     (org-mcp--modify-and-save file-path "update"
-                              `((previous_state
-                                 .
-                                 ,(or current_state ""))
+                              `((previous_state . ,current_state)
                                 (new_state . ,new_state))
+      (org-mcp--validate-and-skip-file-header)
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
 
-      ;; Check current state matches
+      ;; Treat "" and nil as the same "no TODO state":
+      ;; `org-get-todo-state' returns nil; the wire protocol uses "".
       (beginning-of-line)
-      (let ((actual-state (org-get-todo-state)))
-        (unless (string= actual-state current_state)
+      (let ((actual-state (org-get-todo-state))
+            (expected-state
+             (and (not (string-empty-p current_state))
+                  current_state)))
+        (unless (equal actual-state expected-state)
           (org-mcp--state-mismatch-error
-           (or current_state "(no state)")
+           (if (string-empty-p current_state)
+               "(no state)"
+             current_state)
            (or actual-state "(no state)") "State")))
 
       ;; Update the state
       (org-todo new_state))))
 
+(defun org-mcp--validate-after-uri (after-uri)
+  "Validate AFTER-URI at the tool boundary, returning the parsed ID.
+Returns the bare UUID extracted from a well-formed `org-id://{uuid}'
+URI, or nil if AFTER-URI is nil.
+
+Signals a validation error if AFTER-URI is the empty string or
+contains only whitespace: clients that do not want to specify a
+sibling must omit the JSON key entirely rather than pass `\"\"'
+or any string with no meaningful content.
+
+Signals a validation error if AFTER-URI is non-empty but not in the
+`org-id://' form -- the only sibling reference scheme accepted by
+the placement walker.  This also covers the bare prefix
+`org-id://' with no UUID after it, and `org-id://' followed by a
+whitespace-only UUID: both would otherwise extract to a
+no-meaningful-content UUID and surface downstream as the misleading
+`Sibling with ID  not found under parent'.
+
+Caller preconditions, NOT re-checked here:
+- AFTER-URI has already been passed through
+  `org-mcp--validate-string-field' at the tool boundary, so its
+  only legal values here are nil or a string."
+  (when after-uri
+    (when (org-mcp--blank-or-nbsp-only-p after-uri)
+      (org-mcp--tool-validation-error
+       "Field after_uri must not be empty or whitespace-only"))
+    (let ((id
+           (org-mcp--extract-uri-suffix
+            after-uri org-mcp--uri-id-prefix)))
+      (when (or (null id) (org-mcp--blank-or-nbsp-only-p id))
+        (org-mcp--tool-validation-error
+         "Field after_uri is not %s: %s"
+         org-mcp--uri-id-prefix after-uri))
+      id)))
+
+(defun org-mcp--validate-position (position)
+  "Validate POSITION and return it as a symbol.
+A nil POSITION normalises to `end' (the default placement); the
+strings \"start\" and \"end\" return the matching symbol.  Any
+other value signals a validation error.
+
+This validator does NOT check the mutex with `after_uri';
+see `org-mcp--check-position-after-uri-mutex' for that.
+
+Caller preconditions, NOT re-checked here:
+- POSITION has already been passed through
+  `org-mcp--validate-string-field' at the tool boundary, so its
+  only legal values here are nil or a string."
+  (cond
+   ((null position)
+    'end)
+   ((string= position "start")
+    'start)
+   ((string= position "end")
+    'end)
+   (t
+    (org-mcp--tool-validation-error
+     "Field position must be one of \"start\", \"end\", got: \"%s\""
+     position))))
+
+(defun org-mcp--check-position-after-uri-mutex (position after-id)
+  "Signal a validation error if POSITION and AFTER-ID are both supplied.
+A string POSITION (one that survived
+`org-mcp--validate-string-field') counts as supplied; a nil
+POSITION (either an absent key or a wire-level JSON `null', both
+indistinguishable at this layer) is treated as not supplied and
+never trips the mutex.  AFTER-ID is the id extracted from
+`after_uri' by `org-mcp--validate-after-uri'.
+
+Caller preconditions, NOT re-checked here:
+- POSITION has already been passed through
+  `org-mcp--validate-string-field' at the tool boundary, so its
+  only legal values here are nil or a string."
+  (when (and (stringp position) after-id)
+    (org-mcp--tool-validation-error
+     "Fields position and after_uri are mutually exclusive")))
+
+(defun org-mcp--check-after-uri-not-top-level
+    (after-id parent-path parent-id)
+  "Signal a validation error if AFTER-ID names a sibling at top level.
+AFTER-ID is the id extracted from `after_uri' by
+`org-mcp--validate-after-uri'.  PARENT-PATH and PARENT-ID come from
+`org-mcp--parse-parent-uri'; both nil denotes a top-level insert.
+A top-level insert has no sibling-reference slot in the placement
+contract, so the combination is rejected at the tool boundary
+instead of silently falling through to end-of-file.
+
+Callers must run this AFTER `org-mcp--parse-parent-uri', which
+supplies the parsed parent shape."
+  (when (and after-id (not (or parent-path parent-id)))
+    (org-mcp--tool-validation-error
+     (concat
+      "Field after_uri must not be combined with a top-level "
+      "parent_uri (no fragment)"))))
+
 (defun org-mcp--tool-add-todo
-    (title todo_state tags body parent_uri &optional after_uri)
+    (title
+     todo_state tags body parent_uri &optional after_uri position)
   "Add a new TODO item to an Org file.
 Creates an Org ID for the new headline and returns its ID-based URI.
 TITLE is the headline text.
@@ -885,99 +1358,129 @@ TAGS is a single tag string or list of tag strings.
 BODY is optional body text.
 PARENT_URI is the URI of the parent item.
 AFTER_URI is optional URI of sibling to insert after.
+POSITION is optional placement: \"start\" or \"end\".
+Defaults to \"end\".
 
 MCP Parameters:
-  title - The headline text
+  title - Headline text without TODO state or tags
+          Cannot be empty or whitespace-only
+          Cannot contain newlines
   todo_state - TODO state from `org-todo-keywords'
   tags - Tags to add (single string or array of strings)
+         Single tag: \"urgent\"; multiple tags: [\"work\", \"urgent\"]
+         Validated against `org-tag-alist' if configured
+         Must follow Org tag rules (alphanumeric, _, @)
+         Respects mutually exclusive tag groups
   body - Optional body text content
+         Cannot contain headlines at the new item's level or
+         shallower (fewer stars)
+         If #+BEGIN/#+END blocks are present, they must be balanced
   parent_uri - Parent item URI
-               Formats:
-                 - org-headline://{absolute-path}#{headline-path}
-                 - org-id://{id}
+               For top-level: org-headline://{absolute-path}
+               For child: org-headline://{path}#{parent-path}
+                          or org-id://{parent-uuid}
   after_uri - Sibling to insert after (optional)
-              Formats:
-                - org-headline://{absolute-path}#{headline-path}
-                - org-id://{id}"
+              Must be org-id://{uuid} format
+              Empty string is rejected; omit the key instead
+              See tool description for combination rules with
+              parent_uri and position
+  position - Placement of the new item: \"start\" or \"end\"
+             (optional, defaults to \"end\")
+             Empty string is rejected; omit the key for default
+             placement
+             See tool description for placement-scenario contract
+             and combination rules with after_uri"
+  ;; Validation runs in two phases: first at the tool boundary (no
+  ;; file I/O), then inside `modify-and-save' once the file is open.
+  ;; Boundary order: per-field shape, then per-field content, then
+  ;; tag and `parent_uri' normalisation, then cross-field checks
+  ;; (mutex, not-top-level).
+  (org-mcp--validate-string-field title "title")
+  (org-mcp--validate-string-field todo_state "todo_state")
+  (org-mcp--validate-string-field body "body" t)
+  (org-mcp--validate-string-field parent_uri "parent_uri")
+  (org-mcp--validate-string-field after_uri "after_uri" t)
+  (org-mcp--validate-string-field position "position" t)
   (org-mcp--validate-headline-title title)
-  (org-mcp--validate-todo-state todo_state)
-  (let* ((tag-list (org-mcp--validate-and-normalize-tags tags))
-         file-path
-         parent-path
-         parent-id)
+  (org-mcp--validate-todo-state todo_state "todo_state")
+  ;; Collapse empty `body' to nil locally: the validator accepts both
+  ;; nil and "" (allow-nil=t), but the downstream body-insertion block
+  ;; would emit two unwanted blank lines for "" because
+  ;; `(insert "\n" "")' plus the trailing `(string-suffix-p "\n" "")'
+  ;; guard both fire.
+  (let ((effective-body (and body (not (string-empty-p body)) body)))
+    (when effective-body
+      (org-mcp--validate-body-no-unbalanced-blocks effective-body))
+    (let ((after-id (org-mcp--validate-after-uri after_uri))
+          (position-sym (org-mcp--validate-position position)))
+      (pcase-let ((tag-list
+                   (org-mcp--validate-and-normalize-tags tags))
+                  (`(,file-path ,parent-path ,parent-id)
+                   (org-mcp--parse-parent-uri parent_uri)))
+        ;; Cross-field placement checks, both after per-field
+        ;; validation and `parse-parent-uri'.  Mutex receives
+        ;; raw `position' (not `position-sym'): absent and
+        ;; explicit "end" both normalise to `'end'.
+        (org-mcp--check-position-after-uri-mutex position after-id)
+        (org-mcp--check-after-uri-not-top-level
+         after-id parent-path parent-id)
 
-    ;; Parse parent URI once to extract file-path and parent location
-    (org-mcp--with-uri-prefix-dispatch
-        parent_uri
-      ;; Handle org-headline:// URIs
-      (let* ((split-result (org-mcp--split-headline-uri headline))
-             (filename (car split-result))
-             (path-str (cdr split-result))
-             (allowed-file (org-mcp--validate-file-access filename)))
-        (setq file-path (expand-file-name allowed-file))
-        (when (and path-str (> (length path-str) 0))
-          (setq parent-path
-                (mapcar
-                 #'url-unhex-string (split-string path-str "/")))))
-      ;; Handle org-id:// URIs
-      (progn
-        (setq file-path (org-mcp--find-allowed-file-with-id id))
-        (setq parent-id id)))
+        ;; Add the TODO item
+        (org-mcp--modify-and-save file-path "add TODO"
+                                  `((file
+                                     .
+                                     ,(file-name-nondirectory
+                                       file-path))
+                                    (title . ,title))
+          ;; Bound on every call path so the child-insert path also
+          ;; picks up file-header validation; the value itself is only
+          ;; consumed by the top-level insert below.
+          (let ((header-end (org-mcp--validate-and-skip-file-header))
+                (parent-level
+                 (and (or parent-path parent-id)
+                      (org-mcp--navigate-to-parent
+                       parent-path parent-id))))
+            (when parent-level
+              ;; The `after-id' branch ignores `position-sym': the
+              ;; mutex guarantees `position' was nil (so
+              ;; `position-sym' is `end') when `after-id' is set.
+              (if after-id
+                  (org-mcp--position-after-sibling after-id)
+                (org-mcp--position-for-new-child position-sym)))
 
-    ;; Add the TODO item
-    (org-mcp--modify-and-save file-path "add TODO"
-                              `((file
-                                 .
-                                 ,(file-name-nondirectory file-path))
-                                (title . ,title))
-      (let ((parent-level
-             (org-mcp--navigate-to-parent-or-top
-              parent-path parent-id)))
+            (let ((new-level
+                   (if parent-level
+                       (1+ parent-level)
+                     1)))
+              (when effective-body
+                (org-mcp--validate-body-no-headlines
+                 effective-body new-level))
 
-        ;; Handle positioning after navigation to parent
-        (when (or parent-path parent-id)
-          (let ((parent-end
-                 (save-excursion
-                   (org-end-of-subtree t t)
-                   (point))))
-            (org-mcp--position-for-new-child after_uri parent-end)))
+              (if parent-level
+                  (org-mcp--insert-heading-line new-level title)
+                (org-mcp--insert-top-level-heading
+                 title position-sym header-end)))
 
-        ;; Validate body before inserting heading
-        ;; Calculate the target level for validation
-        (let ((target-level
-               (if (or parent-path parent-id)
-                   ;; Child heading - parent level + 1
-                   (1+ (or parent-level 0))
-                 ;; Top-level heading
-                 1)))
+            (org-todo todo_state)
 
-          ;; Validate body content if provided
-          (when body
-            (org-mcp--validate-body-no-headlines body target-level)
-            (org-mcp--validate-body-no-unbalanced-blocks body)))
+            (when tag-list
+              (org-set-tags tag-list))
 
-        ;; Insert the new heading
-        (org-mcp--insert-heading title parent-level)
-
-        (org-todo todo_state)
-
-        (when tag-list
-          (org-set-tags tag-list))
-
-        ;; Add body if provided
-        (if body
-            (progn
-              (end-of-line)
-              (insert "\n" body)
-              (unless (string-suffix-p "\n" body)
-                (insert "\n"))
-              ;; Move back to the heading for org-id-get-create
-              ;; org-id-get-create requires point to be on a heading
-              (org-back-to-heading t))
-          ;; No body - ensure newline after heading
-          (end-of-line)
-          (unless (looking-at "\n")
-            (insert "\n")))))))
+            ;; Restore EOL: `org-todo' / `org-set-tags' preserve
+            ;; column, not EOL.
+            (end-of-line)
+            ;; `save-excursion' to keep point on the new heading:
+            ;; body insertion can otherwise leave point past
+            ;; deeper-level headings (which the validator permits),
+            ;; and the `modify-and-save' URI lookup needs the new
+            ;; heading, not whatever is closest backward.
+            (save-excursion
+              ;; Add body if provided
+              (if effective-body
+                  (org-mcp--insert-body-after-heading effective-body)
+                ;; No body - ensure newline after heading
+                (unless (looking-at "\n")
+                  (insert "\n"))))))))))
 
 ;; Resource handlers
 
@@ -1026,15 +1529,16 @@ The filename parameter includes both file and headline path."
 
 (defun org-mcp--handle-id-resource (params)
   "Handler for org-id://{uuid} template.
-PARAMS is an alist containing the uuid parameter."
-  (let* ((id (alist-get "uuid" params nil nil #'string=))
-         (file-path (org-id-find-id-file id)))
-    (unless file-path
-      (org-mcp--resource-not-found-error "ID" id))
-    (let ((allowed-file (org-mcp--find-allowed-file file-path)))
-      (unless allowed-file
-        (org-mcp--resource-file-access-error id))
-      (org-mcp--get-content-by-id allowed-file id))))
+PARAMS is an alist containing the uuid parameter.
+ID resolution shares the fallback-aware path used by the modifying
+tools via `org-mcp--lookup-id-file', so an ID present in an allowed
+file resolves even when `org-id-locations' has no record of it."
+  (let ((id (alist-get "uuid" params nil nil #'string=)))
+    (pcase-let ((`(,status . ,file) (org-mcp--lookup-id-file id)))
+      (pcase status
+        (:found (org-mcp--get-content-by-id file id))
+        (:disallowed (org-mcp--resource-id-disallowed-error id))
+        (:missing (org-mcp--resource-not-found-error "ID" id))))))
 
 (defun org-mcp--tool-rename-headline (uri current_title new_title)
   "Rename headline title at URI from CURRENT_TITLE to NEW_TITLE.
@@ -1043,22 +1547,29 @@ headline if one doesn't exist.
 Returns the ID-based URI for the renamed headline.
 
 MCP Parameters:
-  uri - URI of the headline
+  uri - URI of the headline to rename
         Formats:
-          - org-headline://{absolute-path}#{headline-path}
-          - org-id://{id}
-  current_title - Current title without TODO state or tags
-  new_title - New title without TODO state or tags"
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
+  current_title - Expected current title without TODO state or tags
+                  Must match actual title or tool will error
+                  Used to prevent race conditions
+  new_title - New title without TODO state or tags
+              Cannot be empty or whitespace-only
+              Cannot contain newlines"
+  (org-mcp--validate-string-field uri "uri")
+  (org-mcp--validate-string-field current_title "current_title")
+  (org-mcp--validate-string-field new_title "new_title")
   (org-mcp--validate-headline-title new_title)
 
-  (let* ((parsed (org-mcp--parse-resource-uri uri))
-         (file-path (car parsed))
-         (headline-path (cdr parsed)))
+  (pcase-let ((`(,file-path . ,headline-path)
+               (org-mcp--parse-resource-uri uri)))
 
     ;; Rename the headline in the file
     (org-mcp--modify-and-save file-path "rename"
                               `((previous_title . ,current_title)
                                 (new_title . ,new_title))
+      (org-mcp--validate-and-skip-file-header)
       ;; Navigate to the headline
       (org-mcp--goto-headline-from-uri
        headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
@@ -1073,7 +1584,7 @@ MCP Parameters:
       (org-edit-headline new_title))))
 
 (defun org-mcp--tool-edit-body
-    (resource_uri old_body new_body replace_all)
+    (resource_uri old_body new_body &optional replace_all)
   "Edit body content of an Org node using partial string replacement.
 RESOURCE_URI is the URI of the node to edit.
 OLD_BODY is the substring to search for within the node's body.
@@ -1082,19 +1593,31 @@ NEW_BODY is the replacement text.
 REPLACE_ALL if non-nil, replace all occurrences.
 
 MCP Parameters:
-  resource_uri - URI of the node
+  resource_uri - URI of the headline to edit
                  Formats:
-                   - org-headline://{absolute-path}#{headline-path}
-                   - org-id://{id}
-  old_body - Substring to replace within the body (must be unique
-             unless replace_all).  Use \"\" to add to empty nodes
+                   - org-headline://{absolute-path}#{url-encoded-path}
+                   - org-id://{uuid}
+  old_body - Substring to find and replace within the body
+             Matched case-sensitively
+             Must appear exactly once unless replace_all is true
+             Use empty string \"\" only for adding to empty nodes;
+             in that case the node body must be empty or
+             whitespace-only, otherwise the tool errors
   new_body - Replacement text
-  replace_all - Replace all occurrences (optional, default false)"
-  ;; Normalize JSON false to nil for proper boolean handling
-  ;; JSON false can arrive as :false (keyword) or "false" (string)
+             Cannot introduce headlines at the edit target's
+             level or shallower (fewer stars)
+             Must maintain balanced #+BEGIN/#+END blocks
+  replace_all - Replace all occurrences (optional, default false)
+                When false, old_body must be unique in the body"
+  (org-mcp--validate-string-field resource_uri "resource_uri")
+  (org-mcp--validate-string-field old_body "old_body")
+  (org-mcp--validate-string-field new_body "new_body")
+  ;; Normalize falsy values to nil so the multi-occurrence guard
+  ;; fires.  Accept `:json-false' (JSON boolean) and string "false"
+  ;; (a common LLM-client typo); both are otherwise truthy in Elisp.
   (let ((replace_all
          (cond
-          ((eq replace_all :false)
+          ((eq replace_all :json-false)
            nil)
           ((equal replace_all "false")
            nil)
@@ -1102,11 +1625,11 @@ MCP Parameters:
            replace_all))))
     (org-mcp--validate-body-no-unbalanced-blocks new_body)
 
-    (let* ((parsed (org-mcp--parse-resource-uri resource_uri))
-           (file-path (car parsed))
-           (headline-path (cdr parsed)))
+    (pcase-let ((`(,file-path . ,headline-path)
+                 (org-mcp--parse-resource-uri resource_uri)))
 
       (org-mcp--modify-and-save file-path "edit body" nil
+        (org-mcp--validate-and-skip-file-header)
         (org-mcp--goto-headline-from-uri
          headline-path
          (string-prefix-p org-mcp--uri-id-prefix resource_uri))
@@ -1145,7 +1668,7 @@ MCP Parameters:
 
           ;; Check if body is empty
           (when (string-match-p "\\`[[:space:]]*\\'" body-content)
-            ;; Empty oldBody + empty body -> add content
+            ;; Empty old_body + empty body -> add content
             (if (string= old_body "")
                 ;; Treat as single replacement
                 (setq occurrence-count 1)
@@ -1154,7 +1677,7 @@ MCP Parameters:
 
           ;; Count occurrences (unless already handled above)
           (unless (= occurrence-count 1)
-            ;; Empty oldBody with non-empty body is an error
+            ;; Empty old_body with non-empty body is an error
             (if (and (string= old_body "")
                      (not
                       (string-match-p
@@ -1177,17 +1700,27 @@ MCP Parameters:
                                             old_body))
            ((and (> occurrence-count 1) (not replace_all))
             (org-mcp--tool-validation-error
-             (concat "Text appears %d times (use replace_all)")
+             "Text appears %d times (use replace_all)"
              occurrence-count)))
 
-          ;; Perform replacement
-          (org-mcp--replace-body-content
-           old_body
-           new_body
-           body-content
-           replace_all
-           body-begin
-           body-end))))))
+          ;; Perform replacement.
+          ;; `save-excursion' keeps point inside the edit target's
+          ;; entry so `org-id-get-create' (in `complete-and-save')
+          ;; resolves to the edit target.  Without it, body
+          ;; insertion lands point in a different entry -- the
+          ;; parent's first child (when the target has children) or
+          ;; a strictly-deeper heading inside the new body
+          ;; (permitted by `validate-body-no-headlines') -- and
+          ;; `org-back-to-heading' inside `org-id-get-create'
+          ;; would resolve to that entry.
+          (save-excursion
+            (org-mcp--replace-body-content
+             old_body
+             new_body
+             body-content
+             replace_all
+             body-begin
+             body-end)))))))
 
 ;; Tools duplicating resource templates
 
@@ -1197,6 +1730,7 @@ FILE is the absolute path to an Org file.
 
 MCP Parameters:
   file - Absolute path to an Org file"
+  (org-mcp--validate-string-field file "file")
   (org-mcp--handle-file-resource `(("filename" . ,file))))
 
 (defun org-mcp--tool-read-outline (file)
@@ -1205,6 +1739,7 @@ FILE is the absolute path to an Org file.
 
 MCP Parameters:
   file - Absolute path to an Org file"
+  (org-mcp--validate-string-field file "file")
   (org-mcp--handle-outline-resource `(("filename" . ,file))))
 
 (defun org-mcp--tool-read-headline (file headline_path)
@@ -1224,13 +1759,11 @@ MCP Parameters:
                   \"A/B Testing\"
                   To read entire files, use org-read-file
                   instead"
-  (unless (stringp headline_path)
-    (org-mcp--tool-validation-error
-     "Parameter headline_path must be a string, got: %S (type: %s)"
-     headline_path (type-of headline_path)))
+  (org-mcp--validate-string-field file "file")
+  (org-mcp--validate-string-field headline_path "headline_path")
   (when (string-empty-p headline_path)
     (org-mcp--tool-validation-error
-     "Parameter headline_path must be non-empty; use \
+     "Field headline_path must be non-empty; use \
 org-read-file tool to read entire files"))
   (let ((full-path (concat file "#" headline_path)))
     (org-mcp--handle-headline-resource `(("filename" . ,full-path)))))
@@ -1241,6 +1774,7 @@ UUID is the UUID from headline's ID property.
 
 MCP Parameters:
   uuid - UUID from headline's ID property"
+  (org-mcp--validate-string-field uuid "uuid")
   (org-mcp--handle-id-resource `(("uuid" . ,uuid))))
 
 (defun org-mcp-enable ()
@@ -1354,17 +1888,13 @@ while preserving the headline title, tags, and other properties.
 Creates an Org ID property for the headline if one doesn't exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
-
-Parameters:
-  uri - URI of the headline to update (string, required)
-        Formats:
-          - org-headline://{absolute-path}#{url-encoded-path}
-          - org-id://{uuid}
-  current_state - Expected current TODO state (string, required)
-                  Use empty string \"\" if headline has no TODO state
-                  Must match actual state or tool will error
-  new_state - New TODO state to set (string, required)
-              Must be valid keyword from org-todo-keywords
+Validates the file's leading header block on every call; any
+`:NAME:' line at column 0 (with optional leading whitespace and
+any keyword) is treated as a drawer opener and must have a
+matching `:END:'.  An unterminated drawer, or a drawer containing
+a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
+opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
+block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1383,28 +1913,13 @@ Creates the headline with TODO state, tags, and optional body content.
 Automatically creates an Org ID property for the new headline.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
-
-Parameters:
-  title - Headline text without TODO state or tags (string, required)
-          Cannot be empty or whitespace-only
-          Cannot contain newlines
-  todo_state - TODO keyword from org-todo-keywords (string, required)
-  tags - Tags for the headline (string or array, required)
-         Single tag: \"urgent\"
-         Multiple tags: [\"work\", \"urgent\"]
-         Validated against org-tag-alist if configured
-         Must follow Org tag rules (alphanumeric, _, @)
-         Respects mutually exclusive tag groups
-  body - Body content under the headline (string, optional)
-         Cannot contain headlines at same or higher level as new item
-         If #+BEGIN/#+END blocks are present, they must be balanced
-  parent_uri - Parent location (string, required)
-               For top-level: org-headline://{absolute-path}
-               For child: org-headline://{path}#{parent-path}
-                         or org-id://{parent-uuid}
-  after_uri - Sibling to insert after (string, optional)
-              Must be org-id://{uuid} format
-              If omitted, appends as last child of parent
+Validates the file's leading header block on every call; any
+`:NAME:' line at column 0 (with optional leading whitespace and
+any keyword) is treated as a drawer opener and must have a
+matching `:END:'.  An unterminated drawer, or a drawer containing
+a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
+opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
+block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1412,11 +1927,60 @@ Returns JSON object:
   file - Filename (not full path) where item was added
   title - The headline title that was created
 
-Positioning behavior:
-  - With parent_uri only: Appends as last child of parent
-  - With parent_uri + after_uri: Inserts immediately after specified
-sibling
-  - Top-level (parent_uri with no fragment): Adds at end of file."
+Positioning behavior.  Five scenarios, selected by parent_uri shape
+and the optional after_uri / position parameters:
+
+  Child, end (default).
+    Inputs: parent_uri with fragment (#PATH) or org-id://UUID; no
+    after_uri; position omitted or \"end\".
+    Effect: appended as the last child of the parent.
+
+  Child, after sibling.
+    Inputs: parent_uri + after_uri=org-id://UUID-of-sibling; no
+    position.
+    Effect: inserted as the immediate next sibling of after_uri's
+    headline.
+
+  Child, start.
+    Inputs: parent_uri + position=\"start\"; no after_uri.
+    Effect: inserted as the first child of the parent, after the
+    parent's property drawer, planning line, logbook entries, and
+    plain-text body -- i.e. just before the parent's first
+    existing child heading.  When the parent has no children,
+    `start' collapses to `end' at end-of-subtree.
+
+  Top-level, end (default).
+    Inputs: parent_uri with no fragment; no after_uri; position
+    omitted or \"end\".
+    Effect: appended at end of file.
+
+  Top-level, start.
+    Inputs: parent_uri (no fragment) + position=\"start\"; no
+    after_uri.
+    Effect: inserted before the first existing top-level heading
+    but after the file's entire header block.  The header block
+    is every leading line starting with `#' (including
+    #+-prefixed keywords like #+TITLE:, file-local variable lines
+    like `# -*- mode: org -*-', and Org comment lines), plus any
+    :NAME:...:END: drawer in the leading run (:PROPERTIES:,
+    :LOGBOOK:, and any custom drawer keyword are all consumed
+    uniformly, even when Org's grammar would classify the drawer
+    as a generic drawer rather than a file-level property drawer,
+    to avoid silently reparenting it onto the new heading).  All
+    header-class lines may have optional leading whitespace,
+    matching Org's parser; headings themselves still require
+    column 0.  When the file has no existing top-level heading
+    (empty file, header-only, or zeroth-section content like a
+    plain paragraph after the header), `start' collapses to `end'
+    at point-max rather than inserting after the header block.
+    This preserves any zeroth-section content in place instead of
+    absorbing it into the new heading's body.
+
+Combinations outside these five are rejected at the tool boundary.
+After_uri cannot combine with an explicit position (which includes
+position=\"end\", even though that is the default -- omit position
+entirely to use after_uri-based placement), nor with a top-level
+parent_uri (which has no sibling slot)."
    :read-only nil
    :server-id org-mcp--server-id)
 
@@ -1429,19 +1993,13 @@ tags, properties, and body content.  Creates an Org ID property for
 the headline if one doesn't exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
-
-Parameters:
-  uri - URI of the headline to rename (string, required)
-        Formats:
-          - org-headline://{absolute-path}#{url-encoded-path}
-          - org-id://{uuid}
-  current_title - Expected current title without TODO/tags (string,
-required)
-                  Must match actual title or tool will error
-                  Used to prevent race conditions
-  new_title - New title without TODO state or tags (string, required)
-              Cannot be empty or whitespace-only
-              Cannot contain newlines
+Validates the file's leading header block on every call; any
+`:NAME:' line at column 0 (with optional leading whitespace and
+any keyword) is treated as a drawer opener and must have a
+matching `:END:'.  An unterminated drawer, or a drawer containing
+a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
+opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
+block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1461,31 +2019,17 @@ body text.  Creates an Org ID property for the headline if one doesn't
 exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
 file has unsaved changes; ask the user to save the buffer and retry.
-
-Parameters:
-  resource_uri - URI of the headline to edit (string, required)
-                 Formats:
-                   - org-headline://{absolute-path}#{url-encoded-path}
-                   - org-id://{uuid}
-  old_body - Substring to find and replace (string, required)
-             Must appear exactly once unless replace_all is true
-             Use empty string \"\" only for adding to empty nodes
-  new_body - Replacement text (string, required)
-             Cannot introduce headlines at same or higher level
-             Must maintain balanced #+BEGIN/#+END blocks
-  replace_all - Replace all occurrences (boolean, optional, default
-                false). When false, old_body must be unique in the
-                body.
+Validates the file's leading header block on every call; any
+`:NAME:' line at column 0 (with optional leading whitespace and
+any keyword) is treated as a drawer opener and must have a
+matching `:END:'.  An unterminated drawer, or a drawer containing
+a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
+opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
+block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
-  uri - ID-based URI (org-id://{uuid}) for the edited headline
-
-Special behavior - Empty old_body:
-  When old_body is \"\", the tool adds content to empty nodes:
-  - Only works if node body is empty or whitespace-only
-  - Error if node already has content
-  - Useful for adding initial content to newly created headlines"
+  uri - ID-based URI (org-id://{uuid}) for the edited headline"
    :read-only nil
    :server-id org-mcp--server-id)
 
@@ -1498,9 +2042,6 @@ plain text with all formatting, properties, and structure preserved.
 File must be in org-mcp-allowed-files.
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
-
-Parameters:
-  file - Absolute path to Org file (string, required)
 
 Returns: Plain text content of the entire Org file"
    :read-only t
@@ -1516,9 +2057,6 @@ Returns: Plain text content of the entire Org file"
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
 
-Parameters:
-  file - Absolute path to Org file (string, required)
-
 Returns: JSON object with hierarchical outline structure"
    :read-only t
    :server-id org-mcp--server-id)
@@ -1533,16 +2071,6 @@ Returns: JSON object with hierarchical outline structure"
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
 
-Parameters:
-  file - Absolute path to Org file (string, required)
-  headline_path - Non-empty slash-separated path to headline (string,
-                  required). Only slashes (/) in  headline titles must
-                  be encoded as %2F
-                  Example: \"Project/Planning\" for nested headlines
-                  Example: \"A%2FB Testing\" for headline titled
-                  \"A/B Testing\"
-                  To read entire files, use org-read-file instead
-
 Returns: Plain text content of the headline and its subtree"
    :read-only t
    :server-id org-mcp--server-id)
@@ -1556,9 +2084,6 @@ path-based access since IDs don't change when headlines are renamed
 or moved. File containing the ID must be in org-mcp-allowed-files.
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
-
-Parameters:
-  uuid - UUID from headline's ID property (string, required)
 
 Returns: Plain text content of the headline and its subtree"
    :read-only t
