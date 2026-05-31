@@ -5872,6 +5872,409 @@ confusion."
     (should (equal eask-version el-version))
     (should (equal eask-version news-version))))
 
+;;; org-grep helpers
+
+(defun org-mcp-test--call-grep (pattern &optional file case-sensitive)
+  "Call org-grep tool and return the parsed JSON result as alist.
+PATTERN is the search string, FILE limits search to one file,
+CASE-SENSITIVE controls case matching."
+  (let* ((params `((pattern . ,pattern)
+                   ,@(when file `((file . ,file)))
+                   ,@(when case-sensitive `((case_sensitive . t)))))
+         (result-json (mcp-server-lib-ert-call-tool "org-grep" params)))
+    (json-parse-string result-json :object-type 'alist :array-type 'list)))
+
+;;; org-grep tests
+
+(ert-deftest org-mcp-test-grep-column-zero-star-non-heading-not-a-boundary ()
+  "Pin that a column-0 `*bold*' line in the pre-heading area is not
+treated as a section boundary.  Matches after it (up to the first
+real heading) must still appear in the pre-heading group.
+
+Regression for the `^\\*' vs `^\\*+ ' boundary-regex bug: the bare
+`^\\*' matched `*bold*' and truncated the pre-heading region there,
+dropping matches that followed."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "*bold* text\ntoken found here\n* Real Heading\n"))
+   (let* ((result (org-mcp-test--call-grep "token" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (equal (alist-get 'headline_path (car groups)) nil))
+     (should (= (length (alist-get 'matches (car groups))) 1))
+     (should (= (alist-get 'line (car (alist-get 'matches (car groups))))
+                2)))))
+
+(ert-deftest org-mcp-test-grep-column-zero-star-in-body-not-a-boundary ()
+  "Pin that a column-0 `*bold*' line inside a section body does not
+truncate that section.  Matches after it (before the next real
+heading) must still appear in the same section group.
+
+Regression for the `^\\*' vs `^\\*+ ' boundary-regex bug: the bare
+`^\\*' matched `*bold*' and set section-end there, dropping the
+subsequent match."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section\n*bold* line\ntoken found here\n* Next\n"))
+   (let* ((result (org-mcp-test--call-grep "token" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (equal (alist-get 'headline_path (car groups)) '("Section")))
+     (should (= (length (alist-get 'matches (car groups))) 1)))))
+
+(ert-deftest org-mcp-test-grep-pattern-is-literal-not-regex ()
+  "Pin that pattern is a literal substring, not a regex.
+A pattern containing regex metacharacters (`.', `*', `[', etc.)
+must match only lines that contain the literal characters."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section\nno dots here\nfoo.bar on this line\n"))
+   (let* ((result (org-mcp-test--call-grep "foo.bar" test-file))
+          (groups (alist-get 'groups result)))
+     ;; The regex `.` would match any char; the literal should match only foo.bar
+     (should (= (length groups) 1))
+     (should (= (length (alist-get 'matches (car groups))) 1))
+     (should (string-match-p "foo\\.bar"
+                             (alist-get 'text (car (alist-get 'matches (car groups)))))))))
+
+(ert-deftest org-mcp-test-grep-one-match-per-line ()
+  "Pin that org-grep reports one entry per source line even when
+the pattern appears multiple times on the same line."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section\ntoken token on one line\n"))
+   (let* ((result (org-mcp-test--call-grep "token" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (= (length (alist-get 'matches (car groups))) 1)))))
+
+(ert-deftest org-mcp-test-grep-match-in-heading-title ()
+  "Pin that a match on the heading title line itself is reported
+in that heading's own group."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Contains the token here\nbody text\n"))
+   (let* ((result (org-mcp-test--call-grep "token" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (let ((match (car (alist-get 'matches (car groups)))))
+       (should (= (alist-get 'line match) 1))
+       (should (string-match-p "token" (alist-get 'text match)))))))
+
+(ert-deftest org-mcp-test-grep-case-sensitive-string-false ()
+  "Pin that case_sensitive:\"false\" (LLM-client typo) is treated as false.
+Mirrors the same normalisation done for `replace_all'."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section\nHello World content\n"))
+   (let* ((params `((pattern . "hello") (file . ,test-file)
+                    (case_sensitive . "false")))
+          (result-json (mcp-server-lib-ert-call-tool "org-grep" params))
+          (result (json-parse-string result-json
+                                     :object-type 'alist
+                                     :array-type 'list))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1)))))
+
+(ert-deftest org-mcp-test-grep-no-allowed-files-returns-empty ()
+  "Pin that org-grep returns {\"groups\":[]} with no allowed files and no file."
+  (let ((org-mcp-allowed-files nil))
+    (org-mcp-test--with-enabled
+      (let* ((params '((pattern . "anything")))
+             (result-json (mcp-server-lib-ert-call-tool "org-grep" params))
+             (result (json-parse-string result-json
+                                        :object-type 'alist
+                                        :array-type 'list)))
+        (should (equal (alist-get 'groups result) nil))))))
+
+(ert-deftest org-mcp-test-grep-case-sensitive-json-false ()
+  "Pin that case_sensitive:false (JSON boolean) is treated as false.
+`:json-false' is truthy in Elisp but must be normalised to nil so
+the search is case-insensitive."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section\nHello World content\n"))
+   (let* ((params `((pattern . "hello") (file . ,test-file)
+                    (case_sensitive . :json-false)))
+          (result-json (mcp-server-lib-ert-call-tool "org-grep" params))
+          (result (json-parse-string result-json
+                                     :object-type 'alist
+                                     :array-type 'list))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1)))))
+
+(ert-deftest org-mcp-test-grep-multi-file-no-file-param ()
+  "Pin that org-grep searches all allowed files when file is omitted."
+  (org-mcp-test--with-temp-org-files
+   ((file-a "* A\ntoken in file A\n")
+    (file-b "* B\ntoken in file B\n"))
+   (let* ((result (org-mcp-test--call-grep "token"))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 2)))))
+
+(ert-deftest org-mcp-test-grep-file-param-limits-search ()
+  "Pin that org-grep only searches the given file when file is provided."
+  (org-mcp-test--with-temp-org-files
+   ((file-a "* A\ntoken in file A\n")
+    (file-b "* B\ntoken in file B\n"))
+   (let* ((result (org-mcp-test--call-grep "token" file-a))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (string= (alist-get 'file (car groups)) file-a)))))
+
+(ert-deftest org-mcp-test-grep-missing-allowed-file-skipped ()
+  "Pin that a configured-but-missing allowed file is skipped in multi-file
+search rather than aborting; matches from present files are still returned.
+
+Regression for the missing `file-exists-p' guard in the multi-file branch
+of `org-mcp--tool-grep'."
+  (org-mcp-test--with-temp-org-files
+   ((present-file "* Section\ntoken found here\n"))
+   (let* ((missing-file (make-temp-name
+                         (concat temporary-file-directory
+                                 "org-mcp-test-missing-")))
+          (org-mcp-allowed-files (list present-file missing-file)))
+     (let* ((result (org-mcp-test--call-grep "token"))
+            (groups (alist-get 'groups result)))
+       (should (= (length groups) 1))
+       (should (string= (alist-get 'file (car groups)) present-file))))))
+
+(ert-deftest org-mcp-test-grep-uri-prefers-org-id-when-available ()
+  "Pin that org-grep returns org-id:// URI when section has an ID."
+  (org-mcp-test--with-temp-org-files
+   ((test-file (format "* Heading\n:PROPERTIES:\n:ID: %s\n:END:\nbody here\n"
+                       org-mcp-test--content-with-id-id)))
+   (let* ((result (org-mcp-test--call-grep "body" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (string= (alist-get 'uri (car groups))
+                      org-mcp-test--content-with-id-uri)))))
+
+(ert-deftest org-mcp-test-grep-uri-org-headline-when-no-id ()
+  "Pin that org-grep returns a fully URL-encoded org-headline:// URI.
+Spaces must appear as `%20' and `/' in titles as `%2F', so the URI
+round-trips through `url-unhex-string' back to the original title."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* No ID Heading\nbody here\n"))
+   (let* ((result (org-mcp-test--call-grep "body" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (string-prefix-p "org-headline://" (alist-get 'uri (car groups))))
+     (should (string-match-p "No%20ID%20Heading"
+                             (alist-get 'uri (car groups)))))))
+
+(ert-deftest org-mcp-test-grep-uri-percent-in-title-round-trips ()
+  "Pin that a title containing `%' is fully encoded so it round-trips.
+`%20' in a title must become `%2520' in the URI (not stay as `%20'),
+otherwise `url-unhex-string' in the read path would corrupt it."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* 50%20done\nbody here\n"))
+   (let* ((result (org-mcp-test--call-grep "body" test-file))
+          (groups (alist-get 'groups result))
+          (uri (alist-get 'uri (car groups))))
+     (should (= (length groups) 1))
+     (should (string-prefix-p "org-headline://" uri))
+     (should (string-match-p "50%2520done" uri)))))
+
+(ert-deftest org-mcp-test-grep-case-insensitive-default ()
+  "Pin that org-grep is case-insensitive by default."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section\nHello World content\n"))
+   (let* ((result (org-mcp-test--call-grep "hello" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1)))))
+
+(ert-deftest org-mcp-test-grep-case-sensitive-opt-in ()
+  "Pin that case_sensitive:true rejects case mismatches."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section\nHello World content\n"))
+   (let* ((result (org-mcp-test--call-grep "hello" test-file t))
+          (groups (alist-get 'groups result)))
+     (should (equal groups nil)))))
+
+(ert-deftest org-mcp-test-grep-different-sections-separate-groups ()
+  "Pin that matches in different sections produce separate groups."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section A\ntoken here\n* Section B\ntoken here\n"))
+   (let* ((result (org-mcp-test--call-grep "token" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 2))
+     (should (equal (alist-get 'headline_path (car groups)) '("Section A")))
+     (should (equal (alist-get 'headline_path (cadr groups))
+                    '("Section B"))))))
+
+(ert-deftest org-mcp-test-grep-multiple-matches-one-section ()
+  "Pin that consecutive matches in the same section form one group."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section\nfirst match here\nsecond match here\n"))
+   (let* ((result (org-mcp-test--call-grep "match" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (= (length (alist-get 'matches (car groups))) 2)))))
+
+(ert-deftest org-mcp-test-grep-multi-match-line-numbers ()
+  "Pin that each match in a group reports its own 1-based line number.
+Regression: the prev-pos/count-lines accumulator advanced prev-pos
+past the matched line, making every match after the first report the
+first match's line number instead of its own."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Section\nfirst match here\nsecond match here\n"))
+   (let* ((result (org-mcp-test--call-grep "match" test-file))
+          (matches (alist-get 'matches (car (alist-get 'groups result)))))
+     (should (= (alist-get 'line (nth 0 matches)) 2))
+     (should (= (alist-get 'line (nth 1 matches)) 3)))))
+
+(ert-deftest org-mcp-test-grep-gapped-match-line-numbers ()
+  "Pin that line numbers are absolute even when matches are not adjacent.
+Locks in that the fix uses true per-match line lookup, not a relative
+delta that would drift differently for non-consecutive matches."
+  (org-mcp-test--with-temp-org-files
+   ((test-file
+     "* Section\nfirst match here\nskip this\nskip this too\nfifth match\n"))
+   (let* ((result (org-mcp-test--call-grep "match" test-file))
+          (matches (alist-get 'matches (car (alist-get 'groups result)))))
+     (should (= (alist-get 'line (nth 0 matches)) 2))
+     (should (= (alist-get 'line (nth 1 matches)) 5)))))
+
+(ert-deftest org-mcp-test-grep-nested-headline-path ()
+  "Pin that org-grep returns the full ancestor path in headline_path.
+A match in a nested section lists all ancestor titles in order."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Parent\n** Child\ndeep content here\n"))
+   (let* ((result (org-mcp-test--call-grep "deep" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (equal (alist-get 'headline_path (car groups))
+                    '("Parent" "Child"))))))
+
+(ert-deftest org-mcp-test-grep-match-in-pre-heading-content ()
+  "Pin that org-grep matches lines before the first heading.
+Such matches appear in a group with headline_path [] and a
+file-level URI (the trailing-slash org-headline:// form)."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "This is pre-heading content\n* My Heading\n"))
+   (let* ((result (org-mcp-test--call-grep "pre-heading" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (let ((group (car groups)))
+       (should (equal (alist-get 'headline_path group) nil))
+       (should (string-prefix-p "org-headline://" (alist-get 'uri group)))
+       (should (string-suffix-p "/" (alist-get 'uri group)))
+       (let ((matches (alist-get 'matches group)))
+         (should (= (length matches) 1))
+         (should (= (alist-get 'line (car matches)) 1)))))))
+
+(ert-deftest org-mcp-test-grep-match-in-section-body ()
+  "Pin that org-grep finds a match in a heading's body and returns
+correct headline_path and match text."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* My Heading\nThis is some body text\n"))
+   (let* ((result (org-mcp-test--call-grep "body" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (let ((group (car groups)))
+       (should (equal (alist-get 'headline_path group) '("My Heading")))
+       (let ((matches (alist-get 'matches group)))
+         (should (= (length matches) 1))
+         (should (= (alist-get 'line (car matches)) 2))
+         (should (string= (alist-get 'text (car matches))
+                          "This is some body text")))))))
+
+(ert-deftest org-mcp-test-grep-no-matches ()
+  "Pin that org-grep returns {\"groups\":[]} when pattern is absent."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Heading\nSome body text\n"))
+   (let ((result (org-mcp-test--call-grep "XYZZY_NOT_IN_FILE" test-file)))
+     (should (equal (alist-get 'groups result) nil)))))
+
+(ert-deftest org-mcp-test-grep-file-not-in-allowed-list ()
+  "Pin that a `file' not in `org-mcp-allowed-files' is rejected.
+The file-access check fires before any search I/O, so the pattern
+and the file contents are irrelevant."
+  (org-mcp-test--assert-tool-error-message-regex
+   "org-grep" '((pattern . "x") (file . "/not/allowed.org"))
+   "not in allowed"))
+
+(ert-deftest org-mcp-test-grep-non-string-file ()
+  "Pin that non-string `file' is rejected at the tool boundary.
+`org-mcp--validate-string-field' fires before any file-access
+or search logic runs."
+  (org-mcp-test--assert-tool-error-message-regex
+   "org-grep" '((pattern . "x") (file . 42))
+   (org-mcp-test--field-non-string-regex "file" 42)))
+
+(ert-deftest org-mcp-test-grep-non-string-pattern ()
+  "Pin that non-string `pattern' is rejected at the tool boundary.
+`org-mcp--validate-string-field' fires before any downstream
+search or file-access logic runs."
+  (org-mcp-test--assert-tool-error-message-regex
+   "org-grep" '((pattern . 42))
+   (org-mcp-test--field-non-string-regex "pattern" 42)))
+
+(ert-deftest org-mcp-test-grep-empty-pattern ()
+  "Pin that an empty `pattern' is rejected at the tool boundary.
+A non-empty pattern is required; an empty string cannot meaningfully
+narrow a search and would return every line in the file."
+  (org-mcp-test--assert-tool-error-message-regex
+   "org-grep" '((pattern . ""))
+   "pattern.*non-empty"))
+
+(ert-deftest org-mcp-test-grep-newline-in-pattern ()
+  "Pin that a `pattern' containing a newline is rejected at the tool boundary.
+A newline in pattern causes re-search-forward to match across two
+physical lines, reporting only the end line and skipping occurrences
+on the second matched line -- violating the one-match-per-source-line
+contract.  Reject at the boundary to avoid silent wrong output."
+  (org-mcp-test--assert-tool-error-message-regex
+   "org-grep" '((pattern . "foo\nbar"))
+   "single line"))
+
+(ert-deftest org-mcp-test-grep-file-field-is-canonical-for-relative-arg ()
+  "Pin that the file field is the canonical absolute path even when
+a relative `file' arg resolves to an allowed file.
+The validation accepts a relative path (truename comparison), but the
+emitted `file' field and URI must use the canonical allowed-list form
+so follow-up reads (which require absolute paths) succeed."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Heading\nbody token here\n"))
+   (let* ((default-directory (file-name-directory test-file))
+          (relative-file (file-name-nondirectory test-file))
+          (result (org-mcp-test--call-grep "token" relative-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (string= (alist-get 'file (car groups)) test-file)))))
+
+(ert-deftest org-mcp-test-grep-headline-path-raw-for-stats-cookie ()
+  "Pin that headline_path contains the raw title including statistics cookies.
+`org-get-outline-path' strips `[n/m]' and `[n%]' cookies; the grep
+path must use the same raw title `org-mcp--navigate-to-headline' matches
+on, so the emitted URI round-trips through `org-read-headline'."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Tasks [1/3]\nbody token here\n"))
+   (let* ((result (org-mcp-test--call-grep "token" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (equal (alist-get 'headline_path (car groups))
+                    '("Tasks [1/3]"))))))
+
+(ert-deftest org-mcp-test-grep-headline-path-raw-for-bracket-link ()
+  "Pin that headline_path contains the raw bracket-link markup.
+`org-get-outline-path' replaces `[[target][desc]]' with `desc';
+the grep path must preserve raw markup so it matches
+`org-mcp--navigate-to-headline' which uses `org-get-heading t t t t'."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* See [[https://example.com][docs]]\nbody token here\n"))
+   (let* ((result (org-mcp-test--call-grep "token" test-file))
+          (groups (alist-get 'groups result)))
+     (should (= (length groups) 1))
+     (should (equal (alist-get 'headline_path (car groups))
+                    '("See [[https://example.com][docs]]"))))))
+
+(ert-deftest org-mcp-test-grep-uri-encodes-raw-title-with-stats-cookie ()
+  "Pin that the org-headline:// URI fragment encodes the raw cookie title.
+The fragment must contain `Tasks%20%5B1%2F3%5D' (raw) not `Tasks'
+(stripped), so it round-trips through `org-read-headline'."
+  (org-mcp-test--with-temp-org-files
+   ((test-file "* Tasks [1/3]\nbody token here\n"))
+   (let* ((result (org-mcp-test--call-grep "token" test-file))
+          (groups (alist-get 'groups result))
+          (uri (alist-get 'uri (car groups))))
+     (should (= (length groups) 1))
+     (should (string-prefix-p "org-headline://" uri))
+     (should (string-match-p "Tasks%20%5B1%2F3%5D" uri)))))
 
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

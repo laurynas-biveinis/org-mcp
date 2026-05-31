@@ -391,6 +391,21 @@ Example:
 - *Note:* More stable than path-based access since IDs don't change when headlines are renamed or moved
 - *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
+*** org-grep
+- *Description:* Search for a literal substring across one or all allowed Org files
+- *Parameters:*
+  - =pattern= (string, required): Literal substring to search for. Must be non-empty and single-line (no newlines). Not a regex.
+  - =file= (string, optional): Absolute path to an allowed Org file. When omitted, all =org-mcp-allowed-files= are searched.
+  - =case_sensitive= (boolean, optional, default =false=): When =true=, the match is case-sensitive.
+- *Returns:* JSON object with a =groups= array. Each group represents a contiguous run of matching lines within one section:
+  - =file=: absolute path of the source file
+  - =headline_path=: array of headline title strings tracing the path to the containing section (empty array for content before the first heading)
+  - =uri=: resource URI — =org-id://= when the section has an ID, =org-headline://= otherwise. Pass directly to =resources/read=. To use the read tools instead, extract the =uuid= (for =org-read-by-id=) or the file and fragment path (for =org-read-headline=) from the URI.
+  - =matches=: array of ={line, text}= objects — =line= is the 1-based line number, =text= is the full line content
+- *Group rules:* Groups appear in document order, per file in =org-mcp-allowed-files= order. A new group starts whenever the containing section changes. One match per source line.
+- *Configuration:* Searched files must be in =org-mcp-allowed-files=. Returns ={"groups": []}= when no files are configured and no =file= is given.
+- *Buffer behavior:* Reads files from disk; unsaved changes in Emacs buffers are not reflected.
+
 * License
 
 This project is licensed under the GNU General Public License v3.0 (GPLv3) - see the LICENSE file for details.

@@ -4,6 +4,11 @@ org-mcp NEWS -- history of user-visible changes
 
 ** New Features
 
+*** Added `org-grep' tool for searching across Org files
+    Search for a literal substring across one or all allowed files.
+    Results are grouped by containing section and annotated with
+    headline paths and resource URIs (readable via =resources/read=).
+
 *** Send MCP `initialize' instructions
     The server now emits an `instructions' string in the MCP
     `initialize' response, carrying the cross-cutting tool and

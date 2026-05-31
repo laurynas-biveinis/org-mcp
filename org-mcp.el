@@ -66,8 +66,8 @@ containing a heading, is rejected as a validation error.  A
 dynamic block with no matching `#+END:', is rejected too.
 
 Read tools (org-read-file, org-read-outline, org-read-headline,
-org-read-by-id) and all resources read the file from disk; unsaved
-changes in an Emacs buffer visiting the file are not reflected."
+org-read-by-id, org-grep) and all resources read the file from disk;
+unsaved changes in an Emacs buffer visiting the file are not reflected."
   "Server-level MCP `initialize' instructions for org-mcp.
 Holds the guidance that would otherwise be repeated in every
 tool and resource description.")
@@ -1773,10 +1773,11 @@ MCP Parameters:
   file - Absolute path to an Org file
   headline_path - Non-empty slash-separated path to headline
                   (string)
-                  Only slashes in headline titles must be
-                  encoded as %2F
-                  Example: \"Project/Planning\" for nested headlines
-                  Example: \"A%2FB Testing\" for headline titled
+                  Use full URL encoding: spaces as %20, # as
+                  %23, / as %2F, % as %25, etc.
+                  Example: \"My%20Project/Planning\" for nested
+                  headlines with spaces
+                  Example: \"A%2FB%20Testing\" for headline titled
                   \"A/B Testing\"
                   To read entire files, use org-read-file
                   instead"
@@ -1797,6 +1798,140 @@ MCP Parameters:
   uuid - UUID from headline's ID property"
   (org-mcp--validate-string-field uuid "uuid")
   (org-mcp--handle-id-resource `(("uuid" . ,uuid))))
+
+(defun org-mcp--build-headline-uri (file-path headline-path)
+  "Build an org-headline:// URI for FILE-PATH and HEADLINE-PATH.
+HEADLINE-PATH is a list of title strings; nil or empty yields the
+file-level URI (trailing slash form)."
+  (let ((encoded-file (replace-regexp-in-string "#" "%23" file-path)))
+    (if headline-path
+        (concat
+         org-mcp--uri-headline-prefix
+         encoded-file
+         "#"
+         (mapconcat #'url-hexify-string headline-path "/"))
+      (concat org-mcp--uri-headline-prefix encoded-file "/"))))
+
+(defun org-mcp--grep-section-matches (pat start end)
+  "Return matching lines for PAT in buffer range [START, END).
+Each entry is an alist with keys `line' (1-based) and `text'."
+  (let ((matches '()))
+    (save-excursion
+      (goto-char start)
+      (while (re-search-forward pat end t)
+        (let ((line-start (line-beginning-position)))
+          (push `((line . ,(line-number-at-pos line-start))
+                  (text
+                   .
+                   ,(buffer-substring-no-properties
+                     line-start (line-end-position))))
+                matches)
+          (forward-line 1))))
+    (nreverse matches)))
+
+(defun org-mcp--grep-file (file-path pattern case-fold)
+  "Search FILE-PATH for literal PATTERN; return list of group alists.
+CASE-FOLD non-nil means case-insensitive search."
+  (org-mcp--with-org-file file-path
+    (let* ((case-fold-search case-fold)
+           (pat (regexp-quote pattern))
+           (groups '())
+           (first-heading-pos
+            (save-excursion
+              (goto-char (point-min))
+              (if (re-search-forward "^\\*+ " nil t)
+                  (line-beginning-position)
+                (point-max)))))
+      (when-let* ((pre-matches
+                   (org-mcp--grep-section-matches
+                    pat (point-min) first-heading-pos)))
+        (push `((file . ,file-path)
+                (headline_path . [])
+                (uri . ,(org-mcp--build-headline-uri file-path nil))
+                (matches . ,(vconcat pre-matches)))
+              groups))
+      (goto-char (point-min))
+      (while (re-search-forward "^\\*+ " nil t)
+        (beginning-of-line)
+        (let* ((path
+                (save-excursion
+                  (let ((titles (list (org-get-heading t t t t))))
+                    (while (org-up-heading-safe)
+                      (push (org-get-heading t t t t) titles))
+                    titles)))
+               (id (org-entry-get nil "ID"))
+               (uri
+                (if id
+                    (concat org-mcp--uri-id-prefix id)
+                  (org-mcp--build-headline-uri file-path path)))
+               (section-start (point))
+               (section-end
+                (save-excursion
+                  (forward-line 1)
+                  (if (re-search-forward "^\\*+ " nil t)
+                      (line-beginning-position)
+                    (point-max))))
+               (matches
+                (org-mcp--grep-section-matches
+                 pat section-start section-end)))
+          (when matches
+            (push `((file . ,file-path)
+                    (headline_path . ,(vconcat path))
+                    (uri . ,uri)
+                    (matches . ,(vconcat matches)))
+                  groups))
+          (goto-char section-end)))
+      (nreverse groups))))
+
+(defun org-mcp--tool-grep (pattern &optional file case_sensitive)
+  "Search for PATTERN in FILE or all allowed Org files.
+PATTERN is a literal substring; non-empty, single-line string required.
+FILE is an optional absolute path limiting the search to one file.
+CASE_SENSITIVE when non-nil requires an exact case match.
+
+MCP Parameters:
+  pattern - Literal substring to search for (required, non-empty,
+            single-line)
+  file - Absolute path to an allowed Org file (optional)
+         When omitted, all org-mcp-allowed-files are searched
+  case_sensitive - Exact-case match when true (optional, default false)"
+  (org-mcp--validate-string-field pattern "pattern")
+  (when (string-empty-p pattern)
+    (org-mcp--tool-validation-error
+     "Field pattern must be non-empty"))
+  (when (string-match-p "\n" pattern)
+    (org-mcp--tool-validation-error
+     "Field pattern must be a single line"))
+  (org-mcp--validate-string-field file "file" t)
+  (let ((canonical-file
+         (when file
+           (org-mcp--find-allowed-file file))))
+    (when (and file (not canonical-file))
+      (org-mcp--tool-validation-error
+       "'%s': the referenced file not in allowed list"
+       file))
+    (let* ((case_sensitive
+            (cond
+             ((eq case_sensitive :json-false)
+              nil)
+             ((equal case_sensitive "false")
+              nil)
+             (t
+              case_sensitive)))
+           (case-fold (not case_sensitive))
+           (files
+            (if file
+                (list canonical-file)
+              (seq-filter
+               #'file-exists-p
+               (mapcar #'expand-file-name org-mcp-allowed-files))))
+           (groups
+            (apply #'append
+                   (mapcar
+                    (lambda (f)
+                      (org-mcp--grep-file f pattern case-fold))
+                    files))))
+      (json-encode `((groups . ,(vconcat groups)))))))
 
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
@@ -2048,6 +2183,43 @@ path-based access since IDs don't change when headlines are renamed
 or moved. File containing the ID must be in org-mcp-allowed-files.
 
 Returns: Plain text content of the headline and its subtree"
+     :read-only t)
+    (list
+     #'org-mcp--tool-grep
+     :id "org-grep"
+     :description
+     "Search for a literal substring across one or all allowed Org
+files.  Returns per-section groups of matching lines, each annotated
+with a headline path and a resource URI for each matching section.
+
+Parameters:
+  pattern - Literal substring to search for (required, non-empty,
+            single-line, not a regex)
+  file    - Absolute path of an allowed Org file (optional).
+            When omitted, all org-mcp-allowed-files are searched.
+  case_sensitive - When true, match is case-sensitive
+                   (optional, default false)
+
+Returns JSON object:
+  groups - Array of match groups, each containing:
+    file           - Absolute path of the source file
+    headline_path  - Array of headline titles tracing the path to
+                     the containing section (empty for pre-heading
+                     content)
+    uri            - Resource URI: org-id:// when the section has an
+                     ID property; org-headline:// otherwise.
+                     Pass directly to resources/read.  To use the
+                     read tools instead, extract the uuid
+                     (org-read-by-id) or file + fragment path
+                     (org-read-headline) from the URI.
+    matches        - Array of {line, text} objects (line is 1-based)
+
+Groups appear in document order, per file in org-mcp-allowed-files
+order.  A new group starts when the containing section changes.
+One entry per source line.
+
+Returns {\"groups\": []} when no files are configured and no file
+is given, or when the pattern has no matches."
      :read-only t))
    :resources
    (list
