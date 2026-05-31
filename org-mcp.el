@@ -51,6 +51,27 @@
 (defconst org-mcp--uri-id-prefix "org-id://"
   "URI prefix for ID-based resources.")
 
+(defconst org-mcp--instructions
+  "Cross-cutting behavior shared by org-mcp's tools and resources.
+
+File-modifying tools (org-add-todo, org-update-todo-state,
+org-rename-headline, org-edit-body) modify the file on disk; they fail
+if an Emacs buffer visiting the file has unsaved changes; ask the user
+to save the buffer and retry.  They validate the file's leading header
+block on every call; any `:NAME:' line at column 0 (with optional
+leading whitespace and any keyword) is treated as a drawer opener and
+must have a matching `:END:'.  An unterminated drawer, or a drawer
+containing a heading, is rejected as a validation error.  A
+`#+BEGIN_NAME' opener with no matching `#+END_NAME', or a `#+BEGIN:'
+dynamic block with no matching `#+END:', is rejected too.
+
+Read tools (org-read-file, org-read-outline, org-read-headline,
+org-read-by-id) and all resources read the file from disk; unsaved
+changes in an Emacs buffer visiting the file are not reflected."
+  "Server-level MCP `initialize' instructions for org-mcp.
+Holds the guidance that would otherwise be repeated in every
+tool and resource description.")
+
 (defun org-mcp--blank-or-nbsp-only-p (s)
   "Return non-nil if S is empty or has only whitespace and NBSP chars.
 NBSP is matched explicitly because Emacs 27.2's `[[:space:]]'
@@ -1781,6 +1802,7 @@ MCP Parameters:
   "Enable the org-mcp server."
   (mcp-server-lib-register-server
    :id org-mcp--server-id
+   :instructions org-mcp--instructions
    :tools
    (list
     (list
@@ -1884,15 +1906,6 @@ Use cases:
      "Update the TODO state of an Org headline.  Changes the task state
 while preserving the headline title, tags, and other properties.
 Creates an Org ID property for the headline if one doesn't exist.
-Modifies the file on disk; fails if an Emacs buffer visiting the
-file has unsaved changes; ask the user to save the buffer and retry.
-Validates the file's leading header block on every call; any
-`:NAME:' line at column 0 (with optional leading whitespace and
-any keyword) is treated as a drawer opener and must have a
-matching `:END:'.  An unterminated drawer, or a drawer containing
-a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
-opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
-block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1907,15 +1920,6 @@ Returns JSON object:
      "Add a new TODO item to an Org file at a specified location.
 Creates the headline with TODO state, tags, and optional body content.
 Automatically creates an Org ID property for the new headline.
-Modifies the file on disk; fails if an Emacs buffer visiting the
-file has unsaved changes; ask the user to save the buffer and retry.
-Validates the file's leading header block on every call; any
-`:NAME:' line at column 0 (with optional leading whitespace and
-any keyword) is treated as a drawer opener and must have a
-matching `:END:'.  An unterminated drawer, or a drawer containing
-a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
-opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
-block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -1985,15 +1989,6 @@ parent_uri (which has no sibling slot)."
      "Rename an Org headline's title while preserving its TODO state,
 tags, properties, and body content.  Creates an Org ID property for
 the headline if one doesn't exist.
-Modifies the file on disk; fails if an Emacs buffer visiting the
-file has unsaved changes; ask the user to save the buffer and retry.
-Validates the file's leading header block on every call; any
-`:NAME:' line at column 0 (with optional leading whitespace and
-any keyword) is treated as a drawer opener and must have a
-matching `:END:'.  An unterminated drawer, or a drawer containing
-a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
-opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
-block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -2009,15 +2004,6 @@ Returns JSON object:
 replacement.  Finds and replaces a substring within the headline's
 body text.  Creates an Org ID property for the headline if one doesn't
 exist.
-Modifies the file on disk; fails if an Emacs buffer visiting the
-file has unsaved changes; ask the user to save the buffer and retry.
-Validates the file's leading header block on every call; any
-`:NAME:' line at column 0 (with optional leading whitespace and
-any keyword) is treated as a drawer opener and must have a
-matching `:END:'.  An unterminated drawer, or a drawer containing
-a heading, is rejected as a validation error.  A `#+BEGIN_NAME'
-opener with no matching `#+END_NAME', or a `#+BEGIN:' dynamic
-block with no matching `#+END:', is rejected too.
 
 Returns JSON object:
   success - Always true on success (boolean)
@@ -2030,8 +2016,6 @@ Returns JSON object:
      "Read complete raw content of an Org file. Returns entire file as
 plain text with all formatting, properties, and structure preserved.
 File must be in org-mcp-allowed-files.
-Reads the file from disk; unsaved changes in an Emacs buffer visiting
-the file are not reflected.
 
 Returns: Plain text content of the entire Org file"
      :read-only t)
@@ -2042,8 +2026,6 @@ Returns: Plain text content of the entire Org file"
      "Get hierarchical structure of Org file as JSON outline. Returns
    all headline titles and nesting relationships at full depth. File
    must be in org-mcp-allowed-files.
-Reads the file from disk; unsaved changes in an Emacs buffer visiting
-the file are not reflected.
 
 Returns: JSON object with hierarchical outline structure"
      :read-only t)
@@ -2054,8 +2036,6 @@ Returns: JSON object with hierarchical outline structure"
      "Read specific Org headline by hierarchical path. Returns headline
    with TODO state, tags, properties, body text, and all nested
    subheadings. File must be in org-mcp-allowed-files.
-Reads the file from disk; unsaved changes in an Emacs buffer visiting
-the file are not reflected.
 
 Returns: Plain text content of the headline and its subtree"
      :read-only t)
@@ -2066,8 +2046,6 @@ Returns: Plain text content of the headline and its subtree"
      "Read Org headline by its unique ID property. More stable than
 path-based access since IDs don't change when headlines are renamed
 or moved. File containing the ID must be in org-mcp-allowed-files.
-Reads the file from disk; unsaved changes in an Emacs buffer visiting
-the file are not reflected.
 
 Returns: Plain text content of the headline and its subtree"
      :read-only t))
@@ -2080,8 +2058,7 @@ Returns: Plain text content of the headline and its subtree"
      :description
      "Access the complete raw content of an Org file.  Returns the
 entire file as plain text, preserving all formatting, properties, and
-structure.  Reads the file from disk; unsaved changes in an Emacs
-buffer visiting the file are not reflected.
+structure.
 
 URI format: org://{filename}
   filename - Absolute path to the Org file (required)
@@ -2094,8 +2071,7 @@ Returns: Plain text content of the entire Org file"
      :description
      "Get the hierarchical structure of an Org file as a JSON
 outline.  Extracts headline titles and their nesting relationships up
-to 2 levels deep.  Reads the file from disk; unsaved changes in an
-Emacs buffer visiting the file are not reflected.
+to 2 levels deep.
 
 URI format: org-outline://{filename}
   filename - Absolute path to the Org file (required)
@@ -2137,8 +2113,7 @@ Use this resource to:
      :description
      "Access content of a specific Org headline by its path in the
 file hierarchy.  Returns the headline and all its subheadings as
-plain text.  Reads the file from disk; unsaved changes in an Emacs
-buffer visiting the file are not reflected.
+plain text.
 
 URI format: org-headline://{filename}#{headline-path}
   filename - Absolute path (# characters must be encoded as %23)
@@ -2193,8 +2168,7 @@ Use this resource to:
      :description
      "Access content of an Org headline by its unique ID property.
 More stable than path-based access since IDs don't change when
-headlines are renamed or moved.  Reads the file from disk; unsaved
-changes in an Emacs buffer visiting the file are not reflected.
+headlines are renamed or moved.
 
 URI format: org-id://{uuid}
   uuid - Value of the headline's ID property (required)

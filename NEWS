@@ -4,6 +4,12 @@ org-mcp NEWS -- history of user-visible changes
 
 ** New Features
 
+*** Send MCP `initialize' instructions
+    The server now emits an `instructions' string in the MCP
+    `initialize' response, carrying the cross-cutting tool and
+    resource guidance that was previously repeated in each
+    description.
+
 *** Added `position' parameter to `org-add-todo'
     Optional `position' ("start" or "end", default "end") selects
     placement: first-child / last-child under a child `parent_uri',

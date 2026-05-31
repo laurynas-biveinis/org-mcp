@@ -1671,7 +1671,11 @@ the wire-protocol error text."
   `(progn
      (org-mcp-enable)
      (unwind-protect
-         (mcp-server-lib-ert-with-server :tools t :resources t ,@body)
+         (mcp-server-lib-ert-with-server
+           :tools t
+           :resources t
+           :instructions org-mcp--instructions
+           ,@body)
        (org-mcp-disable))))
 
 (defmacro org-mcp-test--with-temp-org-files (file-specs &rest body)
