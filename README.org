@@ -216,6 +216,27 @@ Empty configuration returns:
 }
 #+end_example
 
+*** org-get-agenda
+- *Description:* Get the same plain-text view Emacs shows for a standard Org
+  =org-agenda-list= in daily, weekly, or monthly span, aligned with
+  =org-agenda-day-view=, =org-agenda-week-view=, and =org-agenda-month-view=.
+- *Parameters:*
+  - =view= (string, required): =day=, =week=, or =month= (case-insensitive)
+  - =date= (string, optional): Any string =org-read-date= accepts; omit to use
+    today (an empty or whitespace-only string is rejected).  Fixes which day /
+    week / calendar month the agenda covers.  How unrecognized input is treated
+    follows your installed Org version.
+- *Scope:* The agenda is built only from =org-mcp-allowed-files= entries that
+  exist on disk.  It does not pull in other =org-agenda-files= the user may have
+  configured in Emacs.
+- *Returns:* JSON with =view=, =date= (your string or the literal =today= if
+  omitted), =start_day= (the first day the agenda actually covers, as
+  =YYYY-MM-DD=; resolved, for a month snapped to the first of the calendar
+  month, and for a week aligned per your =org-agenda-start-on-weekday= — the
+  reference day itself when that is nil), and =agenda= (full agenda buffer text,
+  including headers and lines for scheduled and deadline items from the allowed
+  files).
+
 *** org-update-todo-state
 - *Description:* Update the TODO state of a specific headline
 - *Parameters:*

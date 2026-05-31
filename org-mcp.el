@@ -35,6 +35,8 @@
 (require 'mcp-server-lib)
 (require 'org)
 (require 'org-id)
+(require 'org-agenda)
+(require 'calendar)
 (require 'url-util)
 
 (defcustom org-mcp-allowed-files nil
@@ -197,6 +199,102 @@ Compares truenames to handle symlinks and path variations."
                   :key #'file-truename
                   :test #'string=)))
       (expand-file-name found))))
+
+(defun org-mcp--agenda-allowed-file-list ()
+  "Return absolute truenames of regular files in `org-mcp-allowed-files'.
+Directory entries are excluded so they cannot be expanded by
+`org-agenda-list' into files outside the allow-list."
+  (let (out)
+    (dolist (f org-mcp-allowed-files)
+      (when (and f (stringp f) (file-regular-p f))
+        (push (file-truename f) out)))
+    (nreverse out)))
+
+(defconst org-mcp--agenda-buffer-name " *org-mcp agenda*"
+  "Name of the private buffer `org-mcp--agenda-buffer-text' builds into.
+The leading space keeps it off `buffer-list'.")
+
+(defun org-mcp--agenda-buffer-text (agenda-files start-day span)
+  "Build `org-agenda-list' for AGENDA-FILES, period START-DAY and SPAN.
+Return a cons (TEXT . STARTING-DAY): TEXT is the agenda buffer as a
+plain string and STARTING-DAY is the absolute day number the agenda
+actually anchored on (`org-starting-day').  Binds `org-agenda-files'
+and a private agenda buffer name so the user window layout is not
+disturbed.  `org-agenda-list' mutates several global agenda bookkeeping
+variables -- most damagingly it invalidates the markers of any live
+interactive agenda via `org-agenda-reset-markers' -- so they are
+let-bound here, which restores the user's values on exit and leaves a
+concurrent interactive agenda intact.  `org-agenda-start-day' is
+bound to nil so an omitted START-DAY anchors on today rather than
+the user's global, and `org-agenda-contributing-files' is bound to
+nil so the build does not overwrite the user's live value.  Any
+active agenda restriction lock is neutralized for the build:
+`org-agenda-restrict' and `org-agenda-overriding-restriction' are
+bound to nil, and the `org-restrict' symbol property on
+`org-agenda-files' (which `org-agenda-list' honors above the dynamic
+variable) is cleared and restored, so the agenda is always built
+from AGENDA-FILES alone.  The caller must ensure AGENDA-FILES is
+non-nil."
+  (cl-assert agenda-files)
+  (let* ((buffer-name org-mcp--agenda-buffer-name)
+         (org-agenda-files agenda-files)
+         (org-agenda-buffer-tmp-name buffer-name)
+         (org-agenda-buffer-name org-agenda-buffer-name)
+         (org-agenda-buffer org-agenda-buffer)
+         (org-agenda-pre-window-conf nil)
+         (org-agenda-window-setup 'current-window)
+         (org-agenda-sticky nil)
+         (org-agenda-markers nil)
+         (org-agenda-this-buffer-name nil)
+         (org-agenda-last-prefix-arg nil)
+         (org-todo-keywords-for-agenda nil)
+         (org-done-keywords-for-agenda nil)
+         (org-agenda-start-day nil)
+         (org-agenda-contributing-files nil)
+         (org-agenda-restrict nil)
+         (org-agenda-overriding-restriction nil)
+         (saved-restrict (get 'org-agenda-files 'org-restrict)))
+    (save-window-excursion
+      (unwind-protect
+          (progn
+            (put 'org-agenda-files 'org-restrict nil)
+            (org-agenda-list nil start-day span)
+            (let ((buf (get-buffer buffer-name)))
+              (cl-assert buf)
+              (with-current-buffer buf
+                (cl-assert org-starting-day)
+                (cons
+                 (buffer-substring-no-properties
+                  (point-min) (point-max))
+                 org-starting-day))))
+        (put 'org-agenda-files 'org-restrict saved-restrict)
+        (when-let* ((buf (get-buffer buffer-name)))
+          (kill-buffer buf))))))
+
+(defun org-mcp--agenda-start-day (date span)
+  "Return the `org-agenda-list' start day for DATE and SPAN.
+DATE is the user's reference-day string or nil.  For the month span
+the result is the absolute day number of the first of DATE's calendar
+month (today's month when DATE is nil), so the agenda spans that whole
+calendar month, matching `org-agenda-month-view'.  For other spans
+DATE is returned unchanged for `org-agenda-list' to resolve."
+  (if (eq span 'month)
+      (let ((decoded
+             (decode-time
+              (if date
+                  (org-read-date nil t date)
+                (current-time)))))
+        (calendar-absolute-from-gregorian
+         (list (nth 4 decoded) 1 (nth 5 decoded))))
+    date))
+
+(defun org-mcp--agenda-iso-date (absolute-day)
+  "Format ABSOLUTE-DAY, a Gregorian absolute day number, as YYYY-MM-DD."
+  (let ((gregorian (calendar-gregorian-from-absolute absolute-day)))
+    (format "%04d-%02d-%02d"
+            (nth 2 gregorian)
+            (nth 0 gregorian)
+            (nth 1 gregorian))))
 
 (defun org-mcp--refresh-file-buffers (file-path)
   "Refresh all buffers visiting FILE-PATH.
@@ -1229,6 +1327,56 @@ BODY-END is the buffer position where body ends."
   "Return the list of allowed Org files."
   (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
 
+(defun org-mcp--tool-get-agenda (view &optional date)
+  "Build an `org-agenda' buffer for the given view and return its text.
+The agenda includes only non-missing files from `org-mcp-allowed-files';
+other `org-agenda-files' entries are ignored.
+
+MCP Parameters:
+  view - Agenda span (string, required): \"day\", \"week\", or
+         \"month\" (case-insensitive), matching
+         `org-agenda-day-view', `org-agenda-week-view', and
+         `org-agenda-month-view' respectively.  A week is aligned
+         per `org-agenda-start-on-weekday' (the reference day itself
+         when that is nil)
+  date - Reference day (string, optional).  A string like
+         `org-read-date' accepts (e.g. \"2026-04-26\" or \"+2d\");
+         how unrecognized input is treated follows the installed
+         Org version.  If omitted, today is used; an empty or
+         whitespace-only string is rejected -- omit the key instead"
+  (org-mcp--validate-string-field view "view")
+  (org-mcp--validate-string-field date "date" t)
+  (when (and date (org-mcp--blank-or-nbsp-only-p date))
+    (org-mcp--tool-validation-error
+     "Field date must not be empty or whitespace-only"))
+  (let*
+      ((normalized-view (downcase view))
+       (span
+        (cond
+         ((string= normalized-view "day")
+          'day)
+         ((string= normalized-view "week")
+          'week)
+         ((string= normalized-view "month")
+          'month)
+         (t
+          (org-mcp--tool-validation-error
+           "view must be \"day\", \"week\", or \"month\", got: \"%s\""
+           view))))
+       (agenda-files (org-mcp--agenda-allowed-file-list)))
+    (unless agenda-files
+      (org-mcp--tool-validation-error
+       "No existing files in org-mcp-allowed-files; cannot build agenda"))
+    (let* ((start-day (org-mcp--agenda-start-day date span))
+           (result
+            (org-mcp--agenda-buffer-text
+             agenda-files start-day span)))
+      (json-encode
+       `((view . ,(symbol-name span))
+         (date . ,(or date "today"))
+         (start_day . ,(org-mcp--agenda-iso-date (cdr result)))
+         (agenda . ,(car result)))))))
+
 (defun org-mcp--tool-update-todo-state (uri current_state new_state)
   "Update the TODO state of a headline at URI.
 Creates an Org ID for the headline if one doesn't exist.
@@ -2037,6 +2185,28 @@ Use cases:
   - Access Troubleshooting: Why is my file access failing?
   - Configuration Verification: Did my org-mcp-allowed-files setting
     work correctly?"
+     :read-only t)
+    (list
+     #'org-mcp--tool-get-agenda
+     :id "org-get-agenda"
+     :description
+     "Return the plain-text contents of a standard Org daily, weekly, or
+monthly agenda, as produced by `org-agenda-list' with span day, week, or
+month.  The agenda is built only from non-missing files in
+`org-mcp-allowed-files' (it does not use other `org-agenda-files'
+configuration).
+
+Returns JSON object:
+  view - The span name (\"day\", \"week\", or \"month\")
+  date - The date argument you passed, or the string \"today\"
+  start_day - The first day the agenda actually covers, as
+              YYYY-MM-DD (resolved; for a month snapped to the first
+              of the calendar month; for a week aligned per the
+              user's `org-agenda-start-on-weekday', which is the
+              reference day itself when that is nil)
+  agenda - The full agenda buffer text, including day/week/month
+           headers and lines for scheduled, deadlines, and other
+           agenda material from the allowed files"
      :read-only t)
     (list
      #'org-mcp--tool-update-todo-state

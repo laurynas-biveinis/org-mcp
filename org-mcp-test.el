@@ -33,6 +33,31 @@ Some unstructured paragraph.
 "
   "File with `#+TITLE:' followed by a plain paragraph and no headings.")
 
+(defconst org-mcp-test--agenda-basic-content
+  "* TODO Test agenda line
+SCHEDULED: <2026-04-26>
+"
+  "Single TODO task scheduled on 2026-04-26.")
+
+(defconst org-mcp-test--agenda-month-content
+  "* TODO Early April task
+SCHEDULED: <2026-04-03>
+* TODO On reference day
+SCHEDULED: <2026-04-26>
+* TODO Next month task
+SCHEDULED: <2026-05-10>
+"
+  "Three scheduled tasks spanning the April-May 2026 month
+boundary: 2026-04-03, 2026-04-26, and 2026-05-10.")
+
+(defconst org-mcp-test--agenda-two-task-content
+  "* TODO First agenda task
+SCHEDULED: <2026-04-26>
+* TODO Second agenda task
+SCHEDULED: <2026-04-26>
+"
+  "Two sibling TODO tasks both scheduled on 2026-04-26.")
+
 (defconst org-mcp-test--content-with-id-id
   "550e8400-e29b-41d4-a716-446655440000"
   "ID value for org-mcp-test--content-with-id.")
@@ -2703,6 +2728,500 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
      "/home/user/projects.org"
      "/home/user/notes.org")))
 
+;; org-get-agenda tests
+
+(ert-deftest org-mcp-test-tool-get-agenda-day ()
+  "Test org-get-agenda with day view.
+Pins the day-view contract: the JSON echoes the input `date', reports
+`start_day' as that same resolved day, and the agenda renders the
+scheduled task.  `org-agenda-format-date' is pinned so the rendered
+date header is deterministic regardless of ambient Org configuration."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((org-agenda-format-date "%Y-%m-%d")
+          (result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "day") (date . "2026-04-26")))))
+          (agenda (alist-get 'agenda result))
+          (view (alist-get 'view result))
+          (date (alist-get 'date result))
+          (start-day (alist-get 'start_day result)))
+     (should (string= view "day"))
+     (should (string= date "2026-04-26"))
+     (should (string= start-day "2026-04-26"))
+     (should (string-match "2026-04-26" agenda))
+     (should (string-match "Test agenda line" agenda)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-week ()
+  "Test org-get-agenda with week view.
+Pins the week-view contract: with the week starting on Monday, a view
+anchored on Sunday 2026-04-26 reports `start_day' as the preceding
+Monday 2026-04-20.  `org-agenda-start-on-weekday' is pinned so the week
+boundary is deterministic."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((org-agenda-start-on-weekday 1)
+          (result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "week") (date . "2026-04-26")))))
+          (agenda (alist-get 'agenda result))
+          (view (alist-get 'view result))
+          (date (alist-get 'date result))
+          (start-day (alist-get 'start_day result)))
+     (should (string= view "week"))
+     (should (string= date "2026-04-26"))
+     (should (string= start-day "2026-04-20"))
+     (should (string-match "Test agenda line" agenda)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-month ()
+  "Test org-get-agenda month view spans the whole calendar month.
+Pins calendar-month alignment with `org-agenda-month-view': a month
+view anchored on 2026-04-26 reports `start_day' as the first of the
+month and covers all of April -- including the April 3 task that
+precedes the reference day -- while excluding the May 10 task that a
+rolling 30-day window from the 26th would wrongly include."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-month-content))
+   (let* ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "month") (date . "2026-04-26")))))
+          (agenda (alist-get 'agenda result))
+          (view (alist-get 'view result))
+          (date (alist-get 'date result))
+          (start-day (alist-get 'start_day result)))
+     (should (string= view "month"))
+     (should (string= date "2026-04-26"))
+     (should (string= start-day "2026-04-01"))
+     (should (string-match "Early April task" agenda))
+     (should-not (string-match "Next month task" agenda)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-view-case-insensitive ()
+  "Test org-get-agenda accepts mixed-case view name."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "DaY") (date . "2026-04-26")))))
+          (view (alist-get 'view result)))
+     (should (string= view "day")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-no-existing-files ()
+  "Test org-get-agenda errors when no allowed files exist on disk."
+  (let ((org-mcp-allowed-files '("/no/such/org-mcp-agenda-test-file.org")))
+    (org-mcp-test--with-enabled
+     (let* ((params '((view . "day") (date . "2026-04-26")))
+            (request (mcp-server-lib-create-tools-call-request
+                      "org-get-agenda" nil params))
+            (response (mcp-server-lib-process-jsonrpc-parsed
+                       request mcp-server-lib-ert-server-id)))
+       (should-error
+        (mcp-server-lib-ert-process-tool-response response)
+        :type 'mcp-server-lib-tool-error)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-bad-view ()
+  "Test org-get-agenda errors on invalid view."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((params '((view . "fortnight") (date . "2026-04-26")))
+          (request (mcp-server-lib-create-tools-call-request
+                    "org-get-agenda" nil params))
+          (response (mcp-server-lib-process-jsonrpc-parsed
+                     request mcp-server-lib-ert-server-id)))
+     (should-error
+      (mcp-server-lib-ert-process-tool-response response)
+      :type 'mcp-server-lib-tool-error))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-default-date ()
+  "Test org-get-agenda reports the literal \"today\" when date is omitted.
+Pins the documented default-date contract: omitting `date' returns the
+literal string \"today\" in the JSON `date' field and still renders an
+agenda."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "day")))))
+          (agenda (alist-get 'agenda result))
+          (view (alist-get 'view result))
+          (date (alist-get 'date result)))
+     (should (string= view "day"))
+     (should (string= date "today"))
+     (should (stringp agenda))
+     (should (> (length agenda) 0)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-week-defaults-to-today ()
+  "Test org-get-agenda week view reports \"today\" when date is omitted.
+Pins the default-date contract for the week span, completing the
+day/week/month matrix: omitting `date' returns the literal string
+\"today\" in the JSON `date' field and still renders an agenda."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "week")))))
+          (agenda (alist-get 'agenda result))
+          (view (alist-get 'view result))
+          (date (alist-get 'date result)))
+     (should (string= view "week"))
+     (should (string= date "today"))
+     (should (stringp agenda))
+     (should (> (length agenda) 0)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-ignores-org-agenda-start-day ()
+  "Test org-get-agenda day view ignores a non-nil `org-agenda-start-day'.
+Pins the omitted-`date' contract under scope isolation: when `date' is
+omitted the day view anchors on today regardless of the user's global
+`org-agenda-start-day'.  Without isolating that global, `org-agenda-list'
+falls back to it and the agenda silently anchors on the configured day
+instead of today.  `current-time' is stubbed so today is deterministic,
+and `org-agenda-start-day' is set to a different day to prove the global
+does not leak into the resolved `start_day'."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (cl-letf (((symbol-function 'current-time)
+              (lambda ()
+                (encode-time (list 0 0 12 1 6 2026 nil -1 nil)))))
+     (let* ((org-agenda-start-day "2026-06-10")
+            (result
+             (json-read-from-string
+              (mcp-server-lib-ert-call-tool
+               "org-get-agenda" '((view . "day")))))
+            (view (alist-get 'view result))
+            (date (alist-get 'date result))
+            (start-day (alist-get 'start_day result)))
+       (should (string= view "day"))
+       (should (string= date "today"))
+       (should (string= start-day "2026-06-01"))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-unparseable-date ()
+  "Test org-get-agenda forwards a day/week `date' to Org verbatim.
+Pins org-mcp's own contract for the day/week path: the `date' string is
+passed through to `org-agenda-list' as its start day unchanged and
+echoed back verbatim in the response.  `org-agenda-list' is stubbed so
+the test does not depend on how the installed Org version resolves
+unrecognized input -- resolution org-mcp deliberately delegates to Org."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let (forwarded-start-day)
+     (cl-letf (((symbol-function 'org-agenda-list)
+                (lambda (&optional _arg start-day &rest _)
+                  (setq forwarded-start-day start-day)
+                  (with-current-buffer
+                      (get-buffer-create org-agenda-buffer-tmp-name)
+                    (insert "stub agenda body\n")
+                    (set (make-local-variable 'org-starting-day)
+                         (calendar-absolute-from-gregorian
+                          '(6 1 2026)))))))
+       (let* ((result
+               (json-read-from-string
+                (mcp-server-lib-ert-call-tool
+                 "org-get-agenda"
+                 '((view . "day") (date . "notadate")))))
+              (agenda (alist-get 'agenda result))
+              (date (alist-get 'date result)))
+         (should (equal forwarded-start-day "notadate"))
+         (should (string= date "notadate"))
+         (should (stringp agenda)))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-month-unparseable-date ()
+  "Test org-get-agenda month view passes `date' to `org-read-date' verbatim.
+The month branch resolves `date' itself via `org-read-date' at a
+different point than the day/week spans, which forward the string to
+`org-agenda-list'.  Pins org-mcp's own contract for that distinct path:
+the `date' string is handed to `org-read-date' unchanged and echoed
+back verbatim.  `org-read-date' is stubbed so the test does not depend
+on how the installed Org version resolves unrecognized input -- which
+org-mcp deliberately delegates to Org -- and `start_day' is not
+asserted."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let (forwarded-date)
+     (cl-letf (((symbol-function 'org-read-date)
+                (lambda (&optional _with-time _to-time from-string &rest _)
+                  (setq forwarded-date from-string)
+                  (encode-time (list 0 0 12 1 6 2026 nil -1 nil)))))
+       (let* ((result
+               (json-read-from-string
+                (mcp-server-lib-ert-call-tool
+                 "org-get-agenda"
+                 '((view . "month") (date . "notadate")))))
+              (agenda (alist-get 'agenda result))
+              (view (alist-get 'view result))
+              (date (alist-get 'date result)))
+         (should (equal forwarded-date "notadate"))
+         (should (string= view "month"))
+         (should (string= date "notadate"))
+         (should (stringp agenda)))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-empty-date ()
+  "Test org-get-agenda rejects an empty or whitespace-only date.
+Pins that a blank `date' is a validation error rather than being
+silently treated as omitted: clients must omit the key to get today."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (dolist (blank-date '("" " " "\u00A0"))
+     (let* ((params `((view . "day") (date . ,blank-date)))
+            (request (mcp-server-lib-create-tools-call-request
+                      "org-get-agenda" nil params))
+            (response (mcp-server-lib-process-jsonrpc-parsed
+                       request mcp-server-lib-ert-server-id)))
+       (should-error
+        (mcp-server-lib-ert-process-tool-response response)
+        :type 'mcp-server-lib-tool-error)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-ignores-other-agenda-files ()
+  "Test org-get-agenda ignores the user's `org-agenda-files'.
+Pins the scope-isolation contract: the agenda is built only from
+`org-mcp-allowed-files', so a task living in a file the user has in
+`org-agenda-files' but not in the allowed list must not leak into the
+result, while the allowed file's task still appears."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let ((foreign-file
+          (make-temp-file
+           "org-mcp-foreign" nil ".org"
+           org-mcp-test--agenda-month-content)))
+     (unwind-protect
+         (let* ((org-agenda-files (list foreign-file))
+                (result
+                 (json-read-from-string
+                  (mcp-server-lib-ert-call-tool
+                   "org-get-agenda"
+                   '((view . "day") (date . "2026-04-26")))))
+                (agenda (alist-get 'agenda result)))
+           (should (string-match "Test agenda line" agenda))
+           (should-not (string-match "On reference day" agenda)))
+       (delete-file foreign-file)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-ignores-file-restriction-lock ()
+  "Test org-get-agenda ignores an active agenda file restriction lock.
+Pins the scope-isolation contract against
+`org-agenda-set-restriction-lock': when the user has locked the agenda
+to a file outside `org-mcp-allowed-files', the lock is the `org-restrict'
+symbol property on `org-agenda-files', which `org-agenda-list' honors
+above the dynamic variable.  The tool must still build only from the
+allowed files, so the foreign task must not leak.  The lock state is
+restored afterward so a concurrent interactive agenda keeps its
+restriction."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let ((foreign-file
+          (make-temp-file
+           "org-mcp-foreign" nil ".org"
+           org-mcp-test--agenda-month-content))
+         (saved-restrict (get 'org-agenda-files 'org-restrict)))
+     (unwind-protect
+         (let* ((foreign-truename (file-truename foreign-file))
+                (org-agenda-restrict t)
+                (org-agenda-overriding-restriction 'file))
+           (put 'org-agenda-files 'org-restrict (list foreign-truename))
+           (let* ((result
+                   (json-read-from-string
+                    (mcp-server-lib-ert-call-tool
+                     "org-get-agenda"
+                     '((view . "day") (date . "2026-04-26")))))
+                  (agenda (alist-get 'agenda result)))
+             (should (string-match "Test agenda line" agenda))
+             (should-not (string-match "On reference day" agenda))
+             (should (equal (get 'org-agenda-files 'org-restrict)
+                            (list foreign-truename)))))
+       (put 'org-agenda-files 'org-restrict saved-restrict)
+       (delete-file foreign-file)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-ignores-subtree-restriction-lock ()
+  "Test org-get-agenda ignores an active agenda subtree restriction lock.
+Pins that a subtree lock on an allowed file does not narrow the tool's
+agenda: `org-agenda-list' narrows scanning to
+`org-agenda-restrict-begin'..`org-agenda-restrict-end' when the scanned
+buffer is `org-agenda-restrict', so without isolating that state the
+tool would drop entries outside the locked subtree.  Both sibling tasks
+must appear."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-two-task-content))
+   (let ((saved-restrict (get 'org-agenda-files 'org-restrict))
+         (buf (find-file-noselect agenda-file)))
+     (unwind-protect
+         (let ((org-agenda-restrict buf)
+               (org-agenda-overriding-restriction 'subtree))
+           (with-current-buffer buf
+             (goto-char (point-min))
+             (org-back-to-heading t)
+             (move-marker org-agenda-restrict-begin (point))
+             (move-marker org-agenda-restrict-end
+                          (save-excursion
+                            (org-end-of-subtree t t)
+                            (point))))
+           (put 'org-agenda-files 'org-restrict
+                (list (file-truename agenda-file)))
+           (let* ((result
+                   (json-read-from-string
+                    (mcp-server-lib-ert-call-tool
+                     "org-get-agenda"
+                     '((view . "day") (date . "2026-04-26")))))
+                  (agenda (alist-get 'agenda result)))
+             (should (string-match "First agenda task" agenda))
+             (should (string-match "Second agenda task" agenda))))
+       (put 'org-agenda-files 'org-restrict saved-restrict)
+       (move-marker org-agenda-restrict-begin nil)
+       (move-marker org-agenda-restrict-end nil)
+       (when (buffer-live-p buf)
+         (kill-buffer buf))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-preserves-global-state ()
+  "Test org-get-agenda isolates the globals `org-agenda-list' mutates.
+Pins the global-state isolation across a single tool call:
+- a live interactive agenda's `org-agenda-markers' stay attached to
+  their buffer -- the tool does not detach them via
+  `org-agenda-reset-markers';
+- `org-agenda-buffer-name' is not left naming the killed private
+  buffer;
+- `org-agenda-buffer', which `org-agenda-prepare' repoints at the
+  private build buffer on the non-sticky path, is restored to the live
+  interactive agenda buffer rather than left dangling at the killed
+  private buffer;
+- `org-agenda-pre-window-conf', which `org-agenda-prepare-window'
+  overwrites on the non-sticky path before `org-agenda-mode' can make it
+  buffer-local, is returned unchanged;
+- `org-agenda-contributing-files', which `org-agenda-prepare' resets and
+  `org-agenda-format-item' accumulates into -- a plain global that
+  `org-agenda-mode' does not make buffer-local, so without isolation the
+  tool overwrites the user's live value.
+The sentinels for `org-agenda-pre-window-conf' and
+`org-agenda-contributing-files' are set after building the interactive
+agenda (whose own build overwrites them) so the assertions isolate the
+tool call's effect."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let ((org-agenda-files (list agenda-file))
+         (org-agenda-sticky nil)
+         (org-agenda-buffer-name "*Org Agenda*")
+         (org-agenda-pre-window-conf nil)
+         (org-agenda-contributing-files nil)
+         ;; Restore these non-buffer-local globals `org-agenda-list'
+         ;; mutates, so dead state does not leak into later tests.
+         (org-agenda-buffer org-agenda-buffer)
+         (org-agenda-markers org-agenda-markers))
+     (unwind-protect
+         (progn
+           (org-agenda-list nil "2026-04-26" 'day)
+           (let ((markers (copy-sequence org-agenda-markers))
+                 (agenda-buffer org-agenda-buffer))
+             (should markers)
+             (should (cl-every #'marker-buffer markers))
+             (setq org-agenda-pre-window-conf 'sentinel)
+             (setq org-agenda-contributing-files 'sentinel)
+             (mcp-server-lib-ert-call-tool
+              "org-get-agenda"
+              '((view . "day") (date . "2026-04-26")))
+             (should (cl-every #'marker-buffer markers))
+             (should (string= org-agenda-buffer-name "*Org Agenda*"))
+             (should (eq org-agenda-buffer agenda-buffer))
+             (should (buffer-live-p org-agenda-buffer))
+             (should (eq org-agenda-pre-window-conf 'sentinel))
+             (should (eq org-agenda-contributing-files 'sentinel))))
+       (when-let* ((buf (get-buffer org-agenda-buffer-name)))
+         (kill-buffer buf))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-month-resolves-reference-date ()
+  "Test org-get-agenda month view snaps `start_day' to the parsed month.
+Pins that the month branch resolves the `date' string and snaps to the
+first of *that* calendar month and year -- not the fixture's April 2026
+-- so a reference day in a different month and year reports `start_day'
+as the first of the resolved month.  Exercises the `decode-time'
+month/year extraction that only the month span performs."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "month") (date . "2025-02-15")))))
+          (view (alist-get 'view result))
+          (start-day (alist-get 'start_day result)))
+     (should (string= view "month"))
+     (should (string= start-day "2025-02-01")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-month-defaults-to-current-month ()
+  "Test org-get-agenda month view with no `date' snaps to the current month.
+Pins the nil-`date' month branch of `org-mcp--agenda-start-day': it
+decodes `current-time' and reports `start_day' as the first of the
+current calendar month.  `current-time' is stubbed to a fixed
+mid-month instant so the assertion is deterministic and independent of
+the test host's clock and timezone."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (cl-letf (((symbol-function 'current-time)
+              (lambda ()
+                (encode-time (list 0 0 12 15 6 2027 nil -1 nil)))))
+     (let* ((result
+             (json-read-from-string
+              (mcp-server-lib-ert-call-tool
+               "org-get-agenda" '((view . "month")))))
+            (view (alist-get 'view result))
+            (start-day (alist-get 'start_day result)))
+       (should (string= view "month"))
+       (should (string= start-day "2027-06-01"))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-week-unsnapped-weekday ()
+  "Test org-get-agenda week view honors a nil `org-agenda-start-on-weekday'.
+Pins that week alignment follows the user's
+`org-agenda-start-on-weekday': when it is nil the week is not snapped
+to a fixed weekday, so `start_day' equals the reference day itself
+rather than the preceding Monday."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let* ((org-agenda-start-on-weekday nil)
+          (result
+           (json-read-from-string
+            (mcp-server-lib-ert-call-tool
+             "org-get-agenda" '((view . "week") (date . "2026-04-26")))))
+          (view (alist-get 'view result))
+          (start-day (alist-get 'start_day result)))
+     (should (string= view "week"))
+     (should (string= start-day "2026-04-26")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-ignores-directory-entries ()
+  "Test org-get-agenda excludes directory entries from the allow-list.
+Pins the scope-isolation contract against directory expansion: a
+directory in `org-mcp-allowed-files' must not reach `org-agenda-list',
+which would expand it into every contained Org file and leak tasks
+from outside the allow-list into the result."
+  (org-mcp-test--with-temp-org-files
+   ((agenda-file org-mcp-test--agenda-basic-content))
+   (let ((foreign-dir (make-temp-file "org-mcp-agenda-dir" t)))
+     (unwind-protect
+         (progn
+           (with-temp-file (expand-file-name "foreign.org" foreign-dir)
+             (insert org-mcp-test--agenda-month-content))
+           (let* ((org-mcp-allowed-files (list agenda-file foreign-dir))
+                  (result
+                   (json-read-from-string
+                    (mcp-server-lib-ert-call-tool
+                     "org-get-agenda"
+                     '((view . "day") (date . "2026-04-26")))))
+                  (agenda (alist-get 'agenda result)))
+             (should (string-match "Test agenda line" agenda))
+             (should-not (string-match "On reference day" agenda))))
+       (delete-directory foreign-dir t)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-cleans-buffer-on-error ()
+  "Test `org-mcp--agenda-buffer-text' reclaims its buffer on a build error.
+Pins error-path cleanup: if `org-agenda-list' signals after creating
+the private agenda buffer, `org-mcp--agenda-buffer-text' must kill it
+rather than leak a hidden buffer."
+  (cl-letf (((symbol-function 'org-agenda-list)
+             (lambda (&rest _)
+               (get-buffer-create org-agenda-buffer-tmp-name)
+               (error "Simulated agenda failure"))))
+    (should-error
+     (org-mcp--agenda-buffer-text '("/no/such/file.org") nil 'day))
+    (should-not (get-buffer org-mcp--agenda-buffer-name))))
+
 (ert-deftest org-mcp-test-file-not-in-allowed-list-returns-error ()
   "Test that reading a file not in allowed list returns an error."
   (org-mcp-test--with-temp-org-files
@@ -3649,8 +4168,8 @@ explicitly match NBSP so a no-meaningful-content suffix is rejected
 with the URI-format validation error regardless of which blank
 character was used."
   (org-mcp-test--assert-add-todo-error-message
-   "org-headline:// "
-   "Invalid resource URI format: org-headline:// "))
+   "org-headline://\u00A0"
+   "Invalid resource URI format: org-headline://\u00A0"))
 
 (ert-deftest org-mcp-test-add-todo-doubly-prefixed-parent-uri-rejected ()
   "Doubly-prefixed `org-id://org-headline://...' parent_uri is rejected.
@@ -4171,7 +4690,7 @@ suffix check and lets the value through."
   (org-mcp-test--assert-add-todo-after-uri-rejected
    org-mcp-test--content-nested-siblings
    "Parent%20Task"
-   "org-id:// "
+   "org-id://\u00A0"
    nil
    "is not org-id://"))
 
@@ -4303,7 +4822,7 @@ error regardless of Emacs 27.2's `[[:space:]]' behaviour."
    org-mcp-test--content-empty
    "New Task" "TODO" '("work") nil
    (format "org-headline://%s#" test-file)
-   :position " "
+   :position "\u00A0"
    :error-message-regex "Field position must be one of"))
 
 (ert-deftest org-mcp-test-add-todo-invalid-position-empty-with-after-uri ()
