@@ -5,7 +5,7 @@
 ;; Author: Laurynas Biveinis <laurynas.biveinis@gmail.com>
 ;; Keywords: convenience, files, matching, outlines
 ;; Version: 0.10.0
-;; Package-Requires: ((emacs "27.1") (mcp-server-lib "0.2.0"))
+;; Package-Requires: ((emacs "27.1") (mcp-server-lib "0.3.0"))
 ;; Homepage: https://github.com/laurynas-biveinis/org-mcp
 
 ;; This file is NOT part of GNU Emacs.
@@ -316,9 +316,9 @@ cannot poison a successful resolution.
 Callers translate the status into a tool error or a resource error
 of the appropriate shape."
   (if-let* ((id-file (org-id-find-id-file id)))
-      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-          (cons :found allowed-file)
-        (cons :disallowed nil))
+    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+      (cons :found allowed-file)
+      (cons :disallowed nil))
     (if-let* ((file
                (catch 'found
                  (dolist (allowed-file org-mcp-allowed-files)
@@ -328,11 +328,11 @@ of the appropriate shape."
                          (throw 'found
                                 (expand-file-name
                                  allowed-file)))))))))
-        (progn
-          (when org-id-track-globally
-            (ignore-errors
-              (org-id-add-location id file)))
-          (cons :found file))
+      (progn
+        (when org-id-track-globally
+          (ignore-errors
+            (org-id-add-location id file)))
+        (cons :found file))
       (cons :missing nil))))
 
 (defun org-mcp--find-allowed-file-with-id (id)
@@ -362,11 +362,11 @@ Throws an error if neither prefix matches."
   `(if-let* ((id
               (org-mcp--extract-uri-suffix
                ,uri org-mcp--uri-id-prefix)))
-       ,id-body
+     ,id-body
      (if-let* ((headline
                 (org-mcp--extract-uri-suffix
                  ,uri org-mcp--uri-headline-prefix)))
-         ,headline-body
+       ,headline-body
        (org-mcp--tool-validation-error
         "Invalid resource URI format: %s"
         ,uri))))
@@ -572,7 +572,7 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
   (if is-id
       ;; ID case - headline-path contains single ID
       (if-let* ((pos (org-find-property "ID" (car headline-path))))
-          (goto-char pos)
+        (goto-char pos)
         (org-mcp--id-not-found-error (car headline-path)))
     ;; Path case - headline-path contains title hierarchy
     (unless (org-mcp--navigate-to-headline headline-path)
@@ -1779,11 +1779,15 @@ MCP Parameters:
 
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-get-todo-config
-   :id "org-get-todo-config"
-   :description
-   "Get the TODO keyword configuration from the current Emacs
+  (mcp-server-lib-register-server
+   :id org-mcp--server-id
+   :tools
+   (list
+    (list
+     #'org-mcp--tool-get-todo-config
+     :id "org-get-todo-config"
+     :description
+     "Get the TODO keyword configuration from the current Emacs
 Org-mode settings.  Returns information about task state sequences
 and their semantics.
 
@@ -1805,14 +1809,12 @@ the last keyword is treated as the done state.
 
 Use this tool to understand the available task states in the Org
 configuration before creating or updating TODO items."
-   :read-only t
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-get-tag-config
-   :id "org-get-tag-config"
-   :description
-   "Get tag-related configuration from the current Emacs Org-mode
+     :read-only t)
+    (list
+     #'org-mcp--tool-get-tag-config
+     :id "org-get-tag-config"
+     :description
+     "Get tag-related configuration from the current Emacs Org-mode
 settings.  Returns literal Elisp variable values as strings for tag
 configuration introspection.
 
@@ -1839,14 +1841,12 @@ Use this tool to understand:
 
 This helps validate tag usage and understand tag semantics before
 adding or modifying tags on TODO items."
-   :read-only t
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-get-allowed-files
-   :id "org-get-allowed-files"
-   :description
-   "Get the list of Org files accessible through the org-mcp
+     :read-only t)
+    (list
+     #'org-mcp--tool-get-allowed-files
+     :id "org-get-allowed-files"
+     :description
+     "Get the list of Org files accessible through the org-mcp
 server.  Returns the configured allowed files exactly as specified in
 org-mcp-allowed-files.
 
@@ -1876,14 +1876,12 @@ Use cases:
   - Access Troubleshooting: Why is my file access failing?
   - Configuration Verification: Did my org-mcp-allowed-files setting
     work correctly?"
-   :read-only t
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-update-todo-state
-   :id "org-update-todo-state"
-   :description
-   "Update the TODO state of an Org headline.  Changes the task state
+     :read-only t)
+    (list
+     #'org-mcp--tool-update-todo-state
+     :id "org-update-todo-state"
+     :description
+     "Update the TODO state of an Org headline.  Changes the task state
 while preserving the headline title, tags, and other properties.
 Creates an Org ID property for the headline if one doesn't exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
@@ -1901,14 +1899,12 @@ Returns JSON object:
   previous_state - The previous TODO state (string, empty for none)
   new_state - The new TODO state that was set (string)
   uri - ID-based URI (org-id://{uuid}) for the updated headline"
-   :read-only nil
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-add-todo
-   :id "org-add-todo"
-   :description
-   "Add a new TODO item to an Org file at a specified location.
+     :read-only nil)
+    (list
+     #'org-mcp--tool-add-todo
+     :id "org-add-todo"
+     :description
+     "Add a new TODO item to an Org file at a specified location.
 Creates the headline with TODO state, tags, and optional body content.
 Automatically creates an Org ID property for the new headline.
 Modifies the file on disk; fails if an Emacs buffer visiting the
@@ -1981,14 +1977,12 @@ After_uri cannot combine with an explicit position (which includes
 position=\"end\", even though that is the default -- omit position
 entirely to use after_uri-based placement), nor with a top-level
 parent_uri (which has no sibling slot)."
-   :read-only nil
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-rename-headline
-   :id "org-rename-headline"
-   :description
-   "Rename an Org headline's title while preserving its TODO state,
+     :read-only nil)
+    (list
+     #'org-mcp--tool-rename-headline
+     :id "org-rename-headline"
+     :description
+     "Rename an Org headline's title while preserving its TODO state,
 tags, properties, and body content.  Creates an Org ID property for
 the headline if one doesn't exist.
 Modifies the file on disk; fails if an Emacs buffer visiting the
@@ -2006,14 +2000,12 @@ Returns JSON object:
   previous_title - The previous headline title (string)
   new_title - The new title that was set (string)
   uri - ID-based URI (org-id://{uuid}) for the renamed headline"
-   :read-only nil
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-edit-body
-   :id "org-edit-body"
-   :description
-   "Edit the body content of an Org headline using partial string
+     :read-only nil)
+    (list
+     #'org-mcp--tool-edit-body
+     :id "org-edit-body"
+     :description
+     "Edit the body content of an Org headline using partial string
 replacement.  Finds and replaces a substring within the headline's
 body text.  Creates an Org ID property for the headline if one doesn't
 exist.
@@ -2030,71 +2022,63 @@ block with no matching `#+END:', is rejected too.
 Returns JSON object:
   success - Always true on success (boolean)
   uri - ID-based URI (org-id://{uuid}) for the edited headline"
-   :read-only nil
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-read-file
-   :id "org-read-file"
-   :description
-   "Read complete raw content of an Org file. Returns entire file as
+     :read-only nil)
+    (list
+     #'org-mcp--tool-read-file
+     :id "org-read-file"
+     :description
+     "Read complete raw content of an Org file. Returns entire file as
 plain text with all formatting, properties, and structure preserved.
 File must be in org-mcp-allowed-files.
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
 
 Returns: Plain text content of the entire Org file"
-   :read-only t
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-read-outline
-   :id "org-read-outline"
-   :description
-   "Get hierarchical structure of Org file as JSON outline. Returns
+     :read-only t)
+    (list
+     #'org-mcp--tool-read-outline
+     :id "org-read-outline"
+     :description
+     "Get hierarchical structure of Org file as JSON outline. Returns
    all headline titles and nesting relationships at full depth. File
    must be in org-mcp-allowed-files.
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
 
 Returns: JSON object with hierarchical outline structure"
-   :read-only t
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-read-headline
-   :id "org-read-headline"
-   :description
-   "Read specific Org headline by hierarchical path. Returns headline
+     :read-only t)
+    (list
+     #'org-mcp--tool-read-headline
+     :id "org-read-headline"
+     :description
+     "Read specific Org headline by hierarchical path. Returns headline
    with TODO state, tags, properties, body text, and all nested
    subheadings. File must be in org-mcp-allowed-files.
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
 
 Returns: Plain text content of the headline and its subtree"
-   :read-only t
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-tool
-   #'org-mcp--tool-read-by-id
-   :id "org-read-by-id"
-   :description
-   "Read Org headline by its unique ID property. More stable than
+     :read-only t)
+    (list
+     #'org-mcp--tool-read-by-id
+     :id "org-read-by-id"
+     :description
+     "Read Org headline by its unique ID property. More stable than
 path-based access since IDs don't change when headlines are renamed
 or moved. File containing the ID must be in org-mcp-allowed-files.
 Reads the file from disk; unsaved changes in an Emacs buffer visiting
 the file are not reflected.
 
 Returns: Plain text content of the headline and its subtree"
-   :read-only t
-   :server-id org-mcp--server-id)
-
-  ;; Register template resources for org files
-  (mcp-server-lib-register-resource
-   "org://{filename}" #'org-mcp--handle-file-resource
-   :name "Org file"
-   :description
-   "Access the complete raw content of an Org file.  Returns the
+     :read-only t))
+   :resources
+   (list
+    ;; Register template resources for org files
+    (list
+     "org://{filename}" #'org-mcp--handle-file-resource
+     :name "Org file"
+     :description
+     "Access the complete raw content of an Org file.  Returns the
 entire file as plain text, preserving all formatting, properties, and
 structure.  Reads the file from disk; unsaved changes in an Emacs
 buffer visiting the file are not reflected.
@@ -2103,14 +2087,12 @@ URI format: org://{filename}
   filename - Absolute path to the Org file (required)
 
 Returns: Plain text content of the entire Org file"
-   :mime-type "text/plain"
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-resource
-   "org-outline://{filename}" #'org-mcp--handle-outline-resource
-   :name "Org file outline"
-   :description
-   "Get the hierarchical structure of an Org file as a JSON
+     :mime-type "text/plain")
+    (list
+     "org-outline://{filename}" #'org-mcp--handle-outline-resource
+     :name "Org file outline"
+     :description
+     "Get the hierarchical structure of an Org file as a JSON
 outline.  Extracts headline titles and their nesting relationships up
 to 2 levels deep.  Reads the file from disk; unsaved changes in an
 Emacs buffer visiting the file are not reflected.
@@ -2147,15 +2129,13 @@ Example URIs:
 Use this resource to:
   - Get document structure overview
   - Understand file organization without reading full content"
-   :mime-type "application/json"
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-resource
-   (concat org-mcp--uri-headline-prefix "{filename}")
-   #'org-mcp--handle-headline-resource
-   :name "Org headline content"
-   :description
-   "Access content of a specific Org headline by its path in the
+     :mime-type "application/json")
+    (list
+     (concat org-mcp--uri-headline-prefix "{filename}")
+     #'org-mcp--handle-headline-resource
+     :name "Org headline content"
+     :description
+     "Access content of a specific Org headline by its path in the
 file hierarchy.  Returns the headline and all its subheadings as
 plain text.  Reads the file from disk; unsaved changes in an Emacs
 buffer visiting the file are not reflected.
@@ -2205,15 +2185,13 @@ Use this resource to:
   - Read specific sections of an Org file
   - Access headline content by hierarchical path
   - Get complete subtree including all children"
-   :mime-type "text/plain"
-   :server-id org-mcp--server-id)
-
-  (mcp-server-lib-register-resource
-   (concat org-mcp--uri-id-prefix "{uuid}")
-   #'org-mcp--handle-id-resource
-   :name "Org node by ID"
-   :description
-   "Access content of an Org headline by its unique ID property.
+     :mime-type "text/plain")
+    (list
+     (concat org-mcp--uri-id-prefix "{uuid}")
+     #'org-mcp--handle-id-resource
+     :name "Org node by ID"
+     :description
+     "Access content of an Org headline by its unique ID property.
 More stable than path-based access since IDs don't change when
 headlines are renamed or moved.  Reads the file from disk; unsaved
 changes in an Emacs buffer visiting the file are not reflected.
@@ -2252,41 +2230,11 @@ Use this resource to:
   - Access headlines by stable identifier
   - Reference content that may be renamed or moved
   - Build cross-references between Org nodes"
-   :mime-type "text/plain"
-   :server-id org-mcp--server-id))
+     :mime-type "text/plain"))))
 
 (defun org-mcp-disable ()
   "Disable the org-mcp server."
-  (mcp-server-lib-unregister-tool
-   "org-get-todo-config" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool
-   "org-get-tag-config" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool
-   "org-get-allowed-files" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool
-   "org-update-todo-state" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool "org-add-todo" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool
-   "org-rename-headline" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool "org-edit-body" org-mcp--server-id)
-  ;; Unregister workaround tools
-  (mcp-server-lib-unregister-tool "org-read-file" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool
-   "org-read-outline" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool
-   "org-read-headline" org-mcp--server-id)
-  (mcp-server-lib-unregister-tool "org-read-by-id" org-mcp--server-id)
-  ;; Unregister template resources
-  (mcp-server-lib-unregister-resource
-   "org://{filename}" org-mcp--server-id)
-  (mcp-server-lib-unregister-resource
-   "org-outline://{filename}" org-mcp--server-id)
-  (mcp-server-lib-unregister-resource
-   (concat
-    org-mcp--uri-headline-prefix "{filename}")
-   org-mcp--server-id)
-  (mcp-server-lib-unregister-resource
-   (concat org-mcp--uri-id-prefix "{uuid}") org-mcp--server-id))
+  (mcp-server-lib-unregister-server org-mcp--server-id))
 
 (provide 'org-mcp)
 ;;; org-mcp.el ends here
