@@ -1674,6 +1674,7 @@ the wire-protocol error text."
          (mcp-server-lib-ert-with-server
            :tools t
            :resources t
+           :version org-mcp--version
            :instructions org-mcp--instructions
            ,@body)
        (org-mcp-disable))))
@@ -5844,10 +5845,11 @@ Used by repo-level meta tests that read project files (Eask,
 (ert-deftest org-mcp-test-meta-version-strings-agree ()
   "Test that the package version is consistent across all sites.
 The `Eask' file's `(package ...)' form, `org-mcp.el's `;; Version:'
-header, and `NEWS' top-section heading must all report the same
+header, the `NEWS' top-section heading, and the `org-mcp--version'
+constant reported as `serverInfo.version' must all report the same
 version; drift between them leads to MELPA/Eask metadata
-inconsistencies at release time and to changelog/release-state
-confusion."
+inconsistencies at release time, to changelog/release-state
+confusion, and to a stale version in the MCP `initialize' result."
   (let* ((eask-content (org-mcp-test--read-repo-file "Eask"))
          (el-content (org-mcp-test--read-repo-file "org-mcp.el"))
          (news-content (org-mcp-test--read-repo-file "NEWS"))
@@ -5870,7 +5872,8 @@ confusion."
     (should (stringp el-version))
     (should (stringp news-version))
     (should (equal eask-version el-version))
-    (should (equal eask-version news-version))))
+    (should (equal eask-version news-version))
+    (should (equal eask-version org-mcp--version))))
 
 ;;; org-grep helpers
 

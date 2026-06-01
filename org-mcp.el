@@ -45,6 +45,9 @@
 (defconst org-mcp--server-id "org-mcp"
   "Server ID for org-mcp MCP server registration.")
 
+(defconst org-mcp--version "0.10.0"
+  "Version reported as `serverInfo.version' in the MCP `initialize' result.")
+
 (defconst org-mcp--uri-headline-prefix "org-headline://"
   "URI prefix for headline resources.")
 
@@ -1937,6 +1940,7 @@ MCP Parameters:
   "Enable the org-mcp server."
   (mcp-server-lib-register-server
    :id org-mcp--server-id
+   :version org-mcp--version
    :instructions org-mcp--instructions
    :tools
    (list
