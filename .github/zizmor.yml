@@ -1,0 +1,7 @@
+---
+# Workflows deliberately use floating/unpinned action refs (e.g. @v6, @master,
+# @latest), so disable the unpinned-uses audit repo-wide instead of annotating
+# each `uses:` line.
+rules:
+  unpinned-uses:
+    disable: true

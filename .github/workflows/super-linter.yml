@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6 # zizmor: ignore[unpinned-uses]
+        uses: actions/checkout@v6
         with:
           # super-linter needs the full git history to get the
           # list of files that changed across commits
@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
 
       - name: Run Super-Linter
-        uses: super-linter/super-linter/slim@latest # zizmor: ignore[unpinned-uses]
+        uses: super-linter/super-linter/slim@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEFAULT_BRANCH: main

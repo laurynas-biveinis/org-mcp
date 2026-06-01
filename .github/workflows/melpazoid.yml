@@ -7,11 +7,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6 # zizmor: ignore[unpinned-uses]
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Set up Python 3.10
-        uses: actions/setup-python@v5 # zizmor: ignore[unpinned-uses]
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
       - name: Install
