@@ -4,6 +4,10 @@ org-mcp NEWS -- history of user-visible changes
 
 ** New Features
 
+*** Added `org-get-agenda' tool for day/week/month agenda views
+    Returns the plain-text Org agenda for a day, week, or month span
+    from an optional reference date, built from the allowed files.
+
 *** Added `org-grep' tool for searching across Org files
     Search for a literal substring across one or all allowed files.
     Results are grouped by containing section and annotated with
