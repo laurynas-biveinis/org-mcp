@@ -190,6 +190,12 @@ org-mcp NEWS -- history of user-visible changes
     multiple-occurrence safety guard fires on ambiguous matches as
     documented.
 
+** Incompatible Changes
+
+*** Now requires `mcp-server-lib' 0.4.0
+    The MCP `initialize' `serverInfo' now reports org-mcp's own name
+    and version instead of the library's defaults.
+
 * Changes in org-mcp 0.9.0 (2025-11-11)
 
 ** Initial release

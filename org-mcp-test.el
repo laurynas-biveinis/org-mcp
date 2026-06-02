@@ -1699,6 +1699,7 @@ the wire-protocol error text."
          (mcp-server-lib-ert-with-server
            :tools t
            :resources t
+           :name org-mcp--server-id
            :version org-mcp--version
            :instructions org-mcp--instructions
            ,@body)
@@ -6364,11 +6365,14 @@ Used by repo-level meta tests that read project files (Eask,
 (ert-deftest org-mcp-test-meta-version-strings-agree ()
   "Test that the package version is consistent across all sites.
 The `Eask' file's `(package ...)' form, `org-mcp.el's `;; Version:'
-header, the `NEWS' top-section heading, and the `org-mcp--version'
-constant reported as `serverInfo.version' must all report the same
-version; drift between them leads to MELPA/Eask metadata
-inconsistencies at release time, to changelog/release-state
-confusion, and to a stale version in the MCP `initialize' result."
+header, the `NEWS' top-section heading, the `org-mcp--version'
+defconst literal in source, and the loaded `org-mcp--version' constant
+reported as `serverInfo.version' must all report the same version;
+drift between them leads to MELPA/Eask metadata inconsistencies at
+release time, to changelog/release-state confusion, and to a stale
+version in the MCP `initialize' result.  Pinning the source literal
+also locks in the hardcoded-string contract: `org-mcp--version' must
+be a plain literal, not a value derived at load time."
   (let* ((eask-content (org-mcp-test--read-repo-file "Eask"))
          (el-content (org-mcp-test--read-repo-file "org-mcp.el"))
          (news-content (org-mcp-test--read-repo-file "NEWS"))
@@ -6382,6 +6386,11 @@ confusion, and to a stale version in the MCP `initialize' result."
                 "^;;[ \t]+Version:[ \t]+\\(\\S-+\\)"
                 el-content)
                (match-string 1 el-content)))
+         (const-version
+          (and (string-match
+                "(defconst[ \t\n]+org-mcp--version[ \t\n]+\"\\([^\"]+\\)\""
+                el-content)
+               (match-string 1 el-content)))
          (news-version
           (and (string-match
                 "^\\* Changes in org-mcp \\(\\S-+\\)"
@@ -6389,8 +6398,10 @@ confusion, and to a stale version in the MCP `initialize' result."
                (match-string 1 news-content))))
     (should (stringp eask-version))
     (should (stringp el-version))
+    (should (stringp const-version))
     (should (stringp news-version))
     (should (equal eask-version el-version))
+    (should (equal eask-version const-version))
     (should (equal eask-version news-version))
     (should (equal eask-version org-mcp--version))))
 
