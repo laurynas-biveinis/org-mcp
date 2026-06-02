@@ -2880,14 +2880,16 @@ Pins the omitted-`date' contract under scope isolation: when `date' is
 omitted the day view anchors on today regardless of the user's global
 `org-agenda-start-day'.  Without isolating that global, `org-agenda-list'
 falls back to it and the agenda silently anchors on the configured day
-instead of today.  `current-time' is stubbed so today is deterministic,
-and `org-agenda-start-day' is set to a different day to prove the global
-does not leak into the resolved `start_day'."
+instead of today.  `org-today' is stubbed so today is deterministic --
+the day-view path resolves today via `org-today', which `current-time'
+stubbing does not reach -- and `org-agenda-start-day' is set to a
+different day to prove the global does not leak into the resolved
+`start_day'."
   (org-mcp-test--with-temp-org-files
    ((agenda-file org-mcp-test--agenda-basic-content))
-   (cl-letf (((symbol-function 'current-time)
+   (cl-letf (((symbol-function 'org-today)
               (lambda ()
-                (encode-time (list 0 0 12 1 6 2026 nil -1 nil)))))
+                (calendar-absolute-from-gregorian '(6 1 2026)))))
      (let* ((org-agenda-start-day "2026-06-10")
             (result
              (json-read-from-string
