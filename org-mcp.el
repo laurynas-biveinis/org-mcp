@@ -2042,7 +2042,7 @@ CASE_SENSITIVE when non-nil requires an exact case match.
 
 MCP Parameters:
   pattern - Literal substring to search for (required, non-empty,
-            single-line)
+            single-line, not a regex)
   file - Absolute path to an allowed Org file (optional)
          When omitted, all org-mcp-allowed-files are searched
   case_sensitive - Exact-case match when true (optional, default false)"
@@ -2101,8 +2101,6 @@ MCP Parameters:
 Org-mode settings.  Returns information about task state sequences
 and their semantics.
 
-Parameters: None
-
 Returns JSON object with two arrays:
   sequences - Array of TODO keyword sequences, each containing:
     - type: Sequence type (e.g., \"sequence\", \"type\")
@@ -2127,8 +2125,6 @@ configuration before creating or updating TODO items."
      "Get tag-related configuration from the current Emacs Org-mode
 settings.  Returns literal Elisp variable values as strings for tag
 configuration introspection.
-
-Parameters: None
 
 Returns JSON object with literal Elisp expressions (as strings) for:
   org-use-tag-inheritance - Controls tag inheritance behavior
@@ -2159,8 +2155,6 @@ adding or modifying tags on TODO items."
      "Get the list of Org files accessible through the org-mcp
 server.  Returns the configured allowed files exactly as specified in
 org-mcp-allowed-files.
-
-Parameters: None
 
 Returns JSON object containing:
   files (array of strings): Absolute paths of allowed Org files
@@ -2366,14 +2360,6 @@ Returns: Plain text content of the headline and its subtree"
      "Search for a literal substring across one or all allowed Org
 files.  Returns per-section groups of matching lines, each annotated
 with a headline path and a resource URI for each matching section.
-
-Parameters:
-  pattern - Literal substring to search for (required, non-empty,
-            single-line, not a regex)
-  file    - Absolute path of an allowed Org file (optional).
-            When omitted, all org-mcp-allowed-files are searched.
-  case_sensitive - When true, match is case-sensitive
-                   (optional, default false)
 
 Returns JSON object:
   groups - Array of match groups, each containing:
