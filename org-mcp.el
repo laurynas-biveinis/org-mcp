@@ -394,8 +394,6 @@ Macro behaviour:
   `org-id://' URI.
 
 BODY contract:
-- May access FILE-PATH, OPERATION, and RESPONSE-ALIST as
-  variables.
 - Must NOT call `org-mcp--complete-and-save' itself; the macro
   appends it after BODY.  Calling it inside BODY would write the
   file twice and return a stale JSON shape.
