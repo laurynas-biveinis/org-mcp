@@ -1752,7 +1752,7 @@ ALLOWED-FILES is the list of files to bind to `org-mcp-allowed-files'.
 ID-LOCATIONS is a list of (ID . FILE) cons cells to register.
 Sets up `org-id-track-globally' and `org-id-locations-file',
 then registers each ID location."
-  (declare (indent 2) (debug t))
+  (declare (indent 2) (debug (form form body)))
   `(let ((org-id-track-globally t)
          (org-id-locations-file nil) ; Prevent saving to disk
          (org-id-locations nil)
@@ -1769,7 +1769,7 @@ IDS is a list of ID strings to register.
 Sets up `org-id-track-globally' and `org-id-locations-file',
 then registers each ID location and enables MCP for BODY.
 The created temp file is automatically added to `org-mcp-allowed-files'."
-  (declare (indent 2) (debug t))
+  (declare (indent 2) (debug (symbolp form form body)))
   `(org-mcp-test--with-temp-org-files
     ((,file-var ,initial-content))
     (org-mcp-test--with-id-tracking
