@@ -13,6 +13,12 @@ org-mcp NEWS -- history of user-visible changes
     Results are grouped by containing section and annotated with
     headline paths and resource URIs (readable via =resources/read=).
 
+*** Added `org-archive-subtree' tool for archiving subtrees
+    Archives a headline subtree to its configured location (the
+    headline `ARCHIVE' property, the file's `#+ARCHIVE:', or
+    `org-archive-location'), and returns the archive file path and the
+    headline's `org-id://' URI.  Thanks to Michael Cordell (@mcordell).
+
 *** Send MCP `initialize' instructions
     The server now emits an `instructions' string in the MCP
     `initialize' response, carrying the cross-cutting tool and

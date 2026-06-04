@@ -34,6 +34,7 @@
 (require 'cl-lib)
 (require 'mcp-server-lib)
 (require 'org)
+(require 'org-archive)
 (require 'org-id)
 (require 'org-agenda)
 (require 'calendar)
@@ -69,6 +70,11 @@ must have a matching `:END:'.  An unterminated drawer, or a drawer
 containing a heading, is rejected as a validation error.  A
 `#+BEGIN_NAME' opener with no matching `#+END_NAME', or a `#+BEGIN:'
 dynamic block with no matching `#+END:', is rejected too.
+
+org-archive-subtree likewise modifies files on disk and fails on
+unsaved changes, but writes two files -- the source and the
+destination archive file -- so a buffer visiting either one with
+unsaved changes blocks it; ask the user to save and retry.
 
 Read tools (org-read-file, org-read-outline, org-read-headline,
 org-read-by-id, org-grep) and all resources read the file from disk;
@@ -296,13 +302,18 @@ DATE is returned unchanged for `org-agenda-list' to resolve."
             (nth 0 gregorian)
             (nth 1 gregorian))))
 
-(defun org-mcp--refresh-file-buffers (file-path)
+(defun org-mcp--refresh-file-buffers
+    (file-path &optional except-buffer)
   "Refresh all buffers visiting FILE-PATH.
-Preserves narrowing state across the refresh operation."
+Preserves narrowing state across the refresh operation.
+EXCEPT-BUFFER, when non-nil, is skipped: callers that have just
+written FILE-PATH from a buffer pass that buffer so it is not
+reverted into itself (and its revert hooks not fired needlessly)."
   (dolist (buf (buffer-list))
     (with-current-buffer buf
       (when-let* ((buf-file (buffer-file-name)))
-        (when (string= buf-file file-path)
+        (when (and (string= buf-file file-path)
+                   (not (eq buf except-buffer)))
           (let ((was-narrowed (buffer-narrowed-p))
                 (narrow-start nil)
                 (narrow-end nil))
@@ -331,14 +342,20 @@ Check your Emacs hooks (`before-revert-hook', \
 `after-revert-hook', `revert-buffer-function')"
                 file-path (error-message-string err))))))))))
 
-(defun org-mcp--complete-and-save (file-path response-alist)
-  "Create ID if needed, save FILE-PATH, return JSON.
+(defun org-mcp--complete-and-save (response-alist)
+  "Create ID if needed, save the visited file, return JSON.
 Creates or gets an Org ID for the current headline and returns it.
-FILE-PATH is the path to save the buffer contents to.
+Saves the current buffer to its visited file (`buffer-file-name'), so
+the buffer must visit the target file (as set up by
+`org-mcp--with-visiting-org-file').
+Point must be at (or within) the entry whose `org-id://' URI should
+be returned, as `org-id-get-create' uses point to locate the entry.
 RESPONSE-ALIST is an alist of response fields."
-  (let ((id (org-id-get-create)))
+  (cl-assert (buffer-file-name))
+  (let ((id (org-id-get-create))
+        (file-path (buffer-file-name)))
     (write-region (point-min) (point-max) file-path)
-    (org-mcp--refresh-file-buffers file-path)
+    (org-mcp--refresh-file-buffers file-path (current-buffer))
     (json-encode
      (append
       `((success . t))
@@ -368,6 +385,28 @@ OPERATION is a string describing the operation for error messages."
      (goto-char (point-min))
      ,@body))
 
+(defmacro org-mcp--with-visiting-org-file
+    (file-path operation &rest body)
+  "Execute BODY in a temp buffer visiting Org FILE-PATH.
+OPERATION is a string describing the operation for error messages.
+
+Validates FILE-PATH has no unsaved changes (errors via
+`org-mcp--fail-if-modified' if so), then sets up a temp buffer with
+FILE-PATH's contents in `org-mode', `set-visited-file-name' pointing
+at FILE-PATH, and point at `point-min', and runs BODY there.  Unlike
+`org-mcp--with-org-file', the buffer visits FILE-PATH so BODY may save
+it, and the unsaved-change guard runs first."
+  (declare (indent 2) (debug (form form body)))
+  (let ((file-var (gensym "file-path")))
+    `(let ((,file-var ,file-path))
+       (org-mcp--fail-if-modified ,file-var ,operation)
+       (with-temp-buffer
+         (set-visited-file-name ,file-var t)
+         (insert-file-contents ,file-var)
+         (org-mode)
+         (goto-char (point-min))
+         ,@body))))
+
 (defmacro org-mcp--modify-and-save
     (file-path operation response-alist &rest body)
   "Execute BODY to modify Org file at FILE-PATH, then save result.
@@ -389,8 +428,6 @@ Macro behaviour:
   `org-id://' URI.
 
 BODY contract:
-- May access FILE-PATH, OPERATION, and RESPONSE-ALIST as
-  variables.
 - Must NOT call `org-mcp--complete-and-save' itself; the macro
   appends it after BODY.  Calling it inside BODY would write the
   file twice and return a stale JSON shape.
@@ -400,15 +437,9 @@ BODY contract:
   the JSON from `org-mcp--complete-and-save'.
 - Errors signalled in BODY propagate up unmodified (no rollback)."
   (declare (indent 3) (debug (form form form body)))
-  `(progn
-     (org-mcp--fail-if-modified ,file-path ,operation)
-     (with-temp-buffer
-       (set-visited-file-name ,file-path t)
-       (insert-file-contents ,file-path)
-       (org-mode)
-       (goto-char (point-min))
-       ,@body
-       (org-mcp--complete-and-save ,file-path ,response-alist))))
+  `(org-mcp--with-visiting-org-file ,file-path ,operation
+     ,@body
+     (org-mcp--complete-and-save ,response-alist)))
 
 (defun org-mcp--lookup-id-file (id)
   "Resolve Org ID to an allowed file path without signalling errors.
@@ -438,9 +469,9 @@ cannot poison a successful resolution.
 Callers translate the status into a tool error or a resource error
 of the appropriate shape."
   (if-let* ((id-file (org-id-find-id-file id)))
-    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-      (cons :found allowed-file)
-      (cons :disallowed nil))
+      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+          (cons :found allowed-file)
+        (cons :disallowed nil))
     (if-let* ((file
                (catch 'found
                  (dolist (allowed-file org-mcp-allowed-files)
@@ -450,11 +481,11 @@ of the appropriate shape."
                          (throw 'found
                                 (expand-file-name
                                  allowed-file)))))))))
-      (progn
-        (when org-id-track-globally
-          (ignore-errors
-            (org-id-add-location id file)))
-        (cons :found file))
+        (progn
+          (when org-id-track-globally
+            (ignore-errors
+              (org-id-add-location id file)))
+          (cons :found file))
       (cons :missing nil))))
 
 (defun org-mcp--find-allowed-file-with-id (id)
@@ -484,11 +515,11 @@ Throws an error if neither prefix matches."
   `(if-let* ((id
               (org-mcp--extract-uri-suffix
                ,uri org-mcp--uri-id-prefix)))
-     ,id-body
+       ,id-body
      (if-let* ((headline
                 (org-mcp--extract-uri-suffix
                  ,uri org-mcp--uri-headline-prefix)))
-       ,headline-body
+         ,headline-body
        (org-mcp--tool-validation-error
         "Invalid resource URI format: %s"
         ,uri))))
@@ -694,7 +725,7 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
   (if is-id
       ;; ID case - headline-path contains single ID
       (if-let* ((pos (org-find-property "ID" (car headline-path))))
-        (goto-char pos)
+          (goto-char pos)
         (org-mcp--id-not-found-error (car headline-path)))
     ;; Path case - headline-path contains title hierarchy
     (unless (org-mcp--navigate-to-headline headline-path)
@@ -1894,6 +1925,130 @@ MCP Parameters:
              body-begin
              body-end)))))))
 
+(defun org-mcp--tool-archive-subtree (uri)
+  "Archive the subtree at URI using `org-archive-subtree'.
+Creates an Org ID for the headline if one doesn't exist.
+Returns the archive file path and the headline's `org-id://' URI.
+The returned URI is resolvable via `resources/read' only when the
+archive file is itself in `org-mcp-allowed-files'; otherwise it is
+informational only, since the entry has left the readable set.
+
+MCP Parameters:
+  uri - URI of the headline to archive
+        Formats:
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}"
+  (org-mcp--validate-string-field uri "uri")
+  (let* ((parsed (org-mcp--parse-resource-uri uri))
+         (file-path (car parsed))
+         (headline-path (cdr parsed)))
+    (unless headline-path
+      (org-mcp--tool-validation-error
+       "URI must identify a headline to archive, not a whole file"))
+    (org-mcp--with-visiting-org-file file-path "archive"
+      (org-mcp--goto-headline-from-uri
+       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
+      (let*
+          ((archive-file
+            (let* ((location
+                    (or (org-entry-get nil "ARCHIVE" 'inherit)
+                        org-archive-location))
+                   (file
+                    (car
+                     ;; `org-archive--compute-location' is an
+                     ;; Org-internal function with no public
+                     ;; equivalent: it expands the `%s'/`::heading'
+                     ;; spec that the public `org-archive-location'
+                     ;; stores raw.  This pre-flight resolution must
+                     ;; match what `org-archive-subtree' itself
+                     ;; resolves, or the unsaved-changes guard below
+                     ;; checks the wrong file.
+                     (condition-case err
+                         (org-archive--compute-location location)
+                       (error
+                        ;; A malformed location (e.g. an `:ARCHIVE:'
+                        ;; spec missing `::') is user-controlled, so
+                        ;; report it through the tool-error channel
+                        ;; rather than as a JSON-RPC internal error.
+                        (org-mcp--tool-validation-error
+                         "Invalid archive location %S: %s"
+                         location (error-message-string err)))))))
+              ;; FILE is a string in every supported Org; assert it so
+              ;; a future return-shape change fails clearly here
+              ;; rather than as an opaque downstream type error.
+              (cl-assert (stringp file))
+              file))
+           (separate-archive
+            (not (string= archive-file (buffer-file-name))))
+           ;; Snapshot, before `org-archive-subtree' runs, whether the
+           ;; user already had the separate archive file open.  The
+           ;; cleanup below kills only a buffer the tool itself opened,
+           ;; never one the user owned.
+           (archive-buffer-preexisting
+            (and separate-archive
+                 (find-buffer-visiting archive-file))))
+        ;; Guard the archive file before creating the ID, so a failed
+        ;; guard cannot leave a stale `org-id-locations' entry
+        ;; registered against the source for an archive that never ran.
+        (when separate-archive
+          (org-mcp--fail-if-modified archive-file "archive"))
+        ;; Create the ID before archiving so it travels into the
+        ;; archive with the subtree; afterwards point no longer sits
+        ;; in the entry.
+        (let ((id (org-id-get-create)))
+          (unwind-protect
+              (progn
+                ;; `org-archive-subtree' opens the separate archive file
+                ;; (via `find-file-noselect') before it finishes the
+                ;; move, so it must run inside this `unwind-protect': a
+                ;; throw mid-archive would otherwise leak the buffer it
+                ;; opened, since the cleanup below would never run.
+                (org-archive-subtree)
+                (let ((archive-buffer
+                       (and separate-archive
+                            (find-buffer-visiting archive-file))))
+                  ;; Persist the archive before emptying the source on
+                  ;; disk: should the source write fail, the subtree
+                  ;; survives in both files (a recoverable duplicate)
+                  ;; rather than vanishing from both.
+                  ;; `org-archive-subtree' may not save the archive
+                  ;; itself (`org-archive-subtree-save-file-p'), so
+                  ;; save it explicitly.
+                  (when archive-buffer
+                    (with-current-buffer archive-buffer
+                      (save-buffer))
+                    ;; Revert any *other* buffers visiting the archive
+                    ;; file: org-archive wrote into and we saved only
+                    ;; this one, mirroring the source refresh below.
+                    (org-mcp--refresh-file-buffers archive-file
+                                                   archive-buffer))
+                  (write-region (point-min) (point-max) file-path)
+                  (org-mcp--refresh-file-buffers file-path
+                                                 (current-buffer))))
+            ;; Kill a buffer the tool itself opened, even on the error
+            ;; path, so a long-running server does not accumulate
+            ;; buffers visiting archive files.  Re-discover it here
+            ;; rather than reuse a binding from the body: a throw inside
+            ;; `org-archive-subtree' unwinds before any such binding
+            ;; exists, yet the buffer it opened still needs reclaiming.
+            ;; A buffer the user already had open is left untouched.
+            ;; Guard on liveness too: a save hook may have killed it
+            ;; already, and `with-current-buffer' on a dead buffer would
+            ;; error.
+            (let ((archive-buffer
+                   (and separate-archive
+                        (find-buffer-visiting archive-file))))
+              (when (and archive-buffer
+                         (buffer-live-p archive-buffer)
+                         (not archive-buffer-preexisting))
+                (with-current-buffer archive-buffer
+                  (set-buffer-modified-p nil))
+                (kill-buffer archive-buffer))))
+          (json-encode
+           `((success . t)
+             (archive_file . ,archive-file)
+             (uri . ,(concat org-mcp--uri-id-prefix id)))))))))
+
 ;; Tools duplicating resource templates
 
 (defun org-mcp--tool-read-file (file)
@@ -2312,6 +2467,31 @@ exist.
 Returns JSON object:
   success - Always true on success (boolean)
   uri - ID-based URI (org-id://{uuid}) for the edited headline"
+     :read-only nil)
+    (list
+     #'org-mcp--tool-archive-subtree
+     :id "org-archive-subtree"
+     :description
+     "Archive an Org headline subtree to its configured archive
+location using `org-archive-subtree'.  Respects the headline's
+ARCHIVE property, the file's #+ARCHIVE: setting, and the global
+`org-archive-location' (in that order).  Creates an Org ID
+property for the headline if one doesn't exist.
+
+Parameters:
+  uri - URI of the headline to archive (string, required)
+        Formats:
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
+
+Returns JSON object:
+  success - Always true on success (boolean)
+  archive_file - Absolute path to the archive file (string);
+        equals the source file's own path when the archive
+        location is in-file (empty file part before ::)
+  uri - org-id:// URI of the archived headline (string);
+        resolvable via resources/read only if the archive file is
+        in org-mcp-allowed-files, otherwise informational only"
      :read-only nil)
     (list
      #'org-mcp--tool-read-file
