@@ -9,6 +9,7 @@
                                                  (org-mcp--with-org-file . 1)
                                                  (org-mcp-test--assert-error-and-file . 1)
                                                  (org-mcp-test--assert-archive-error . 1)
+                                                 (org-mcp-test--assert-refile-error . 1)
                                                  (org-mcp-test--with-enabled . defun)
                                                  (org-mcp-test--with-config . 1)
                                                  (org-mcp-test--with-temp-org-file . 2)

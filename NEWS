@@ -32,6 +32,12 @@ org-mcp NEWS -- history of user-visible changes
     or start-of-file / end-of-file under a top-level `parent_uri'.
     Cannot be combined with `after_uri'.
 
+*** Added `org-refile-headline' tool for moving subtrees
+    Moves a headline and its subtree to a new parent or file,
+    preserving its TODO state, tags, properties, ID, body, and
+    children.  Placement mirrors `org-add-todo' (`after_uri' /
+    `position'); the existing ID is kept across files.
+
 ** Bug Fixes
 
 *** Fixed `org-update-todo-state' failing on no-state heading with `current_state=""'

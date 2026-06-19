@@ -7533,5 +7533,782 @@ The fragment must contain `Tasks%20%5B1%2F3%5D' (raw) not `Tasks'
      (should (string-prefix-p "org-headline://" uri))
      (should (string-match-p "Tasks%20%5B1%2F3%5D" uri)))))
 
+;;; org-refile-headline tests
+
+(defun org-mcp-test--refile-headline-result (params)
+  "Call `org-refile-headline' with PARAMS; return the parsed JSON result.
+Binds `org-adapt-indentation' to nil so a re-leveled subtree's property
+drawer and body land at column 0 regardless of Org version (its default
+flipped from t to nil in Org 9.5)."
+  (let ((org-adapt-indentation nil))
+    (json-read-from-string
+     (mcp-server-lib-ert-call-tool "org-refile-headline" params))))
+
+(defconst org-mcp-test--content-refile-two-tops
+  "* Target\n* Mover\nBody line.\n"
+  "Two top-level headlines: an empty `Target' and `Mover' with a body line.")
+
+(defconst org-mcp-test--expected-refile-same-file-child-end-regex
+  (concat
+   "\\`\\* Target\n"
+   "\\*\\* Mover\n"
+   org-mcp-test--regex-id-drawer
+   "Body line\\.\n\\'")
+  "Regex: `Mover' refiled as the last child of `Target', with a minted ID.")
+
+(ert-deftest org-mcp-test-refile-headline-same-file-child-end ()
+  "Refile a top-level headline to be the last child of another, same file.
+Locks in the core same-file move: the subtree is re-leveled under the
+new parent, gets a minted ID, and the source copy is gone.  Also pins
+that a same-file refile leaves the user's kill ring untouched -- the
+deletion uses `delete-region', not `org-cut-subtree'."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-two-tops '()
+    (let ((kill-ring nil)
+          (kill-ring-yank-pointer nil)
+          (interprogram-cut-function nil)
+          (interprogram-paste-function nil))
+      (kill-new "SENTINEL")
+      (let* ((result
+              (org-mcp-test--refile-headline-result
+               `((uri . ,(format "org-headline://%s#Mover" test-file))
+                 (current_title . "Mover")
+                 (target_parent_uri
+                  . ,(format "org-headline://%s#Target" test-file)))))
+             (uri (alist-get 'uri result)))
+        (should (equal (alist-get 'success result) t))
+        (should (string-match-p "\\`org-id://" uri))
+        (should (equal kill-ring '("SENTINEL")))
+        (org-mcp-test--verify-file-matches
+         test-file
+         org-mcp-test--expected-refile-same-file-child-end-regex)))))
+
+(defconst org-mcp-test--refile-sibling-id
+  "11111111-1111-1111-1111-111111111111"
+  "Stable UUID for a sibling headline that needs a pre-existing ID.")
+
+(defconst org-mcp-test--content-refile-lone-mover
+  "* Mover\nBody line.\n"
+  "A single top-level `Mover' headline with a body line.")
+
+(defconst org-mcp-test--content-refile-lone-target
+  "* Target\n"
+  "A single top-level `Target' headline with no children.")
+
+(defconst org-mcp-test--content-refile-lone-target-no-newline
+  "* Target"
+  "A single top-level `Target' that ends mid-line (no trailing newline).")
+
+(defconst org-mcp-test--content-refile-siblings-target
+  (concat
+   "* Target\n"
+   "** Child A\n"
+   ":PROPERTIES:\n"
+   ":ID: " org-mcp-test--refile-sibling-id "\n"
+   ":END:\n"
+   "** Child C\n")
+  "A `Target' with children `Child A' (with ID) and `Child C'.")
+
+(defconst org-mcp-test--content-refile-after-sibling
+  (concat org-mcp-test--content-refile-siblings-target
+          org-mcp-test--content-refile-lone-mover)
+  "A `Target' with children `Child A' (with ID) and `Child C', plus a
+top-level `Mover'.")
+
+(defconst org-mcp-test--expected-refile-after-sibling-regex
+  (concat
+   "\\`\\* Target\n"
+   "\\*\\* Child A\n"
+   " *:PROPERTIES:\n *:ID: +"
+   org-mcp-test--refile-sibling-id
+   "\n *:END:\n"
+   "\\*\\* Mover\n"
+   org-mcp-test--regex-id-drawer
+   "Body line\\.\n"
+   "\\*\\* Child C\n\\'")
+  "Regex: `Mover' refiled as the immediate next sibling of `Child A'.")
+
+(ert-deftest org-mcp-test-refile-headline-same-file-after-sibling ()
+  "Refile a headline to sit immediately after a named sibling.
+Locks in `after_uri'-based placement among the target's children."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-after-sibling
+      (list org-mcp-test--refile-sibling-id)
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            `((uri . ,(format "org-headline://%s#Mover" test-file))
+              (current_title . "Mover")
+              (target_parent_uri
+               . ,(format "org-headline://%s#Target" test-file))
+              (after_uri
+               . ,(concat "org-id://"
+                          org-mcp-test--refile-sibling-id))))))
+      (should (equal (alist-get 'success result) t))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-refile-after-sibling-regex))))
+
+(defconst org-mcp-test--content-refile-nested-to-top
+  "* Parent\n** Mover\nBody line.\n* Other\n"
+  "A `Parent' with a nested `Mover' child, and a sibling `Other'.")
+
+(defconst org-mcp-test--expected-refile-nested-to-top-regex
+  (concat
+   "\\`\\* Parent\n"
+   "\\* Other\n"
+   "\\* Mover\n"
+   org-mcp-test--regex-id-drawer
+   "Body line\\.\n\\'")
+  "Regex: `Mover' refiled from under `Parent' to top level at end of file.")
+
+(ert-deftest org-mcp-test-refile-headline-nested-to-top-level ()
+  "Refile a nested child up to top level (end), same file.
+Locks in the top-level destination path (target_parent_uri with no
+fragment) and promotion of the subtree to level 1."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-nested-to-top '()
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            `((uri . ,(format "org-headline://%s#Parent/Mover" test-file))
+              (current_title . "Mover")
+              (target_parent_uri
+               . ,(format "org-headline://%s/" test-file))))))
+      (should (equal (alist-get 'success result) t))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-refile-nested-to-top-regex))))
+
+(defconst org-mcp-test--expected-refile-empty-source-regex
+  "\\`\\s-*\\'"
+  "Regex matching a source file emptied of content after a move.")
+
+(defconst org-mcp-test--expected-refile-cross-target-regex
+  (concat
+   "\\`\\* Target\n"
+   "\\*\\* Mover\n"
+   org-mcp-test--regex-id-drawer
+   "Body line\\.\n\\'")
+  "Regex: `Mover' moved under `Target' in the destination file.")
+
+(ert-deftest org-mcp-test-refile-headline-cross-file-child ()
+  "Refile a headline into a heading in a different file.
+Locks in the cross-file path: the subtree leaves the source file and
+lands under the target parent in the destination file.  Also pins that
+a cross-file refile leaves the user's kill ring untouched -- the
+source-side deletion uses `delete-region', not `org-cut-subtree'."
+  (org-mcp-test--with-temp-org-files
+   ((source-file org-mcp-test--content-refile-lone-mover)
+    (target-file org-mcp-test--content-refile-lone-target))
+   (org-mcp-test--with-id-tracking (list source-file target-file) nil
+     (let ((kill-ring nil)
+           (kill-ring-yank-pointer nil)
+           (interprogram-cut-function nil)
+           (interprogram-paste-function nil))
+       (kill-new "SENTINEL")
+       (let ((result
+              (org-mcp-test--refile-headline-result
+               `((uri . ,(format "org-headline://%s#Mover" source-file))
+                 (current_title . "Mover")
+                 (target_parent_uri
+                  . ,(format "org-headline://%s#Target" target-file))))))
+         (should (equal (alist-get 'success result) t))
+         (should (equal kill-ring '("SENTINEL")))
+         (org-mcp-test--verify-file-matches
+          source-file org-mcp-test--expected-refile-empty-source-regex)
+         (org-mcp-test--verify-file-matches
+          target-file
+          org-mcp-test--expected-refile-cross-target-regex))))))
+
+(ert-deftest org-mcp-test-refile-headline-cross-file-target-no-trailing-newline ()
+  "Refile into a target file that ends mid-line at `point-max'.
+The moved subtree lands on its own line below the target heading and
+the target's last line is not corrupted, even though the target file
+lacks a trailing newline (the insertion point is repaired during
+paste)."
+  (org-mcp-test--with-temp-org-files
+   ((source-file org-mcp-test--content-refile-lone-mover)
+    (target-file org-mcp-test--content-refile-lone-target-no-newline))
+   (org-mcp-test--with-id-tracking (list source-file target-file) nil
+     (let ((result
+            (org-mcp-test--refile-headline-result
+             `((uri . ,(format "org-headline://%s#Mover" source-file))
+               (current_title . "Mover")
+               (target_parent_uri
+                . ,(format "org-headline://%s#Target" target-file))))))
+       (should (equal (alist-get 'success result) t))
+       (org-mcp-test--verify-file-matches
+        source-file org-mcp-test--expected-refile-empty-source-regex)
+       (org-mcp-test--verify-file-matches
+        target-file
+        org-mcp-test--expected-refile-cross-target-regex)))))
+
+(defun org-mcp-test--refile-tool-response (params)
+  "Call the org-refile-headline tool with PARAMS; return parsed response."
+  (mcp-server-lib-process-jsonrpc-parsed
+   (mcp-server-lib-create-tools-call-request
+    "org-refile-headline" 1 params)
+   mcp-server-lib-ert-server-id))
+
+(defmacro org-mcp-test--assert-refile-error
+    (test-file params &optional error-regex)
+  "Assert refiling with PARAMS errors and TEST-FILE stays unchanged.
+ERROR-REGEX, if non-nil, must match the signalled error's message."
+  (declare (indent 1) (debug (form form &optional form)))
+  `(org-mcp-test--assert-error-and-file ,test-file
+     (let ((result
+            (mcp-server-lib-ert-process-tool-response
+             (org-mcp-test--refile-tool-response ,params))))
+       (error "Expected error but got success: %s" result))
+     ,error-regex))
+
+(defconst org-mcp-test--content-refile-parent-child
+  "* Parent\n** Child\n"
+  "A `Parent' headline with a single nested `Child'.")
+
+(ert-deftest org-mcp-test-refile-headline-into-own-descendant-rejected ()
+  "Refiling a node under its own child is rejected; file unchanged.
+Guards against creating a cycle (a node becoming its own descendant)."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-parent-child '()
+    (org-mcp-test--assert-refile-error test-file
+      `((uri . ,(format "org-headline://%s#Parent" test-file))
+        (current_title . "Parent")
+        (target_parent_uri
+         . ,(format "org-headline://%s#Parent/Child" test-file)))
+      "itself or its own subtree")))
+
+(defconst org-mcp-test--refile-mover-id
+  "22222222-2222-2222-2222-222222222222"
+  "Stable UUID assigned to the `Mover' headline in fixtures that need
+a pre-existing node ID.")
+
+(defconst org-mcp-test--content-refile-mover-with-id
+  (concat
+   "* Mover\n"
+   ":PROPERTIES:\n"
+   ":ID: " org-mcp-test--refile-mover-id "\n"
+   ":END:\n"
+   "Body line.\n")
+  "A lone top-level `Mover' that already carries a pre-existing ID.")
+
+(defconst org-mcp-test--content-refile-noop
+  (concat
+   "* Target\n"
+   "** Mover\n"
+   ":PROPERTIES:\n"
+   ":ID: " org-mcp-test--refile-mover-id "\n"
+   ":END:\n"
+   "Body line.\n")
+  "A `Target' whose only child `Mover' already has an ID.")
+
+(ert-deftest org-mcp-test-refile-headline-noop-already-in-place ()
+  "Refiling a node already in the requested slot (with an ID) is a
+no-op: the file content is unchanged and the node's existing URI is
+returned."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-noop
+      (list org-mcp-test--refile-mover-id)
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            `((uri . ,(concat "org-id://" org-mcp-test--refile-mover-id))
+              (current_title . "Mover")
+              (target_parent_uri
+               . ,(format "org-headline://%s#Target" test-file))))))
+      (should (equal (alist-get 'success result) t))
+      (should (equal (alist-get 'uri result)
+                     (concat "org-id://" org-mcp-test--refile-mover-id)))
+      (should (string= (org-mcp-test--read-file test-file)
+                       org-mcp-test--content-refile-noop)))))
+
+(ert-deftest org-mcp-test-refile-headline-position-after-uri-mutex ()
+  "position and after_uri together are rejected; file unchanged."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-after-sibling
+      (list org-mcp-test--refile-sibling-id)
+    (org-mcp-test--assert-refile-error test-file
+      `((uri . ,(format "org-headline://%s#Mover" test-file))
+        (current_title . "Mover")
+        (target_parent_uri
+         . ,(format "org-headline://%s#Target" test-file))
+        (after_uri
+         . ,(concat "org-id://" org-mcp-test--refile-sibling-id))
+        (position . "end"))
+      "mutually exclusive")))
+
+(ert-deftest org-mcp-test-refile-headline-after-uri-top-level-rejected ()
+  "after_uri combined with a top-level target is rejected."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-after-sibling
+      (list org-mcp-test--refile-sibling-id)
+    (org-mcp-test--assert-refile-error test-file
+      `((uri . ,(format "org-headline://%s#Mover" test-file))
+        (current_title . "Mover")
+        (target_parent_uri . ,(format "org-headline://%s/" test-file))
+        (after_uri
+         . ,(concat "org-id://" org-mcp-test--refile-sibling-id)))
+      "top-level target_parent_uri")))
+
+(ert-deftest org-mcp-test-refile-headline-after-uri-self-rejected ()
+  "after_uri referring to the node being refiled is rejected."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-noop
+      (list org-mcp-test--refile-mover-id)
+    (org-mcp-test--assert-refile-error test-file
+      `((uri . ,(concat "org-id://" org-mcp-test--refile-mover-id))
+        (current_title . "Mover")
+        (target_parent_uri
+         . ,(format "org-headline://%s#Target" test-file))
+        (after_uri
+         . ,(concat "org-id://" org-mcp-test--refile-mover-id)))
+      "being refiled")))
+
+(defconst org-mcp-test--content-refile-preserve
+  (concat
+   "* Destination\n"
+   "* TODO [#A] Mover :work:urgent:\n"
+   ":PROPERTIES:\n"
+   ":ID: " org-mcp-test--refile-mover-id "\n"
+   ":CUSTOM_PROP: val\n"
+   ":END:\n"
+   "Mover body.\n"
+   "** Subchild\n"
+   "Subchild body.\n")
+  "A `Destination' plus a richly-decorated `Mover' (TODO, priority,
+tags, ID, custom property, body, and a nested `Subchild').")
+
+(defconst org-mcp-test--expected-refile-preserve-regex
+  (concat
+   "\\`\\* Destination\n"
+   "\\*\\* TODO \\[#A\\] Mover[ \t]+:work:urgent:\n"
+   " *:PROPERTIES:\n"
+   " *:ID: +" org-mcp-test--refile-mover-id "\n"
+   " *:CUSTOM_PROP: +val\n"
+   " *:END:\n"
+   "Mover body\\.\n"
+   "\\*\\*\\* Subchild\n"
+   "Subchild body\\.\n\\'")
+  "Regex: `Mover' with all metadata and its `Subchild' moved under
+`Destination', re-leveled by one.")
+
+(ert-deftest org-mcp-test-refile-headline-preserves-metadata ()
+  "Refile preserves TODO state, priority, tags, properties, body, and
+child structure, re-leveling the whole subtree."
+  (let ((org-todo-keywords '((sequence "TODO" "DONE"))))
+    (org-mcp-test--with-id-setup
+        test-file org-mcp-test--content-refile-preserve
+        (list org-mcp-test--refile-mover-id)
+      (let ((result
+             (org-mcp-test--refile-headline-result
+              `((uri . ,(concat "org-id://" org-mcp-test--refile-mover-id))
+                (current_title . "Mover")
+                (target_parent_uri
+                 . ,(format "org-headline://%s#Destination" test-file))))))
+        (should (equal (alist-get 'success result) t))
+        (org-mcp-test--verify-file-matches
+         test-file
+         org-mcp-test--expected-refile-preserve-regex)))))
+
+(ert-deftest org-mcp-test-refile-headline-title-mismatch-rejected ()
+  "Refile fails when current_title does not match; file unchanged."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-two-tops '()
+    (org-mcp-test--assert-refile-error test-file
+      `((uri . ,(format "org-headline://%s#Mover" test-file))
+        (current_title . "Wrong Title")
+        (target_parent_uri
+         . ,(format "org-headline://%s#Target" test-file)))
+      "Title mismatch")))
+
+(ert-deftest org-mcp-test-refile-headline-whole-file-uri-rejected ()
+  "A source URI identifying a whole file (no headline) is rejected."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-two-tops '()
+    (org-mcp-test--assert-refile-error test-file
+      `((uri . ,(format "org-headline://%s/" test-file))
+        (current_title . "Mover")
+        (target_parent_uri
+         . ,(format "org-headline://%s#Target" test-file)))
+      "not a whole file")))
+
+(defmacro org-mcp-test--assert-refile-unsaved-rejected (dirty-file)
+  "Assert a Mover->Target refile errors when DIRTY-FILE has unsaved changes.
+DIRTY-FILE is `source-file' or `target-file' -- the buffer left
+modified before the call; the refile must reject it and leave the
+file unchanged."
+  (declare (debug (symbolp)))
+  `(org-mcp-test--with-temp-org-files
+    ((source-file org-mcp-test--content-refile-lone-mover)
+     (target-file org-mcp-test--content-refile-lone-target))
+    (org-mcp-test--with-file-buffer buffer ,dirty-file
+      (with-current-buffer buffer
+        (goto-char (point-max))
+        (insert "\n* Extra")
+        (should (buffer-modified-p)))
+      (org-mcp-test--assert-refile-error source-file
+        `((uri . ,(format "org-headline://%s#Mover" source-file))
+          (current_title . "Mover")
+          (target_parent_uri
+           . ,(format "org-headline://%s#Target" target-file)))
+        "unsaved"))))
+
+(ert-deftest org-mcp-test-refile-headline-unsaved-source-rejected ()
+  "Refile fails when the source file has unsaved buffer changes."
+  (org-mcp-test--assert-refile-unsaved-rejected source-file))
+
+(ert-deftest org-mcp-test-refile-headline-unsaved-target-rejected ()
+  "Refile is rejected when the target file has unsaved buffer changes.
+The source file is left unchanged."
+  (org-mcp-test--assert-refile-unsaved-rejected target-file))
+
+(ert-deftest org-mcp-test-refile-headline-cross-file-uri-resolves ()
+  "A cross-file move preserves the node's existing ID and resolves it.
+Pins both that the pre-existing ID is carried across files unchanged
+(not re-minted) -- the returned URI equals the original `org-id://'
+URI -- and the `org-id-locations' repair: the moved node is read back
+via that URI and yields the destination content."
+  (org-mcp-test--with-temp-org-files
+   ((source-file org-mcp-test--content-refile-mover-with-id)
+    (target-file org-mcp-test--content-refile-lone-target))
+   (org-mcp-test--with-id-tracking
+       (list source-file target-file)
+       (list (cons org-mcp-test--refile-mover-id source-file))
+     (let ((result
+            (org-mcp-test--refile-headline-result
+             `((uri . ,(format "org-headline://%s#Mover" source-file))
+               (current_title . "Mover")
+               (target_parent_uri
+                . ,(format "org-headline://%s#Target" target-file))))))
+       (should (equal (alist-get 'uri result)
+                      (concat "org-id://"
+                              org-mcp-test--refile-mover-id)))
+       (org-mcp-test--call-read-by-id-and-check
+        org-mcp-test--refile-mover-id "Body line")))))
+
+(ert-deftest org-mcp-test-refile-headline-cross-file-resolves-no-tracking ()
+  "Cross-file move's URI resolves with global ID tracking off.
+Resolution falls back to scanning the allowed files."
+  (org-mcp-test--with-temp-org-files
+   ((source-file org-mcp-test--content-refile-lone-mover)
+    (target-file org-mcp-test--content-refile-lone-target))
+   (let ((org-id-track-globally nil)
+         (org-id-locations-file nil)
+         (org-id-locations nil))
+     (let* ((result
+             (org-mcp-test--refile-headline-result
+              `((uri . ,(format "org-headline://%s#Mover" source-file))
+                (current_title . "Mover")
+                (target_parent_uri
+                 . ,(format "org-headline://%s#Target" target-file)))))
+            (uri (alist-get 'uri result)))
+       (should (string-match "\\`org-id://\\(.+\\)\\'" uri))
+       (org-mcp-test--call-read-by-id-and-check
+        (match-string 1 uri) "Body line")))))
+
+(ert-deftest org-mcp-test-refile-headline-cross-file-bad-parent-no-id-leak ()
+  "A cross-file refile to a missing target parent registers no Org ID.
+The source headline has no ID; the target-parent lookup fails, so this
+pins that the ID is minted only after the target is validated -- a
+rejected move leaves `org-id-locations' untouched and both files
+unchanged."
+  (org-mcp-test--with-temp-org-files
+   ((source-file org-mcp-test--content-refile-lone-mover)
+    (target-file org-mcp-test--content-refile-siblings-target))
+   (org-mcp-test--with-id-tracking (list source-file target-file) nil
+     (let ((target-before (org-mcp-test--read-file target-file)))
+       (org-mcp-test--assert-refile-error source-file
+         `((uri . ,(format "org-headline://%s#Mover" source-file))
+           (current_title . "Mover")
+           (target_parent_uri
+            . ,(format "org-headline://%s#Nonexistent" target-file)))
+         "Cannot find headline")
+       (should (string=
+                (org-mcp-test--read-file target-file) target-before))
+       (should (null org-id-locations))))))
+
+(ert-deftest org-mcp-test-refile-headline-cross-file-bad-after-uri-no-id-leak ()
+  "A cross-file refile after a missing sibling registers no Org ID.
+The `after_uri' sibling is absent under the target parent, so sibling
+resolution fails before the ID is minted -- `org-id-locations' stays
+untouched and both files unchanged."
+  (org-mcp-test--with-temp-org-files
+   ((source-file org-mcp-test--content-refile-lone-mover)
+    (target-file org-mcp-test--content-refile-siblings-target))
+   (org-mcp-test--with-id-tracking (list source-file target-file) nil
+     (let ((target-before (org-mcp-test--read-file target-file)))
+       (org-mcp-test--assert-refile-error source-file
+         `((uri . ,(format "org-headline://%s#Mover" source-file))
+           (current_title . "Mover")
+           (target_parent_uri
+            . ,(format "org-headline://%s#Target" target-file))
+           (after_uri
+            . ,(concat "org-id://" org-mcp-test--refile-mover-id)))
+         "not found under parent")
+       (should (string=
+                (org-mcp-test--read-file target-file) target-before))
+       (should (null org-id-locations))))))
+
+(ert-deftest org-mcp-test-refile-headline-cross-file-after-sibling ()
+  "Cross-file refile with `after_uri' places the node among the
+target's children, not the source's: the moved node lands immediately
+after the named sibling in the destination file and the source is
+emptied.  Pins that `after_uri' resolves against the target buffer."
+  (org-mcp-test--with-temp-org-files
+   ((source-file org-mcp-test--content-refile-lone-mover)
+    (target-file org-mcp-test--content-refile-siblings-target))
+   (org-mcp-test--with-id-tracking (list source-file target-file) nil
+     (let ((result
+            (org-mcp-test--refile-headline-result
+             `((uri . ,(format "org-headline://%s#Mover" source-file))
+               (current_title . "Mover")
+               (target_parent_uri
+                . ,(format "org-headline://%s#Target" target-file))
+               (after_uri
+                . ,(concat "org-id://"
+                           org-mcp-test--refile-sibling-id))))))
+       (should (equal (alist-get 'success result) t))
+       (org-mcp-test--verify-file-matches
+        target-file
+        org-mcp-test--expected-refile-after-sibling-regex)
+       (org-mcp-test--verify-file-matches
+        source-file org-mcp-test--expected-refile-empty-source-regex)))))
+
+(ert-deftest org-mcp-test-refile-headline-same-file-bad-after-uri-no-id-leak ()
+  "A same-file refile after a missing sibling registers no Org ID.
+The source headline has no ID and the `after_uri' sibling is absent
+under the target parent, so sibling resolution fails -- the rejected
+move must mint no ID into `org-id-locations' and leave the file
+unchanged."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-after-sibling '()
+    (org-mcp-test--assert-refile-error test-file
+      `((uri . ,(format "org-headline://%s#Mover" test-file))
+        (current_title . "Mover")
+        (target_parent_uri
+         . ,(format "org-headline://%s#Target" test-file))
+        (after_uri
+         . ,(concat "org-id://" org-mcp-test--refile-mover-id)))
+      "not found under parent")
+    (should (null org-id-locations))))
+
+(defconst org-mcp-test--expected-refile-adapt-indentation-regex
+  (concat
+   "\\`\\* Target\n"
+   "\\*\\* Mover\n"
+   org-mcp-test--regex-id-drawer
+   " Body line\\.\n\\'")
+  "Regex: `Mover' demoted under `Target' with its body indented one
+space (the `org-adapt-indentation' non-nil case).")
+
+(ert-deftest org-mcp-test-refile-headline-adapt-indentation ()
+  "With `org-adapt-indentation' non-nil, a demoting refile indents the
+moved subtree's body.  The tool does not override the user's setting,
+so this pins the indented output under the pre-Org-9.5 default that the
+other refile tests (which bind the setting to nil) do not exercise."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-two-tops '()
+    (let* ((org-adapt-indentation t)
+           (result
+            (json-read-from-string
+             (mcp-server-lib-ert-call-tool
+              "org-refile-headline"
+              `((uri . ,(format "org-headline://%s#Mover" test-file))
+                (current_title . "Mover")
+                (target_parent_uri
+                 . ,(format "org-headline://%s#Target" test-file)))))))
+      (should (equal (alist-get 'success result) t))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-refile-adapt-indentation-regex))))
+
+(defconst org-mcp-test--content-refile-start
+  "* Target\n** Existing\n* Mover\nBody line.\n"
+  "A `Target' with an `Existing' child and a top-level `Mover'.")
+
+(defconst org-mcp-test--expected-refile-start-regex
+  (concat
+   "\\`\\* Target\n"
+   "\\*\\* Mover\n"
+   org-mcp-test--regex-id-drawer
+   "Body line\\.\n"
+   "\\*\\* Existing\n\\'")
+  "Regex: `Mover' refiled as the FIRST child of `Target'.")
+
+(ert-deftest org-mcp-test-refile-headline-position-start ()
+  "Refile with position=start places the node as the first child."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-start '()
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            `((uri . ,(format "org-headline://%s#Mover" test-file))
+              (current_title . "Mover")
+              (target_parent_uri
+               . ,(format "org-headline://%s#Target" test-file))
+              (position . "start")))))
+      (should (equal (alist-get 'success result) t))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-refile-start-regex))))
+
+(defconst org-mcp-test--content-refile-promote
+  "* Top\n** Mid\n*** Mover\n**** Deep\nDeep body.\n"
+  "A three-level nest `Top' > `Mid' > `Mover' > `Deep'.")
+
+(defconst org-mcp-test--expected-refile-promote-regex
+  (concat
+   "\\`\\* Top\n"
+   "\\*\\* Mid\n"
+   "\\* Mover\n"
+   org-mcp-test--regex-id-drawer
+   "\\*\\* Deep\n"
+   "Deep body\\.\n\\'")
+  "Regex: `Mover' (with `Deep') promoted from level 3 to top level.")
+
+(ert-deftest org-mcp-test-refile-headline-promote-to-top-level ()
+  "Refiling a deep subtree to top level promotes it and its children."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-promote '()
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            `((uri . ,(format "org-headline://%s#Top/Mid/Mover" test-file))
+              (current_title . "Mover")
+              (target_parent_uri
+               . ,(format "org-headline://%s/" test-file))))))
+      (should (equal (alist-get 'success result) t))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-refile-promote-regex))))
+
+(defconst org-mcp-test--content-refile-reorder
+  (concat
+   "* Parent\n"
+   "** Mover\n"
+   "Body.\n"
+   "** A\n"
+   "** B\n"
+   ":PROPERTIES:\n"
+   ":ID: " org-mcp-test--refile-sibling-id "\n"
+   ":END:\n")
+  "A `Parent' with children `Mover' (first), `A', and `B' (with ID).")
+
+(defconst org-mcp-test--expected-refile-reorder-regex
+  (concat
+   "\\`\\* Parent\n"
+   "\\*\\* A\n"
+   "\\*\\* B\n"
+   " *:PROPERTIES:\n *:ID: +"
+   org-mcp-test--refile-sibling-id
+   "\n *:END:\n"
+   "\\*\\* Mover\n"
+   org-mcp-test--regex-id-drawer
+   "Body\\.\n\\'")
+  "Regex: `Mover' reordered from first to last child (after `B').")
+
+(ert-deftest org-mcp-test-refile-headline-same-parent-reorder ()
+  "Reorder a child within its own parent via after_uri.
+Exercises insertion-marker stability when the cut source precedes the
+insertion point (the marker must shift back over the removed text)."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-reorder
+      (list org-mcp-test--refile-sibling-id)
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            `((uri . ,(format "org-headline://%s#Parent/Mover" test-file))
+              (current_title . "Mover")
+              (target_parent_uri
+               . ,(format "org-headline://%s#Parent" test-file))
+              (after_uri
+               . ,(concat "org-id://"
+                          org-mcp-test--refile-sibling-id))))))
+      (should (equal (alist-get 'success result) t))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-refile-reorder-regex))))
+
+(defconst org-mcp-test--content-refile-noop-top-level
+  (concat
+   "* Target\n"
+   "* Mover\n"
+   ":PROPERTIES:\n"
+   ":ID: " org-mcp-test--refile-mover-id "\n"
+   ":END:\n"
+   "Body line.\n")
+  "Two top-level headlines `Target' and `Mover'; `Mover' is last and
+has an ID.")
+
+(ert-deftest org-mcp-test-refile-headline-noop-top-level ()
+  "Refiling a top-level node already last at top level (with an ID) is
+a no-op: the file content is unchanged and the existing URI is
+returned.  Exercises the `(equal nil nil)' top-level parent branch of
+`org-mcp--refile-noop-p' that the named-parent noop test does not
+reach."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-noop-top-level
+      (list org-mcp-test--refile-mover-id)
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            `((uri . ,(concat "org-id://" org-mcp-test--refile-mover-id))
+              (current_title . "Mover")
+              (target_parent_uri
+               . ,(format "org-headline://%s/" test-file))))))
+      (should (equal (alist-get 'success result) t))
+      (should (equal (alist-get 'uri result)
+                     (concat "org-id://" org-mcp-test--refile-mover-id)))
+      (should (string= (org-mcp-test--read-file test-file)
+                       org-mcp-test--content-refile-noop-top-level)))))
+
+(defconst org-mcp-test--content-refile-noop-after
+  (concat
+   "* Target\n"
+   "** Child A\n"
+   ":PROPERTIES:\n"
+   ":ID: " org-mcp-test--refile-sibling-id "\n"
+   ":END:\n"
+   "** Mover\n"
+   ":PROPERTIES:\n"
+   ":ID: " org-mcp-test--refile-mover-id "\n"
+   ":END:\n"
+   "Body line.\n")
+  "A `Target' with children `Child A' (with ID) then `Mover' (with ID).")
+
+(ert-deftest org-mcp-test-refile-headline-noop-after-uri ()
+  "Refiling a node already immediately after the named `after_uri'
+sibling (with an ID) is a no-op.  Exercises the `after-id' branch of
+`org-mcp--refile-noop-p'."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-noop-after
+      (list org-mcp-test--refile-sibling-id
+            org-mcp-test--refile-mover-id)
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            `((uri . ,(concat "org-id://" org-mcp-test--refile-mover-id))
+              (current_title . "Mover")
+              (target_parent_uri
+               . ,(format "org-headline://%s#Target" test-file))
+              (after_uri
+               . ,(concat "org-id://" org-mcp-test--refile-sibling-id))))))
+      (should (equal (alist-get 'success result) t))
+      (should (equal (alist-get 'uri result)
+                     (concat "org-id://" org-mcp-test--refile-mover-id)))
+      (should (string= (org-mcp-test--read-file test-file)
+                       org-mcp-test--content-refile-noop-after)))))
+
+(ert-deftest org-mcp-test-refile-headline-noop-position-start ()
+  "Refiling a node already the first child with position=start (and an
+ID) is a no-op.  Exercises the `position=start' branch of
+`org-mcp--refile-noop-p'."
+  (org-mcp-test--with-id-setup
+      test-file org-mcp-test--content-refile-noop
+      (list org-mcp-test--refile-mover-id)
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            `((uri . ,(concat "org-id://" org-mcp-test--refile-mover-id))
+              (current_title . "Mover")
+              (target_parent_uri
+               . ,(format "org-headline://%s#Target" test-file))
+              (position . "start")))))
+      (should (equal (alist-get 'success result) t))
+      (should (equal (alist-get 'uri result)
+                     (concat "org-id://" org-mcp-test--refile-mover-id)))
+      (should (string= (org-mcp-test--read-file test-file)
+                       org-mcp-test--content-refile-noop)))))
+
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

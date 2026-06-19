@@ -413,6 +413,46 @@ Example:
 }
 #+end_example
 
+*** org-refile-headline
+# Canonical references for the tool contract: per-parameter semantics
+# live in the `MCP Parameters:' section of
+# `org-mcp--tool-refile-headline''s docstring (parsed by mcp-server-lib
+# into the tool's input schema); tool-level overview, return shape, and
+# positioning behavior live in the `:description' string registered for
+# the tool, both in org-mcp.el.  Summaries below; keep parameter
+# names/types in sync.
+- *Description:* Move an existing headline and its entire subtree to a new parent or file, preserving its TODO state, tags, properties, ID, body, and child structure
+- *Parameters:*
+  - =uri= (string, required): URI of the headline to move (supports =org-headline://= or =org-id://=); must identify a headline, not a whole file
+  - =current_title= (string, required): Current headline title (without TODO state or tags) - must match actual title
+  - =target_parent_uri= (string, required): URI of the new parent. Use =org-headline://filename.org/= for a top-level destination, or a headline / =org-id://= URI to move under that node. Same shape as =org-add-todo='s =parent_uri=.
+  - =after_uri= (string, optional): URI of sibling to place after; omit to append as last child. Cannot be combined with a top-level =target_parent_uri= or with =position=, and cannot reference =uri= itself. See the MCP tool description for accepted formats.
+  - =position= (string, optional): Where to place among the target's children: ="start"= or ="end"= (default ="end"=). Mutually exclusive with =after_uri=.
+- *Returns:* Object with success status, the moved node's =org-id://= URI, title, and source and target file names
+- *Source and target files:* Both must be members of =org-mcp-allowed-files=. The existing ID is preserved, including across files.
+- *Rejected moves:* Moving a node into itself or its own subtree is rejected.
+- *No-op:* When the node already sits in the requested place (same parent and slot) and already has an ID, the file is left untouched.
+- *Buffer behavior:* Modifies the source file, and the target file when different, on disk; fails if an Emacs buffer visiting either has unsaved changes; ask the user to save the buffer and retry.
+
+Example:
+#+begin_example
+# Request (move an inbox item under a project, given by the project's ID):
+{
+  "uri": "org-headline:///home/user/org/inbox.org#Buy%20milk",
+  "current_title": "Buy milk",
+  "target_parent_uri": "org-id://550e8400-e29b-41d4-a716-446655440000"
+}
+
+# Success response (the moved headline lacked an ID; the tool mints one):
+{
+  "success": true,
+  "uri": "org-id://550e8400-e29b-41d4-a716-446655440099",
+  "title": "Buy milk",
+  "source_file": "inbox.org",
+  "target_file": "projects.org"
+}
+#+end_example
+
 ** Workaround Tools Duplicating Resource Templates
 
 *Note:* The following tools are temporary workarounds that duplicate the resource template functionality as tools. They exist because Claude Code currently doesn't discover resource templates.
