@@ -56,7 +56,9 @@ fi
 # Only run indentation if there are no syntax errors
 if [ $ELISP_SYNTAX_FAILED -eq 0 ]; then
 	echo -n "Running elisp-autofmt... "
-	if eask format elisp-autofmt; then
+	# The default run formats the package files (Eask `files').
+	# org-mcp-test.el is not a package file, so format it explicitly too.
+	if eask format elisp-autofmt && eask format elisp-autofmt org-mcp-test.el; then
 		echo "OK!"
 	else
 		echo "elisp-autofmt failed!"
