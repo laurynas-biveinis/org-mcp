@@ -45,7 +45,9 @@ SHELL_SYNTAX_FAILED=0
 # Elisp
 
 echo -n "Checking Elisp syntax... "
-if eask recompile; then
+# recompile covers the package files (Eask `files'); org-mcp-test.el is
+# not a package file, so byte-compile it explicitly too.
+if eask recompile && eask compile org-mcp-test.el; then
 	echo "OK!"
 else
 	echo "Elisp syntax check failed!"

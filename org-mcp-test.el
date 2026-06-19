@@ -532,7 +532,7 @@ Second review content.
 * Planning
 ** Project Review
 Third review content."
-  "Content with duplicate 'Project Review' headlines under different parents.")
+  "Content with duplicate `Project Review' headlines under different parents.")
 
 (defconst org-mcp-test--content-hierarchy-before
   "* First Section
@@ -543,7 +543,7 @@ Some content.
 More content.
 ** Target
 This Target is under Second Section, not First Section."
-  "Content with duplicate 'Target' headlines under different parents.")
+  "Content with duplicate `Target' headlines under different parents.")
 
 (defconst org-mcp-test--content-todo-keywords-before
   "* Project Management
@@ -937,7 +937,8 @@ slots take the heading `:ID:' values in file order.")
     org-mcp-test--regex-id-drawer
     "\\'")
    org-mcp-test--content-with-id-id)
-  "Pattern for child TODO (level 2) added under parent (level 1) with existing child (level 2).")
+  "Pattern for child TODO (level 2) added under parent (level 1)
+with existing child (level 2).")
 
 (defconst org-mcp-test--regex-child-under-parent-pinned
   (concat
@@ -1162,7 +1163,8 @@ heading under `Real Heading' with an auto-generated `:ID:' drawer.")
    "\\*\\*\\* TODO Second Child +.*:work:.*\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Pattern for second child (level 3) added at same level as first child (level 3) under parent (level 2).")
+  "Pattern for second child (level 3) added at same level as first
+child (level 3) under parent (level 2).")
 
 (defconst org-mcp-test--regex-top-level-end-with-body
   (concat
@@ -1683,11 +1685,11 @@ Very deep content."
    "Content of subsection 1.1.\n"
    "** Subsection 1.2\n"
    "Content of subsection 1.2.")
-  "Expected content when reading 'First Section' top-level headline.")
+  "Expected content when reading `First Section' top-level headline.")
 
 (defconst org-mcp-test--expected-subsection-1-1
   (concat "** Subsection 1.1\n" "Content of subsection 1.1.")
-  "Expected content when reading 'First Section/Subsection 1.1' nested headline.")
+  "Expected content when reading `First Section/Subsection 1.1' nested headline.")
 
 (defconst org-mcp-test--content-archive-simple
   "* TODO Task to Archive
@@ -1987,6 +1989,12 @@ Returns the value of the last form in BODY."
              ,@inits
              (let (,@bindings
                    (org-mcp-allowed-files (list ,@temp-vars)))
+               ;; File-path vars are bound for BODY's convenience; a
+               ;; BODY that reaches its files only through
+               ;; `org-mcp-allowed-files' need not reference them, so
+               ;; mark them used to avoid spurious unused-lexical
+               ;; warnings.
+               (ignore ,@vars)
                (org-mcp-test--with-enabled
                  ,@body)))
          ,@cleanups))))
@@ -2444,7 +2452,7 @@ so result-shape coverage is not silently weakened."
 (defun org-mcp-test--add-todo-start-and-return-uuid
     (title parent-uri basename)
   "Call `org-add-todo' for TITLE at start of PARENT-URI; return new UUID.
-Uses the top-level start-family default params (TAGS '(\"urgent\"), no
+Uses the top-level start-family default params (TAGS (\"urgent\"), no
 body, no `after_uri'), asserts the standard 4-field result shape against
 BASENAME, and returns the UUID stripped from the result's `org-id://' URI.
 Intended for composition tests that need the freshly inserted heading's
@@ -2535,7 +2543,7 @@ heading and not some other one."
   "Run a top-level `position=\"start\"' `org-add-todo' check.
 FIXTURE is the initial Org content; EXPECTED-REGEX is the
 whole-buffer regex to verify after insertion.  TITLE defaults to
-\"New Top Task\"; TAGS defaults to '(\"urgent\").  All other
+\"New Top Task\"; TAGS defaults to (\"urgent\").  All other
 parameters of `org-mcp-test--add-todo-and-check' are fixed to the
 top-level `position=\"start\"' family's standard shape."
   `(org-mcp-test--add-todo-and-check
