@@ -142,6 +142,19 @@ validators that may assume VALUE is a string after this guard."
      "Field %s must be a string, got: %S (type: %s)"
      field-name value (type-of value))))
 
+(defun org-mcp--normalize-json-boolean (value)
+  "Return nil for a JSON-falsy VALUE, VALUE unchanged otherwise.
+`json.el' decodes JSON `false' to `:json-false', which is truthy in
+Elisp; the string \"false\" is a common client typo.  Both normalize
+to nil so callers can test the result with ordinary truthiness."
+  (cond
+   ((eq value :json-false)
+    nil)
+   ((equal value "false")
+    nil)
+   (t
+    value)))
+
 (defun org-mcp--resource-validation-error (message &rest args)
   "Signal validation error MESSAGE with ARGS for resource operations."
   (mcp-server-lib-resource-signal-error
@@ -1831,16 +1844,8 @@ MCP Parameters:
   (org-mcp--validate-string-field old_body "old_body")
   (org-mcp--validate-string-field new_body "new_body")
   ;; Normalize falsy values to nil so the multi-occurrence guard
-  ;; fires.  Accept `:json-false' (JSON boolean) and string "false"
-  ;; (a common LLM-client typo); both are otherwise truthy in Elisp.
-  (let ((replace_all
-         (cond
-          ((eq replace_all :json-false)
-           nil)
-          ((equal replace_all "false")
-           nil)
-          (t
-           replace_all))))
+  ;; fires; `:json-false' and string "false" are truthy in Elisp.
+  (let ((replace_all (org-mcp--normalize-json-boolean replace_all)))
     (org-mcp--validate-body-no-unbalanced-blocks new_body)
 
     (pcase-let ((`(,file-path . ,headline-path)
@@ -1939,6 +1944,177 @@ MCP Parameters:
              replace_all
              body-begin
              body-end)))))))
+
+(defconst org-mcp--planning-repeater-body
+  "\\(?:\\+\\+?\\|\\.\\+\\)[0-9]+[hdwmy]\\(?:/[0-9]+[hdwmy]\\)?"
+  "Regex body matching a repeater cookie, no anchors or leading space.
+Prefix `+N'/`++N'/`.+N' (unit h/d/w/m/y) with an optional `/M' habit
+interval.  Shared by `org-mcp--split-planning-spec' and
+`org-mcp--set-planning-cookies' so the two stay in sync.")
+
+(defconst org-mcp--planning-warning-body "-[0-9]+[hdwmy]"
+  "Regex body matching a warning cookie, no anchors or leading space.
+A `-N' offset (unit h/d/w/m/y).  Shared by
+`org-mcp--split-planning-spec' and `org-mcp--set-planning-cookies'.")
+
+(defun org-mcp--split-planning-spec (spec)
+  "Split planning SPEC into a list (DATE-SPEC REPEATER WARNING).
+SPEC is the user timestamp content: a date/time chunk optionally
+followed by repeater and/or warning cookies.  The first whitespace
+token is always part of the date/time chunk, so a leading `+1w' is a
+relative date, not a repeater.  Trailing tokens matching a repeater
+cookie (`+N', `++N', `.+N', optionally with a `/M' habit interval) or
+a warning cookie (`-N'), each with a unit in h/d/w/m/y, are peeled
+off.  DATE-SPEC is the remaining chunk; REPEATER and WARNING are
+strings or nil."
+  (let ((tokens (split-string spec))
+        (repeater nil)
+        (warning nil))
+    (while (and (> (length tokens) 1)
+                (let ((last (car (last tokens))))
+                  (cond
+                   ((and (not repeater)
+                         (string-match-p
+                          (concat
+                           "\\`"
+                           org-mcp--planning-repeater-body
+                           "\\'")
+                          last))
+                    (setq repeater last))
+                   ((and (not warning)
+                         (string-match-p
+                          (concat
+                           "\\`" org-mcp--planning-warning-body "\\'")
+                          last))
+                    (setq warning last)))))
+      (setq tokens (butlast tokens)))
+    (list (string-join tokens " ") repeater warning)))
+
+(defun org-mcp--set-planning-cookies (keyword repeater warning)
+  "Replace the repeater/warning cookies of KEYWORD's planning timestamp.
+KEYWORD is \"SCHEDULED\" or \"DEADLINE\".  In the current entry, strip
+any existing repeater and warning cookies from that timestamp and
+append REPEATER and/or WARNING (each a string or nil) before the
+closing `>'.  Assumes the entry already has a KEYWORD timestamp."
+  (save-excursion
+    (org-back-to-heading t)
+    (let ((end
+           (save-excursion
+             (outline-next-heading)
+             (point))))
+      ;; The caller (`org-mcp--apply-planning-spec') has just placed the
+      ;; KEYWORD timestamp via `org-schedule'/`org-deadline', so the
+      ;; search always succeeds.  Bind its result before the assert so
+      ;; the side-effecting search still runs even if `cl-assert' is
+      ;; compiled out under a high-optimization byte-compile.
+      (let ((found
+             (re-search-forward (concat
+                                 "\\<" keyword ": <\\([^>\n]*\\)>")
+                                end t)))
+        (cl-assert found)
+        (let* ((base
+                (replace-regexp-in-string
+                 (concat
+                  "\\(?: "
+                  org-mcp--planning-repeater-body
+                  "\\| "
+                  org-mcp--planning-warning-body
+                  "\\)+\\'")
+                 "" (match-string 1)))
+               (rebuilt
+                (concat
+                 base
+                 (and repeater (concat " " repeater))
+                 (and warning (concat " " warning)))))
+          (replace-match rebuilt t t nil 1))))))
+
+(defun org-mcp--apply-planning-spec (setter keyword spec)
+  "Set KEYWORD planning from SPEC using SETTER, then splice cookies.
+SETTER is `org-schedule' or `org-deadline'.  SPEC is parsed by
+`org-mcp--split-planning-spec'; SETTER is called with the date/time
+chunk so Org resolves and places the timestamp, then any repeater or
+warning cookies are spliced into the KEYWORD timestamp."
+  (pcase-let ((`(,date ,repeater ,warning)
+               (org-mcp--split-planning-spec spec)))
+    (funcall setter nil date)
+    (when (or repeater warning)
+      (org-mcp--set-planning-cookies keyword repeater warning))))
+
+(defun org-mcp--tool-set-planning
+    (uri &optional scheduled deadline clear_scheduled clear_deadline)
+  "Set or clear SCHEDULED/DEADLINE planning timestamps on the headline at URI.
+Creates an Org ID for the headline if one doesn't exist.
+
+MCP Parameters:
+  uri - URI of the headline to update
+        Formats:
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
+  scheduled - Timestamp content to schedule, as written inside <...>:
+              a date, optional time, and optional repeater/warning
+              cookies (e.g. \"2026-06-20\", \"2026-06-20 14:00\",
+              \"+1w\", \"2026-06-20 +1w -3d\")
+  deadline - Deadline timestamp content, same grammar as scheduled
+  clear_scheduled - When true, remove the SCHEDULED entry
+  clear_deadline - When true, remove the DEADLINE entry"
+  (org-mcp--validate-string-field uri "uri")
+  (org-mcp--validate-string-field scheduled "scheduled" t)
+  (org-mcp--validate-string-field deadline "deadline" t)
+  (setq clear_scheduled
+        (org-mcp--normalize-json-boolean clear_scheduled))
+  (setq clear_deadline
+        (org-mcp--normalize-json-boolean clear_deadline))
+  (unless (or scheduled deadline clear_scheduled clear_deadline)
+    (org-mcp--tool-validation-error
+     (concat
+      "Provide at least one of scheduled, deadline, "
+      "clear_scheduled, clear_deadline")))
+  (when (and scheduled clear_scheduled)
+    (org-mcp--tool-validation-error
+     "Cannot set and clear scheduled in the same call"))
+  (when (and deadline clear_deadline)
+    (org-mcp--tool-validation-error
+     "Cannot set and clear deadline in the same call"))
+  (when (and scheduled (org-mcp--blank-or-nbsp-only-p scheduled))
+    (org-mcp--tool-validation-error
+     "scheduled is empty; use clear_scheduled to remove the entry"))
+  (when (and deadline (org-mcp--blank-or-nbsp-only-p deadline))
+    (org-mcp--tool-validation-error
+     "deadline is empty; use clear_deadline to remove the entry"))
+  (pcase-let ((`(,file-path . ,headline-path)
+               (org-mcp--parse-resource-uri uri)))
+    (unless headline-path
+      (org-mcp--tool-validation-error
+       "URI must identify a headline, not a whole file"))
+    (org-mcp--modify-and-save file-path "set planning"
+                              (save-excursion
+                                (org-back-to-heading t)
+                                (list
+                                 (cons
+                                  'scheduled
+                                  (org-entry-get nil "SCHEDULED"))
+                                 (cons
+                                  'deadline
+                                  (org-entry-get nil "DEADLINE"))))
+      (org-mcp--validate-and-skip-file-header)
+      (org-mcp--goto-headline-from-uri
+       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
+      (beginning-of-line)
+      ;; `org-log-reschedule'/`org-log-redeadline' set to `note' would
+      ;; pop an interactive note buffer that an MCP call cannot answer,
+      ;; so suppress planning-change logging for this operation.
+      (let ((org-log-reschedule nil)
+            (org-log-redeadline nil))
+        (when clear_scheduled
+          (org-schedule '(4)))
+        (when scheduled
+          (org-mcp--apply-planning-spec
+           #'org-schedule "SCHEDULED" scheduled))
+        (when clear_deadline
+          (org-deadline '(4)))
+        (when deadline
+          (org-mcp--apply-planning-spec
+           #'org-deadline "DEADLINE" deadline))))))
 
 (defun org-mcp--tool-archive-subtree (uri)
   "Archive the subtree at URI using `org-archive-subtree'.
@@ -2511,13 +2687,7 @@ MCP Parameters:
        "'%s': the referenced file not in allowed list"
        file))
     (let* ((case_sensitive
-            (cond
-             ((eq case_sensitive :json-false)
-              nil)
-             ((equal case_sensitive "false")
-              nil)
-             (t
-              case_sensitive)))
+            (org-mcp--normalize-json-boolean case_sensitive))
            (case-fold (not case_sensitive))
            (files
             (if file
@@ -2761,6 +2931,27 @@ exist.
 Returns JSON object:
   success - Always true on success (boolean)
   uri - ID-based URI (org-id://{uuid}) for the edited headline"
+     :read-only nil)
+    (list
+     #'org-mcp--tool-set-planning
+     :id "org-set-planning"
+     :description
+     "Set, change, or clear a headline's SCHEDULED and/or DEADLINE
+planning timestamps via `org-schedule'/`org-deadline'.  Org produces
+the relative-date resolution, weekday formatting, and planning-line
+placement; trailing repeater (+1w, ++1w, .+1w) and warning (-3d)
+cookies in a date string are spliced into the timestamp.  When
+re-scheduling, omitting cookies preserves an existing repeater/warning
+while including any cookie replaces the field's cookies.  Provide at
+least one of scheduled, deadline, clear_scheduled, clear_deadline; a
+field and its clear_* cannot be combined.  Creates an Org ID property
+for the headline if one doesn't exist.
+
+Returns JSON object:
+  success - Always true on success (boolean)
+  scheduled - Resulting SCHEDULED timestamp string, or null
+  deadline - Resulting DEADLINE timestamp string, or null
+  uri - ID-based URI (org-id://{uuid}) for the headline"
      :read-only nil)
     (list
      #'org-mcp--tool-archive-subtree

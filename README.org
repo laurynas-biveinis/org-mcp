@@ -389,6 +389,51 @@ Example:
 }
 #+end_example
 
+*** org-set-planning
+- *Description:* Set, change, or clear a headline's =SCHEDULED= and/or =DEADLINE= planning timestamps
+- *Parameters:*
+  - =uri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
+  - =scheduled= (string, optional): Timestamp content to schedule, as written inside =<...>=: a date, optional time-of-day, and optional repeater/warning cookies. Examples: =2026-06-20=, =2026-06-20 14:00=, =+1w= (one week from today), =2026-06-20 +1w -3d=. The first whitespace token is the date (so a lone =+1w= is a relative date, not a repeater); trailing =+N=, =++N=, =.+N= (with unit =h/d/w/m/y=, optionally with a =/M= habit interval) set a repeater and =-N= sets a warning period
+  - =deadline= (string, optional): Same grammar as =scheduled=, for the =DEADLINE= timestamp
+  - =clear_scheduled= (boolean, optional): Remove the =SCHEDULED= entry (default: false)
+  - =clear_deadline= (boolean, optional): Remove the =DEADLINE= entry (default: false)
+- *Returns:* Success status, the resulting =scheduled= and =deadline= timestamp strings (=null= when absent), and the ID-based URI of the headline
+- *Constraints:* At least one of =scheduled=, =deadline=, =clear_scheduled=, =clear_deadline= must be provided. A field and its =clear_*= cannot be combined, and an empty =scheduled=/=deadline= string is rejected (use =clear_*= to remove)
+- *Repeater/warning handling:* Org produces the relative-date resolution, weekday names, and planning-line placement. When re-scheduling, omitting cookies preserves an existing repeater/warning; including any cookie replaces the field's existing cookies
+- *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
+
+Example:
+#+begin_example
+# Request (schedule with a weekly repeater, set a deadline):
+{
+  "uri": "org-id://abc-123",
+  "scheduled": "2026-06-20 +1w",
+  "deadline": "2026-06-25"
+}
+
+# Success response:
+{
+  "success": true,
+  "scheduled": "<2026-06-20 Sat +1w>",
+  "deadline": "<2026-06-25 Thu>",
+  "uri": "org-id://abc-123"
+}
+
+# Clear the scheduled date:
+{
+  "uri": "org-id://abc-123",
+  "clear_scheduled": true
+}
+
+# Success response (SCHEDULED removed; DEADLINE retained):
+{
+  "success": true,
+  "scheduled": null,
+  "deadline": "<2026-06-25 Thu>",
+  "uri": "org-id://abc-123"
+}
+#+end_example
+
 *** org-archive-subtree
 - *Description:* Archive an Org headline subtree to its configured archive location
 - *Parameters:*

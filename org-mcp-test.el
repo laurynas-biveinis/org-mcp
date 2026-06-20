@@ -8950,5 +8950,691 @@ ID) is a no-op.  Exercises the `position=start' branch of
         (org-mcp-test--read-file test-file)
         org-mcp-test--content-refile-noop)))))
 
+;;; org-set-planning tests
+
+(defun org-mcp-test--set-planning-result (params)
+  "Call `org-set-planning' with PARAMS; return the parsed JSON result.
+Binds `org-adapt-indentation' to nil so the planning line and property
+drawer land at column 0 regardless of the Org default."
+  (let ((org-adapt-indentation nil))
+    (json-read-from-string
+     (mcp-server-lib-ert-call-tool "org-set-planning" params))))
+
+(defconst org-mcp-test--content-planning-bare "* TODO Task\n"
+  "Single TODO headline with no planning line, body, or properties.")
+
+(defconst org-mcp-test--expected-planning-scheduled-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled for 2026-06-20 above a minted ID drawer.")
+
+(ert-deftest org-mcp-test-set-planning-scheduled ()
+  "Set SCHEDULED on a headline that has no planning line.
+Pins that the planning line lands directly under the heading, above the
+minted ID drawer, and that the resulting timestamp is returned."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20")))))
+      (should (= (length result) 4))
+      (should (equal (alist-get 'success result) t))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+      (should (null (alist-get 'deadline result)))
+      (should (string-prefix-p "org-id://" (alist-get 'uri result)))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-scheduled-regex))))
+
+(defconst org-mcp-test--expected-planning-deadline-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "DEADLINE: <2026-06-25 Thu>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' with a DEADLINE of 2026-06-25 above a minted ID drawer.")
+
+(ert-deftest org-mcp-test-set-planning-deadline ()
+  "Set DEADLINE on a headline that has no planning line.
+Pins that DEADLINE alone is handled (SCHEDULED untouched and absent)."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (deadline . "2026-06-25")))))
+      (should (equal (alist-get 'success result) t))
+      (should (null (alist-get 'scheduled result)))
+      (should (equal (alist-get 'deadline result) "<2026-06-25 Thu>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-deadline-regex))))
+
+(defconst org-mcp-test--expected-planning-both-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "DEADLINE: <2026-06-25 Thu> SCHEDULED: <2026-06-20 Sat>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' with DEADLINE and SCHEDULED merged on one planning line.")
+
+(ert-deftest org-mcp-test-set-planning-both ()
+  "Set SCHEDULED and DEADLINE in a single call.
+Pins that both keywords merge onto one planning line in Org's canonical
+DEADLINE-then-SCHEDULED order, above the ID drawer, and that both
+resulting timestamps are returned."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri)
+               (scheduled . "2026-06-20")
+               (deadline . "2026-06-25")))))
+      (should (equal (alist-get 'success result) t))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+      (should (equal (alist-get 'deadline result) "<2026-06-25 Thu>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-both-regex))))
+
+(defconst org-mcp-test--content-planning-scheduled
+  "* TODO Task\nSCHEDULED: <2026-06-20 Sat>\n"
+  "TODO headline scheduled for 2026-06-20, no body or properties.")
+
+(defconst org-mcp-test--expected-planning-cleared-regex
+  (concat "\\`\\* TODO Task\n" org-mcp-test--regex-id-drawer "\\'")
+  "Regex: `Task' with no planning line, only a minted ID drawer.")
+
+(ert-deftest org-mcp-test-set-planning-clear-scheduled ()
+  "Clear an existing SCHEDULED entry.
+Pins that clear_scheduled removes the planning line entirely and the
+returned scheduled value is null."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-scheduled))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (clear_scheduled . t)))))
+      (should (equal (alist-get 'success result) t))
+      (should (null (alist-get 'scheduled result)))
+      (should (null (alist-get 'deadline result)))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-cleared-regex))))
+
+(defconst org-mcp-test--expected-planning-false-noop-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "DEADLINE: <2026-06-26 Fri> SCHEDULED: <2026-06-20 Sat>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: task with both DEADLINE and SCHEDULED timestamps.")
+
+(ert-deftest org-mcp-test-set-planning-clear-false-ignored ()
+  "A JSON `false' clear_scheduled must not clear the entry.
+Elisp treats `:json-false' as truthy, so a naive `when' would wrongly
+clear; this pins the boolean normalization at the tool boundary."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-scheduled))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri)
+               (deadline . "2026-06-26")
+               (clear_scheduled . :json-false)))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+      (should (equal (alist-get 'deadline result) "<2026-06-26 Fri>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-false-noop-regex))))
+
+(defconst org-mcp-test--content-planning-both
+  "* TODO Task\nDEADLINE: <2026-06-25 Thu> SCHEDULED: <2026-06-20 Sat>\n"
+  "TODO headline with both DEADLINE and SCHEDULED on one planning line.")
+
+(ert-deftest org-mcp-test-set-planning-clear-deadline-keeps-scheduled
+    ()
+  "Clear DEADLINE from a shared planning line, keeping SCHEDULED.
+Pins clear_deadline and that the surviving keyword collapses onto its
+own line."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-both))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (clear_deadline . t)))))
+      (should (null (alist-get 'deadline result)))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-scheduled-regex))))
+
+(defconst org-mcp-test--expected-planning-by-id-regex
+  (concat
+   "\\`\\* TODO Task with ID\n"
+   "SCHEDULED: <2026-06-20 Sat>\n"
+   org-mcp-test--regex-id-drawer
+   "First line of content\\."
+   "\\(?:.\\|\n\\)*\\'")
+  "Regex: `Task with ID' scheduled, ID drawer and body preserved.")
+
+(ert-deftest org-mcp-test-set-planning-by-id ()
+  "Set SCHEDULED on a headline addressed by an org-id:// URI.
+Pins that the ID form resolves, the body and existing ID drawer are
+preserved, and the returned URI is the same org-id:// URI."
+  (org-mcp-test--with-id-setup test-file
+      org-mcp-test--content-with-id-todo
+    `(,org-mcp-test--content-with-id-id)
+    (let ((result
+           (org-mcp-test--set-planning-result
+            `((uri . ,org-mcp-test--content-with-id-uri)
+              (scheduled . "2026-06-20")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+      (should
+       (equal
+        (alist-get 'uri result) org-mcp-test--content-with-id-uri))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-by-id-regex))))
+
+(defconst org-mcp-test--expected-planning-repeater-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat \\+1w>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled with a weekly repeater cookie.")
+
+(ert-deftest org-mcp-test-set-planning-scheduled-repeater ()
+  "Set SCHEDULED with a repeater cookie.
+Pins the hybrid splice: Org resolves the date, then the +1w repeater is
+spliced into the timestamp (org-read-date alone would drop it)."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 +1w")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +1w>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-repeater-regex))))
+
+(defconst org-mcp-test--expected-planning-warning-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat -3d>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled with a warning-period cookie.")
+
+(ert-deftest org-mcp-test-set-planning-scheduled-warning ()
+  "Set SCHEDULED with a warning-period cookie.
+Pins the hybrid splice: Org resolves the date, then the -3d warning is
+spliced into the timestamp (org-read-date alone would drop it)."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 -3d")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat -3d>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-warning-regex))))
+
+(defconst org-mcp-test--expected-planning-repeater-warning-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat \\+1w -3d>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled with both repeater and warning cookies.")
+
+(ert-deftest org-mcp-test-set-planning-scheduled-repeater-and-warning
+    ()
+  "Set SCHEDULED with both a repeater and a warning cookie.
+Pins Org's canonical repeater-then-warning order in the spliced
+timestamp."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 +1w -3d")))))
+      (should
+       (equal
+        (alist-get 'scheduled result) "<2026-06-20 Sat +1w -3d>"))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-planning-repeater-warning-regex))))
+
+(defconst org-mcp-test--expected-planning-time-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat 14:00>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled with a time-of-day.")
+
+(ert-deftest org-mcp-test-set-planning-scheduled-time-of-day ()
+  "Set SCHEDULED with a time-of-day (no cookies)."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 14:00")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat 14:00>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-time-regex))))
+
+(defconst org-mcp-test--content-planning-repeating
+  "* TODO Task\nSCHEDULED: <2026-06-13 Sat +1w>\n"
+  "TODO headline scheduled with a weekly repeater, no properties.")
+
+(ert-deftest org-mcp-test-set-planning-reschedule-preserves-repeater
+    ()
+  "Re-scheduling without a cookie preserves an existing repeater.
+Pins that Org's repeater preservation is left intact when the client
+supplies a plain date."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-repeating))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +1w>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-repeater-regex))))
+
+(defconst org-mcp-test--expected-planning-replaced-repeater-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat \\+2w>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled for 2026-06-20 Sat with a +2w repeater.")
+
+(ert-deftest org-mcp-test-set-planning-reschedule-replaces-repeater ()
+  "Re-scheduling with a cookie replaces the existing repeater.
+Pins the strip-then-append rule: Org first preserves +1w on the new
+date, then the splice removes it and applies the requested +2w."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-repeating))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 +2w")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +2w>"))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-planning-replaced-repeater-regex))))
+
+(defun org-mcp-test--set-planning-expecting-error
+    (test-file params &optional error-message-regex)
+  "Call org-set-planning with PARAMS expecting an error; file unchanged.
+TEST-FILE must remain unchanged.  ERROR-MESSAGE-REGEX, if non-nil,
+must match the signalled error's message string."
+  (org-mcp-test--assert-error-and-file test-file
+    (let* ((request
+            (mcp-server-lib-create-tools-call-request
+             "org-set-planning" 1 params))
+           (response
+            (mcp-server-lib-process-jsonrpc-parsed
+             request mcp-server-lib-ert-server-id))
+           (result
+            (mcp-server-lib-ert-process-tool-response response)))
+      (error "Expected error but got success: %s" result))
+    error-message-regex))
+
+(ert-deftest org-mcp-test-set-planning-requires-an-action ()
+  "Providing none of the four planning arguments is a validation error."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (org-mcp-test--set-planning-expecting-error
+     test-file
+     `((uri . ,(format "org-headline://%s#Task" test-file))))))
+
+(ert-deftest org-mcp-test-set-planning-rejects-set-and-clear-conflict
+    ()
+  "Setting and clearing the same field in one call is a validation error."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (org-mcp-test--set-planning-expecting-error
+     test-file
+     `((uri . ,(format "org-headline://%s#Task" test-file))
+       (scheduled . "2026-06-20")
+       (clear_scheduled . t)))))
+
+(ert-deftest org-mcp-test-set-planning-rejects-empty-scheduled ()
+  "An empty scheduled string is a validation error (clear_* removes)."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (org-mcp-test--set-planning-expecting-error
+     test-file
+     `((uri . ,(format "org-headline://%s#Task" test-file))
+       (scheduled . "")))))
+
+(ert-deftest org-mcp-test-set-planning-with-modified-buffer ()
+  "Setting planning fails when a visiting buffer has unsaved changes."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (org-mcp-test--with-file-buffer buffer test-file
+      (with-current-buffer buffer
+        (goto-char (point-max))
+        (insert "\n* TODO Another Task\n")
+        (should (buffer-modified-p)))
+      (org-mcp-test--set-planning-expecting-error
+       test-file
+       `((uri . ,(format "org-headline://%s#Task" test-file))
+         (scheduled . "2026-06-20")))
+      (with-current-buffer buffer
+        (should (buffer-modified-p))))))
+
+(defconst org-mcp-test--expected-planning-both-cookies-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "DEADLINE: <2026-06-25 Thu -3d> SCHEDULED: <2026-06-20 Sat \\+1w>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: both keywords set in one call, each with its own cookie.")
+
+(ert-deftest org-mcp-test-set-planning-both-with-cookies ()
+  "Set SCHEDULED and DEADLINE, each with a cookie, in one call.
+Pins that two cookie splices on the same planning line do not disturb
+each other's timestamp."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri)
+               (scheduled . "2026-06-20 +1w")
+               (deadline . "2026-06-25 -3d")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +1w>"))
+      (should
+       (equal (alist-get 'deadline result) "<2026-06-25 Thu -3d>"))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-planning-both-cookies-regex))))
+
+(ert-deftest
+    org-mcp-test-set-planning-rejects-deadline-and-clear-conflict
+    ()
+  "Setting and clearing deadline in the same call is a validation error."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (org-mcp-test--set-planning-expecting-error
+     test-file
+     `((uri . ,(format "org-headline://%s#Task" test-file))
+       (deadline . "2026-06-25")
+       (clear_deadline . t)))))
+
+(ert-deftest org-mcp-test-set-planning-rejects-empty-deadline ()
+  "An empty deadline string is a validation error (clear_* removes)."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (org-mcp-test--set-planning-expecting-error
+     test-file
+     `((uri . ,(format "org-headline://%s#Task" test-file))
+       (deadline . "")))))
+
+(defconst org-mcp-test--content-planning-deadline
+  "* TODO Task\nDEADLINE: <2026-06-25 Thu>\n"
+  "TODO headline with a DEADLINE only, no body or properties.")
+
+(ert-deftest org-mcp-test-set-planning-clear-deadline ()
+  "Clear a lone DEADLINE, removing the whole planning line.
+Pins that `(org-deadline (4))' on a deadline-only entry leaves no
+residual planning line."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-deadline))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (clear_deadline . t)))))
+      (should (null (alist-get 'deadline result)))
+      (should (null (alist-get 'scheduled result)))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-cleared-regex))))
+
+(ert-deftest org-mcp-test-set-planning-clear-both ()
+  "Clear SCHEDULED and DEADLINE simultaneously from a shared line.
+Pins that the sequential org-schedule/org-deadline remove calls both
+succeed, leaving no planning line."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-both))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri)
+               (clear_scheduled . t)
+               (clear_deadline . t)))))
+      (should (equal (alist-get 'success result) t))
+      (should (null (alist-get 'scheduled result)))
+      (should (null (alist-get 'deadline result)))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-cleared-regex))))
+
+(ert-deftest org-mcp-test-set-planning-whole-file-uri-rejected ()
+  "A URI identifying a whole file (no headline) is rejected.
+Pins that `org-set-planning' refuses a fragment-less `org-headline://'
+URI with a clean validation error, rather than silently applying the
+planning change to the file's first heading."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (org-mcp-test--set-planning-expecting-error
+     test-file
+     `((uri . ,(format "org-headline://%s/" test-file))
+       (scheduled . "2026-06-20"))
+     "not a whole file")))
+
+(ert-deftest org-mcp-test-set-planning-rejects-invalid-repeater-prefix
+    ()
+  "A `.++' repeater prefix is not spliced as a cookie.
+Pins the tightened repeater grammar: `.++1w' is not a valid Org
+repeater, so it is left in the date chunk (where Org discards it)
+instead of being spliced verbatim into the timestamp."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 .++1w")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-scheduled-regex))))
+
+(defconst org-mcp-test--expected-planning-habit-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat \\.\\+1d/2d>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled with a `.+1d/2d' habit-interval repeater.")
+
+(ert-deftest org-mcp-test-set-planning-scheduled-habit-repeater ()
+  "Set SCHEDULED with a habit-interval repeater cookie (`.+1d/2d').
+Pins that the `/M' habit interval is recognized as part of the repeater
+and spliced into the timestamp, not dropped along with the date chunk."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 .+1d/2d")))))
+      (should
+       (equal
+        (alist-get 'scheduled result) "<2026-06-20 Sat .+1d/2d>"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-habit-regex))))
+
+(defconst org-mcp-test--content-planning-habit
+  "* TODO Task\nSCHEDULED: <2026-06-13 Sat +1w/2w>\n"
+  "TODO headline scheduled with a habit-style repeater interval.")
+
+(ert-deftest
+    org-mcp-test-set-planning-reschedule-replaces-habit-repeater
+    ()
+  "Re-scheduling with a cookie replaces an existing habit repeater.
+Pins that the strip step removes a `+1w/2w' habit repeater that Org
+preserves across the reschedule, so the requested `+2w' replaces it
+instead of duplicating onto it."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-habit))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 +2w")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +2w>"))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-planning-replaced-repeater-regex))))
+
+(defconst org-mcp-test--regex-planning-relative-resolved
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}"
+   " [A-Z][a-z][a-z]>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled for a resolved bare date with no cookie.")
+
+(ert-deftest org-mcp-test-set-planning-lone-relative-date ()
+  "A lone relative date is treated as the date, not a repeater.
+Pins the split rule that the first whitespace token always belongs to
+the date chunk: `+1w' alone resolves to a concrete date with no
+repeater cookie spliced (a weakened guard would peel it as a repeater
+and leave today's date with a spurious cookie)."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "+1w")))))
+      (should
+       (string-match-p
+        (concat
+         "\\`<[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}"
+         " [A-Z][a-z][a-z]>\\'")
+        (alist-get 'scheduled result)))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--regex-planning-relative-resolved))))
+
+(defconst org-mcp-test--expected-planning-cumulative-repeater-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat \\+\\+2w>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled with a `++2w' cumulative repeater.")
+
+(ert-deftest org-mcp-test-set-planning-cumulative-repeater ()
+  "Set SCHEDULED with a `++N' cumulative repeater cookie.
+Pins that the doubled-plus repeater prefix is recognized and spliced."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 ++2w")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat ++2w>"))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-planning-cumulative-repeater-regex))))
+
+(defconst org-mcp-test--expected-planning-restart-repeater-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat \\.\\+2w>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled with a `.+2w' restart-style repeater.")
+
+(ert-deftest org-mcp-test-set-planning-restart-repeater ()
+  "Set SCHEDULED with a `.+N' restart-from-completion repeater cookie.
+Pins that the dot-plus repeater prefix is recognized and spliced."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 .+2w")))))
+      (should
+       (equal (alist-get 'scheduled result) "<2026-06-20 Sat .+2w>"))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-planning-restart-repeater-regex))))
+
+(ert-deftest org-mcp-test-set-planning-clear-absent-scheduled ()
+  "Clearing a SCHEDULED that is absent is a benign no-op success.
+Pins that `clear_scheduled' on an entry with no planning line returns
+success with a null scheduled and leaves the content intact (only the
+ID drawer is minted), rather than erroring."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (clear_scheduled . t)))))
+      (should (equal (alist-get 'success result) t))
+      (should (null (alist-get 'scheduled result)))
+      (should (null (alist-get 'deadline result)))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-cleared-regex))))
+
+(ert-deftest org-mcp-test-set-planning-clear-absent-deadline ()
+  "Clearing a DEADLINE that is absent is a benign no-op success.
+Pins that `clear_deadline' on an entry with no planning line returns
+success with a null deadline and leaves the content intact."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (clear_deadline . t)))))
+      (should (equal (alist-get 'success result) t))
+      (should (null (alist-get 'scheduled result)))
+      (should (null (alist-get 'deadline result)))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-planning-cleared-regex))))
+
+(defconst org-mcp-test--expected-planning-time-repeater-regex
+  (concat
+   "\\`\\* TODO Task\n"
+   "SCHEDULED: <2026-06-20 Sat 14:00 \\+1w>\n"
+   org-mcp-test--regex-id-drawer
+   "\\'")
+  "Regex: `Task' scheduled with a time-of-day and a weekly repeater.")
+
+(ert-deftest org-mcp-test-set-planning-scheduled-time-and-repeater ()
+  "Set SCHEDULED with both a time-of-day and a repeater cookie.
+Pins that the time-of-day stays in the date chunk (the split keeps the
+first two tokens) while the +1w repeater is peeled and spliced, so the
+two do not interfere."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-planning-bare))
+    (let* ((uri (format "org-headline://%s#Task" test-file))
+           (result
+            (org-mcp-test--set-planning-result
+             `((uri . ,uri) (scheduled . "2026-06-20 14:00 +1w")))))
+      (should
+       (equal
+        (alist-get 'scheduled result) "<2026-06-20 Sat 14:00 +1w>"))
+      (org-mcp-test--verify-file-matches
+       test-file
+       org-mcp-test--expected-planning-time-repeater-regex))))
+
 (provide 'org-mcp-test)
 ;;; org-mcp-test.el ends here

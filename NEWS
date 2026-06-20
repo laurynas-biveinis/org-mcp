@@ -38,6 +38,13 @@ org-mcp NEWS -- history of user-visible changes
     children.  Placement mirrors `org-add-todo' (`after_uri' /
     `position'); the existing ID is kept across files.
 
+*** Added `org-set-planning' tool for SCHEDULED and DEADLINE
+    Sets, changes, or clears a headline's `SCHEDULED' and `DEADLINE'
+    planning timestamps via `org-schedule'/`org-deadline'.  Accepts
+    relative dates and repeater/warning cookies, preserves an existing
+    repeater/warning when re-scheduling without one, and returns the
+    resulting timestamps and the headline's `org-id://' URI.
+
 ** Bug Fixes
 
 *** Fixed `org-update-todo-state' failing on no-state heading with `current_state=""'
