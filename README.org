@@ -257,7 +257,7 @@ Empty configuration returns:
 - *Parameters:*
   - =uri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
   - =current_state= (string, required): Current TODO state (empty string "" for no state) - must match actual state
-  - =new_state= (string, required): New TODO state (must be valid in org-todo-keywords)
+  - =new_state= (string, required): New TODO state (must be valid in org-todo-keywords, or empty string "" to clear to no keyword)
 - *Returns:* Success status with previous and new states, and ID-based URI of the updated headline
 - *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
 
@@ -326,7 +326,7 @@ Example:
 - *Description:* Add a new TODO item to an Org file
 - *Parameters:*
   - =title= (string, required): The headline text
-  - =todo_state= (string, required): TODO state from =org-todo-keywords=
+  - =todo_state= (string, required): TODO state from =org-todo-keywords=, or empty string "" for a headline with no keyword
   - =tags= (string or array, required): Tags to add (e.g., "urgent" or ["work", "urgent"])
   - =body= (string, optional): Body text content to add under the heading
   - =parent_uri= (string, required): URI of parent item. Use =org-headline://filename.org/= for top-level items in a file (also accepted: =org-headline://filename.org=, =org-headline://filename.org#=, =org-headline://filename.org/#= — not recommended).

@@ -45,6 +45,11 @@ org-mcp NEWS -- history of user-visible changes
     repeater/warning when re-scheduling without one, and returns the
     resulting timestamps and the headline's `org-id://' URI.
 
+*** Allowed a keyword-less headline in `org-add-todo' / `org-update-todo-state'
+    `todo_state' (add) and `new_state' (update) now accept an empty
+    string to create or switch a headline to no TODO keyword.  Any
+    CLOSED stamp is left to Org's own settings.
+
 ** Bug Fixes
 
 *** Fixed `org-update-todo-state' failing on no-state heading with `current_state=""'

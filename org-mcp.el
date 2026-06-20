@@ -757,19 +757,24 @@ Returns the content string or nil if not found."
 
 (defun org-mcp--validate-todo-state (state field-name)
   "Validate STATE is a valid TODO keyword.
+The empty string \"\" means no TODO keyword (Org's empty state,
+accepted by `org-todo') and is always valid.
 FIELD-NAME is the JSON wire-protocol name of the parameter being
 validated (e.g. `\"todo_state\"' or `\"new_state\"'); it is embedded
 into the validation error so the consumer can pinpoint which input
 to fix."
-  (let ((valid-states
-         (delete
-          "|"
-          (org-remove-keyword-keys
-           (apply #'append (mapcar #'cdr org-todo-keywords))))))
-    (unless (member state valid-states)
-      (org-mcp--tool-validation-error
-       "Field %s must be one of %s, got: '%s'"
-       field-name (mapconcat #'identity valid-states ", ") state))))
+  (unless (string-empty-p state)
+    (let ((valid-states
+           (delete
+            "|"
+            (org-remove-keyword-keys
+             (apply #'append (mapcar #'cdr org-todo-keywords))))))
+      (unless (member state valid-states)
+        (org-mcp--tool-validation-error
+         "Field %s must be one of %s, got: '%s'"
+         field-name
+         (mapconcat #'identity valid-states ", ")
+         state)))))
 
 (defun org-mcp--validate-and-normalize-tags (tags)
   "Validate TAGS and return a normalized list of tag strings.
@@ -1437,7 +1442,7 @@ MCP Parameters:
 Creates an Org ID for the headline if one doesn't exist.
 Returns the ID-based URI for the updated headline.
 CURRENT_STATE is the current TODO state (empty string for no state).
-NEW_STATE is the new TODO state to set.
+NEW_STATE is the new TODO state to set (empty string clears it).
 
 MCP Parameters:
   uri - URI of the headline to update
@@ -1448,7 +1453,8 @@ MCP Parameters:
                   Use empty string \"\" if headline has no TODO state
                   Must match actual state or tool will error
   new_state - New TODO state to set
-              Must be a valid keyword from `org-todo-keywords'"
+              Must be a valid keyword from `org-todo-keywords',
+              or empty string \"\" to clear to no TODO keyword"
   (org-mcp--validate-string-field uri "uri")
   (org-mcp--validate-string-field current_state "current_state")
   (org-mcp--validate-string-field new_state "new_state")
@@ -1584,7 +1590,8 @@ supplies the parsed parent shape."
   "Add a new TODO item to an Org file.
 Creates an Org ID for the new headline and returns its ID-based URI.
 TITLE is the headline text.
-TODO_STATE is the TODO state from `org-todo-keywords'.
+TODO_STATE is the TODO state from `org-todo-keywords', or empty
+string for no keyword.
 TAGS is a single tag string or list of tag strings.
 BODY is optional body text.
 PARENT_URI is the URI of the parent item.
@@ -1596,7 +1603,8 @@ MCP Parameters:
   title - Headline text without TODO state or tags
           Cannot be empty or whitespace-only
           Cannot contain newlines
-  todo_state - TODO state from `org-todo-keywords'
+  todo_state - TODO state from `org-todo-keywords',
+               or empty string \"\" for a headline with no keyword
   tags - Tags to add (single string or array of strings)
          Single tag: \"urgent\"; multiple tags: [\"work\", \"urgent\"]
          Validated against `org-tag-alist' if configured
@@ -1692,7 +1700,11 @@ MCP Parameters:
                 (org-mcp--insert-top-level-heading
                  title position-sym header-end)))
 
-            (org-todo todo_state)
+            ;; Empty `todo_state' means no keyword; the freshly
+            ;; inserted heading already has none, so skip the no-op
+            ;; `org-todo' call and its state-change machinery.
+            (unless (string-empty-p todo_state)
+              (org-todo todo_state))
 
             (when tag-list
               (org-set-tags tag-list))
@@ -2833,7 +2845,8 @@ Creates an Org ID property for the headline if one doesn't exist.
 Returns JSON object:
   success - Always true on success (boolean)
   previous_state - The previous TODO state (string, empty for none)
-  new_state - The new TODO state that was set (string)
+  new_state - The new TODO state that was set (string, empty if
+              cleared)
   uri - ID-based URI (org-id://{uuid}) for the updated headline"
      :read-only nil)
     (list

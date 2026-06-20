@@ -332,6 +332,17 @@ Third line of content."
    org-mcp-test--content-with-id-id)
   "Task with an Org ID property, TODO state, and multiline content.")
 
+(defconst org-mcp-test--content-done-closed-id
+  (format
+   "* DONE Finished task
+CLOSED: [2024-01-01 Mon 12:00]
+:PROPERTIES:
+:ID:       %s
+:END:
+Body line."
+   org-mcp-test--content-with-id-id)
+  "Done task with a CLOSED stamp and an Org ID.")
+
 
 (defconst org-mcp-test--timestamp-id "20240101T120000"
   "Timestamp-format ID value.")
@@ -650,6 +661,45 @@ fixture has no trailing newline.")
            "\\'")
           org-mcp-test--content-with-id-id)
   "Expected regex for TODO to IN-PROGRESS state change with ID.")
+
+(defconst org-mcp-test--expected-regex-todo-cleared-with-id
+  (format (concat
+           "\\`"
+           "\\* Task with ID\n"
+           ":PROPERTIES:\n"
+           ":ID: +%s\n"
+           ":END:\n"
+           "First line of content\\.\n"
+           "Second line of content\\.\n"
+           "Third line of content\\."
+           "\\'")
+          org-mcp-test--content-with-id-id)
+  "Regex matching Task with ID with no TODO keyword.")
+
+(defconst org-mcp-test--expected-regex-done-cleared-keeps-closed
+  (format (concat
+           "\\`"
+           "\\* Finished task\n"
+           "CLOSED: \\[2024-01-01 Mon 12:00\\]\n"
+           ":PROPERTIES:\n"
+           ":ID: +%s\n"
+           ":END:\n"
+           "Body line\\."
+           "\\'")
+          org-mcp-test--content-with-id-id)
+  "Regex matching Finished task with no keyword and CLOSED stamp.")
+
+(defconst org-mcp-test--expected-regex-done-cleared-removes-closed
+  (format (concat
+           "\\`"
+           "\\* Finished task\n"
+           ":PROPERTIES:\n"
+           ":ID: +%s\n"
+           ":END:\n"
+           "Body line\\."
+           "\\'")
+          org-mcp-test--content-with-id-id)
+  "Regex matching Finished task with no keyword and no CLOSED stamp.")
 
 (defconst org-mcp-test--expected-timestamp-id-done-regex
   (concat
@@ -1244,6 +1294,15 @@ heading, not the body's sub-heading.")
    org-mcp-test--regex-id-drawer
    "\\'")
   "Pattern for top-level TODO item with work and urgent tags.")
+
+(defconst org-mcp-test--regex-top-level-no-keyword
+  (concat "\\`\\* New Task\n" org-mcp-test--regex-id-drawer "\\'")
+  "Pattern for a top-level keyword-less heading.")
+
+(defconst org-mcp-test--regex-top-level-no-keyword-tag
+  (concat
+   "\\`\\* New Task +:work:\n" org-mcp-test--regex-id-drawer "\\'")
+  "Pattern for a keyword-less top-level heading carrying the `work' tag.")
 
 (defconst org-mcp-test--regex-todo-tag-accept-valid
   (concat
@@ -3753,6 +3812,61 @@ rather than leak a hidden buffer."
            test-file
            org-mcp-test--expected-task-with-id-in-progress-regex))))))
 
+(ert-deftest org-mcp-test-update-todo-state-clear ()
+  "Setting `new_state' to empty string clears the TODO keyword.
+The heading keeps its ID, properties, and body, mirroring `C-c C-t'
+cycling back to no state."
+  (let ((test-content org-mcp-test--content-with-id-todo))
+    (org-mcp-test--with-temp-org-files ((test-file test-content))
+      (let ((org-todo-keywords '((sequence "TODO" "|" "DONE"))))
+        (let ((resource-uri
+               (format "org-headline://%s#Task%%20with%%20ID"
+                       test-file)))
+          (org-mcp-test--update-todo-state-and-check
+           resource-uri
+           "TODO"
+           ""
+           test-file
+           org-mcp-test--expected-regex-todo-cleared-with-id))))))
+
+(ert-deftest org-mcp-test-update-todo-state-clear-keeps-closed ()
+  "Clearing the keyword from a DONE heading keeps its CLOSED stamp
+when `org-closed-keep-when-no-todo' is t, even with `org-log-done'
+enabling stamp removal for the nil case."
+  (let ((test-content org-mcp-test--content-done-closed-id))
+    (org-mcp-test--with-temp-org-files ((test-file test-content))
+      (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            (org-closed-keep-when-no-todo t)
+            (org-log-done 'time))
+        (let ((resource-uri
+               (format "org-headline://%s#Finished%%20task"
+                       test-file)))
+          (org-mcp-test--update-todo-state-and-check
+           resource-uri
+           "DONE"
+           ""
+           test-file
+           org-mcp-test--expected-regex-done-cleared-keeps-closed))))))
+
+(ert-deftest org-mcp-test-update-todo-state-clear-removes-closed ()
+  "Clearing the keyword from a DONE heading drops its CLOSED stamp
+when both `org-closed-keep-when-no-todo' is nil and `org-log-done'
+is set; with either condition unmet the stamp is kept."
+  (let ((test-content org-mcp-test--content-done-closed-id))
+    (org-mcp-test--with-temp-org-files ((test-file test-content))
+      (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
+            (org-closed-keep-when-no-todo nil)
+            (org-log-done 'time))
+        (let ((resource-uri
+               (format "org-headline://%s#Finished%%20task"
+                       test-file)))
+          (org-mcp-test--update-todo-state-and-check
+           resource-uri
+           "DONE"
+           ""
+           test-file
+           org-mcp-test--expected-regex-done-cleared-removes-closed))))))
+
 (ert-deftest org-mcp-test-update-todo-state-mismatch ()
   "Test TODO state update fails on state mismatch."
   (let ((test-content org-mcp-test--content-with-id-todo))
@@ -3819,17 +3933,6 @@ mismatch."
            "DONE"
            test-file
            org-mcp-test--expected-timestamp-id-done-regex))))))
-
-(ert-deftest org-mcp-test-update-todo-state-empty-newstate-invalid ()
-  "Test that empty string for new_state is rejected."
-  (let ((test-content org-mcp-test--content-with-id-todo))
-    (org-mcp-test--with-temp-org-files ((test-file test-content))
-      ;; Try to set empty state
-      (let ((resource-uri
-             (format "org-headline://%s#Task%%20with%%20ID"
-                     test-file)))
-        (org-mcp-test--call-update-todo-state-expecting-error
-         test-file resource-uri "TODO" "")))))
 
 (ert-deftest org-mcp-test-update-todo-state-invalid ()
   "Test TODO state update fails for invalid new state."
@@ -4095,6 +4198,30 @@ a malformed `:PROPERTIES:' drawer is rejected before any modification."
    (format "org-headline://%s#" test-file)
    (file-name-nondirectory test-file)
    org-mcp-test--regex-top-level-todo))
+
+(ert-deftest org-mcp-test-add-todo-no-keyword ()
+  "Passing an empty `todo_state' creates a headline with no keyword."
+  (org-mcp-test--add-todo-and-check
+   org-mcp-test--content-empty
+   "New Task"
+   ""
+   nil ; no tags
+   nil ; no body
+   (format "org-headline://%s#" test-file)
+   (file-name-nondirectory test-file)
+   org-mcp-test--regex-top-level-no-keyword))
+
+(ert-deftest org-mcp-test-add-todo-no-keyword-with-tags ()
+  "A keyword-less headline still receives its tags."
+  (org-mcp-test--add-todo-and-check
+   org-mcp-test--content-empty
+   "New Task"
+   ""
+   '("work")
+   nil ; no body
+   (format "org-headline://%s#" test-file)
+   (file-name-nondirectory test-file)
+   org-mcp-test--regex-top-level-no-keyword-tag))
 
 (ert-deftest org-mcp-test-add-todo-top-level-trailing-slash-parent-uri
     ()
