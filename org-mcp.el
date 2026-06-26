@@ -552,38 +552,81 @@ Returns the full path if allowed, signals an error otherwise."
       (org-mcp--resource-file-access-error filename))
     allowed-file))
 
-(defun org-mcp--extract-children (target-level)
-  "Extract children at TARGET-LEVEL until next lower level heading."
+(defun org-mcp--heading-raw-fields ()
+  "Return a plist of metadata for the Org heading at point.
+Keys: :title :todo :priority :tags (local tags only) :scheduled
+:deadline :id.  Point must be on the heading line."
+  (let ((priority (nth 3 (org-heading-components))))
+    `(:title
+      ,(org-get-heading t t t t)
+      :todo ,(org-get-todo-state)
+      :priority ,(and priority (char-to-string priority))
+      :tags ,(org-get-tags nil t)
+      :scheduled ,(org-entry-get nil "SCHEDULED")
+      :deadline ,(org-entry-get nil "DEADLINE")
+      :id ,(org-entry-get nil "ID"))))
+
+(defun org-mcp--heading-node (file-path title-path raw)
+  "Build a JSON node alist from RAW.
+RAW is a plist as returned by `org-mcp--heading-raw-fields'.  The
+`uri' is `org-id://' when RAW carries an ID, else an
+`org-headline://' URI for FILE-PATH and TITLE-PATH (the ancestor
+titles from the root down to and including this heading)."
+  (let ((id (plist-get raw :id)))
+    `((title . ,(plist-get raw :title))
+      (todo . ,(plist-get raw :todo))
+      (priority . ,(plist-get raw :priority))
+      (tags . ,(vconcat (plist-get raw :tags)))
+      (scheduled . ,(plist-get raw :scheduled))
+      (deadline . ,(plist-get raw :deadline))
+      (uri
+       .
+       ,(if id
+            (concat org-mcp--uri-id-prefix id)
+          (org-mcp--build-headline-uri file-path title-path))))))
+
+(defun org-mcp--extract-children
+    (target-level parent-title-path file-path)
+  "Extract children at TARGET-LEVEL until next lower level heading.
+PARENT-TITLE-PATH is the list of ancestor titles above TARGET-LEVEL
+and FILE-PATH is the Org file; both are used to build each child's
+URI."
   (let ((children '()))
     (save-excursion
       (while (and (re-search-forward "^\\*+ " nil t)
                   (>= (org-current-level) target-level))
         (when (= (org-current-level) target-level)
-          (let* ((title (org-get-heading t t t t))
-                 (child
-                  `((title . ,title)
-                    (level . ,target-level)
-                    (children . []))))
-            (push child children)))))
+          (let* ((raw (org-mcp--heading-raw-fields))
+                 (title-path
+                  (append
+                   parent-title-path (list (plist-get raw :title))))
+                 (node
+                  (org-mcp--heading-node file-path title-path raw)))
+            (push (append
+                   node `((level . ,target-level) (children . [])))
+                  children)))))
     (vconcat (nreverse children))))
 
-(defun org-mcp--extract-headings ()
-  "Extract heading structure from current org buffer."
+(defun org-mcp--extract-headings (file-path)
+  "Extract heading structure from current org buffer.
+FILE-PATH is the Org file, used to build each node's URI."
   (let ((result '()))
     (goto-char (point-min))
     (while (re-search-forward "^\\* " nil t) ; Find level 1 headings
-      (let* ((title (org-get-heading t t t t))
+      (let* ((raw (org-mcp--heading-raw-fields))
+             (title-path (list (plist-get raw :title)))
+             (node (org-mcp--heading-node file-path title-path raw))
              ;; Get level 2 children
-             (children (org-mcp--extract-children 2))
-             (heading
-              `((title . ,title) (level . 1) (children . ,children))))
-        (push heading result)))
+             (children
+              (org-mcp--extract-children 2 title-path file-path)))
+        (push
+         (append node `((level . 1) (children . ,children))) result)))
     (vconcat (nreverse result))))
 
 (defun org-mcp--generate-outline (file-path)
   "Generate JSON outline structure for FILE-PATH."
   (org-mcp--with-org-file file-path
-    (let ((headings (org-mcp--extract-headings)))
+    (let ((headings (org-mcp--extract-headings file-path)))
       `((headings . ,headings)))))
 
 (defun org-mcp--decode-file-path (encoded-path)
@@ -2641,17 +2684,29 @@ CASE-FOLD non-nil means case-insensitive search."
       (goto-char (point-min))
       (while (re-search-forward "^\\*+ " nil t)
         (beginning-of-line)
-        (let* ((path
+        (let* ((raws
                 (save-excursion
-                  (let ((titles (list (org-get-heading t t t t))))
+                  (let ((acc (list (org-mcp--heading-raw-fields))))
                     (while (org-up-heading-safe)
-                      (push (org-get-heading t t t t) titles))
-                    titles)))
-               (id (org-entry-get nil "ID"))
-               (uri
-                (if id
-                    (concat org-mcp--uri-id-prefix id)
-                  (org-mcp--build-headline-uri file-path path)))
+                      (push (org-mcp--heading-raw-fields) acc))
+                    acc)))
+               (nodes
+                (cl-loop
+                 for
+                 raw
+                 in
+                 raws
+                 for
+                 title-path
+                 =
+                 (list (plist-get raw :title))
+                 then
+                 (append title-path (list (plist-get raw :title)))
+                 collect
+                 (org-mcp--heading-node file-path title-path raw)))
+               ;; The deepest node is the matched heading, so its URI
+               ;; is the group URI.
+               (uri (alist-get 'uri (car (last nodes))))
                (section-start (point))
                (section-end
                 (save-excursion
@@ -2664,7 +2719,7 @@ CASE-FOLD non-nil means case-insensitive search."
                  pat section-start section-end)))
           (when matches
             (push `((file . ,file-path)
-                    (headline_path . ,(vconcat path))
+                    (headline_path . ,(vconcat nodes))
                     (uri . ,uri)
                     (matches . ,(vconcat matches)))
                   groups))
@@ -3056,10 +3111,13 @@ Returns: Plain text content of the entire Org file"
      :id "org-read-outline"
      :description
      "Get hierarchical structure of Org file as JSON outline. Returns
-   all headline titles and nesting relationships at full depth. File
-   must be in org-mcp-allowed-files.
+   all headline titles and nesting relationships up to 2 levels
+   deep. File must be in org-mcp-allowed-files.
 
-Returns: JSON object with hierarchical outline structure"
+Returns: JSON object with hierarchical outline structure. Each node
+carries title, level, children, plus todo, priority, local tags,
+scheduled, deadline, and uri; see the org-outline:// resource for
+null/empty semantics."
      :read-only t)
     (list
      #'org-mcp--tool-read-headline
@@ -3092,9 +3150,13 @@ with a headline path and a resource URI for each matching section.
 Returns JSON object:
   groups - Array of match groups, each containing:
     file           - Absolute path of the source file
-    headline_path  - Array of headline titles tracing the path to
-                     the containing section (empty for pre-heading
-                     content)
+    headline_path  - Array of node objects tracing the path to the
+                     containing section, from the outermost ancestor
+                     to the section's own headline (empty array for
+                     pre-heading content).  Each object has title,
+                     todo, priority, tags, scheduled, deadline, and
+                     uri.  The last entry's uri equals the group uri
+                     below.
     uri            - Resource URI: org-id:// when the section has an
                      ID property; org-headline:// otherwise.
                      Pass directly to resources/read.  To use the
@@ -3142,10 +3204,22 @@ Returns: JSON object with structure:
     \"headings\": [
       {
         \"title\": \"Top-level heading\",
+        \"todo\": \"TODO\",
+        \"priority\": \"A\",
+        \"tags\": [\"work\"],
+        \"scheduled\": null,
+        \"deadline\": null,
+        \"uri\": \"org-headline:///path/to/file.org#Top-level%20heading\",
         \"level\": 1,
         \"children\": [
           {
             \"title\": \"Subheading\",
+            \"todo\": null,
+            \"priority\": null,
+            \"tags\": [],
+            \"scheduled\": null,
+            \"deadline\": null,
+            \"uri\": \"org-headline:///path/to/file.org#Top-level%20heading/Subheading\",
             \"level\": 2,
             \"children\": []
           }
@@ -3153,6 +3227,20 @@ Returns: JSON object with structure:
       }
     ]
   }
+
+Node fields:
+  title     - Headline text
+  todo      - TODO state string, or null when none
+  priority  - Single-letter priority string, or null when no
+              [#x] cookie
+  tags      - Array of the headline's own (local) tags, [] when
+              none; inherited tags are not included
+  scheduled - Raw SCHEDULED timestamp string, or null
+  deadline  - Raw DEADLINE timestamp string, or null
+  uri       - org-id:// when the headline has an ID property,
+              org-headline:// otherwise
+  level     - Heading level (1 or 2)
+  children  - Array of child nodes (empty beyond level 2)
 
 Depth limitation:
   - Level 1 headings (top-level) are extracted

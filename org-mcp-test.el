@@ -91,6 +91,22 @@ Second child content.
           org-mcp-test--content-with-id-id)
   "Parent with multiple child tasks and doc file header.")
 
+(defconst org-mcp-test--content-outline-metadata
+  (format
+   "* TODO [#A] Parent task :work:
+SCHEDULED: <2026-06-25 Thu> DEADLINE: <2026-07-01 Wed>
+:PROPERTIES:
+:ID:       %s
+:END:
+Parent body.
+** WAIT Child task
+Child body.
+* Plain heading
+Plain body.
+"
+   org-mcp-test--content-with-id-id)
+  "Keyworded, tagged, planned parent; WAIT child; plain heading.")
+
 (defconst org-mcp-test--level2-parent-level3-sibling-id
   "level2-parent-level3-sibling-id-001"
   "ID for Review org-mcp.el in level2-parent-level3-children.")
@@ -2915,6 +2931,48 @@ FILE is the file path to read the outline from."
          (result-json
           (mcp-server-lib-ert-call-tool "org-read-outline" params)))
     (json-parse-string result-json :object-type 'alist)))
+
+(cl-defun
+ org-mcp-test--should-node-metadata
+ (node
+  &key
+  (todo :null)
+  (priority :null)
+  (tags [])
+  (scheduled :null)
+  (deadline :null)
+  uri)
+ "Assert NODE's per-node metadata equals the expected values.
+NODE is a decoded org-read-outline node or org-grep `headline_path'
+entry.  The defaults describe a heading with no keyword, priority,
+tags, or planning as read via org-read-outline; pass TAGS as nil for
+an empty org-grep entry (parsed with `:array-type' `list').  URI is
+checked only when non-nil (pass the org-id:// form); path-varying
+org-headline:// URIs are asserted at the call site."
+ (should (equal (alist-get 'todo node) todo))
+ (should (equal (alist-get 'priority node) priority))
+ (should (equal (alist-get 'tags node) tags))
+ (should (equal (alist-get 'scheduled node) scheduled))
+ (should (equal (alist-get 'deadline node) deadline))
+ (when uri
+   (should (equal (alist-get 'uri node) uri))))
+
+(defmacro org-mcp-test--with-outline-metadata-nodes (&rest body)
+  "Read `org-mcp-test--content-outline-metadata' via org-read-outline.
+Evaluate BODY with `parent', `child', and `plain' bound to the
+level-1 keyworded node, its level-2 child, and the plain level-1
+node; `WAIT' is registered as a TODO keyword."
+  (declare (indent 0))
+  `(org-mcp-test--with-temp-org-files
+       ((test-file org-mcp-test--content-outline-metadata))
+     (let ((org-todo-keywords '((sequence "TODO" "WAIT" "|" "DONE"))))
+       (let* ((result (org-mcp-test--call-read-outline test-file))
+              (headings (alist-get 'headings result))
+              (parent (aref headings 0))
+              (child (aref (alist-get 'children parent) 0))
+              (plain (aref headings 1)))
+         (ignore parent child plain)
+         ,@body))))
 
 ;; Helper functions for testing org-read-by-id MCP tool
 
@@ -7299,15 +7357,23 @@ file-path predicates run."
 ;;; org-read-outline tests
 
 (ert-deftest org-mcp-test-tool-read-outline ()
-  "Test org-read-outline tool returns valid JSON outline structure."
+  "Test org-read-outline returns the outline with per-node metadata.
+The single parent node has an ID, so its URI is `org-id://'; it
+carries no keyword, priority, tags, or planning, so those fields
+are null/empty."
   (org-mcp-test--with-temp-org-files
       ((test-file org-mcp-test--content-nested-siblings))
     (let* ((result (org-mcp-test--call-read-outline test-file))
-           (headings (alist-get 'headings result)))
+           (headings (alist-get 'headings result))
+           (parent (aref headings 0)))
       (should (= (length headings) 1))
-      (should
-       (string=
-        (alist-get 'title (aref headings 0)) "Parent Task")))))
+      (should (string= (alist-get 'title parent) "Parent Task"))
+      (org-mcp-test--should-node-metadata
+       parent
+       :uri
+       (concat
+        "org-id://"
+        org-mcp-test--content-nested-siblings-parent-id)))))
 
 (ert-deftest org-mcp-test-tool-read-outline-non-string-file ()
   "Pin that non-string `file' is rejected at the tool boundary.
@@ -7317,6 +7383,57 @@ file-path predicates run."
    "org-read-outline"
    '((file . 42))
    (org-mcp-test--field-non-string-regex "file" 42)))
+
+(ert-deftest org-mcp-test-outline-node-todo ()
+  "Pin that org-read-outline nodes carry the headline TODO state.
+A present keyword yields the state string; no keyword yields null."
+  (org-mcp-test--with-outline-metadata-nodes
+    (should (equal (alist-get 'todo parent) "TODO"))
+    (should (equal (alist-get 'todo child) "WAIT"))
+    (should (eq (alist-get 'todo plain) :null))))
+
+(ert-deftest org-mcp-test-outline-node-priority ()
+  "Pin that org-read-outline nodes carry the headline priority cookie.
+A `[#x]' cookie yields its single-letter string; absence yields null."
+  (org-mcp-test--with-outline-metadata-nodes
+    (should (equal (alist-get 'priority parent) "A"))
+    (should (eq (alist-get 'priority child) :null))
+    (should (eq (alist-get 'priority plain) :null))))
+
+(ert-deftest org-mcp-test-outline-node-tags-local-only ()
+  "Pin that org-read-outline nodes carry the headline's own tags only.
+A child does not inherit its parent's tags; an untagged node is []."
+  (org-mcp-test--with-outline-metadata-nodes
+    (should (equal (alist-get 'tags parent) ["work"]))
+    (should (equal (alist-get 'tags child) []))
+    (should (equal (alist-get 'tags plain) []))))
+
+(ert-deftest org-mcp-test-outline-node-planning ()
+  "Pin that org-read-outline nodes carry SCHEDULED and DEADLINE.
+Present planning yields the raw timestamp string; absence yields null."
+  (org-mcp-test--with-outline-metadata-nodes
+    (should (equal (alist-get 'scheduled parent) "<2026-06-25 Thu>"))
+    (should (equal (alist-get 'deadline parent) "<2026-07-01 Wed>"))
+    (should (eq (alist-get 'scheduled child) :null))
+    (should (eq (alist-get 'deadline child) :null))
+    (should (eq (alist-get 'scheduled plain) :null))
+    (should (eq (alist-get 'deadline plain) :null))))
+
+(ert-deftest org-mcp-test-outline-node-uri ()
+  "Pin that org-read-outline nodes carry a resource URI.
+A node with an ID gets `org-id://'; otherwise `org-headline://'
+with the URL-encoded ancestor path as the fragment."
+  (org-mcp-test--with-outline-metadata-nodes
+    (should
+     (equal
+      (alist-get 'uri parent) org-mcp-test--content-with-id-uri))
+    (should
+     (string-prefix-p "org-headline://" (alist-get 'uri child)))
+    (should
+     (string-suffix-p
+      "#Parent%20task/Child%20task" (alist-get 'uri child)))
+    (should
+     (string-suffix-p "#Plain%20heading" (alist-get 'uri plain)))))
 
 ;;; org-read-headline tests
 
@@ -7487,6 +7604,14 @@ lookup runs."
         (let ((first (aref headings 0)))
           (should (equal (alist-get 'title first) "First Section"))
           (should (= (alist-get 'level first) 1))
+          ;; Plain heading (no ID): null/empty metadata and an
+          ;; org-headline:// URI carrying the title as its fragment.
+          (org-mcp-test--should-node-metadata first)
+          (should
+           (string-prefix-p "org-headline://" (alist-get 'uri first)))
+          (should
+           (string-suffix-p
+            "#First%20Section" (alist-get 'uri first)))
           (let ((children (alist-get 'children first)))
             (should (= (length children) 2))
             (should
@@ -7756,6 +7881,12 @@ CASE-SENSITIVE controls case matching."
                        :object-type 'alist
                        :array-type 'list)))
 
+(defun org-mcp-test--headline-path-titles (group)
+  "Return the list of titles from GROUP's headline_path entries."
+  (mapcar
+   (lambda (entry) (alist-get 'title entry))
+   (alist-get 'headline_path group)))
+
 ;;; org-grep tests
 
 (ert-deftest
@@ -7795,7 +7926,9 @@ subsequent match."
            (groups (alist-get 'groups result)))
       (should (= (length groups) 1))
       (should
-       (equal (alist-get 'headline_path (car groups)) '("Section")))
+       (equal
+        (org-mcp-test--headline-path-titles (car groups))
+        '("Section")))
       (should (= (length (alist-get 'matches (car groups))) 1)))))
 
 (ert-deftest org-mcp-test-grep-pattern-is-literal-not-regex ()
@@ -7994,10 +8127,14 @@ otherwise `url-unhex-string' in the read path would corrupt it."
            (groups (alist-get 'groups result)))
       (should (= (length groups) 2))
       (should
-       (equal (alist-get 'headline_path (car groups)) '("Section A")))
+       (equal
+        (org-mcp-test--headline-path-titles (car groups))
+        '("Section A")))
       (should
        (equal
-        (alist-get 'headline_path (cadr groups)) '("Section B"))))))
+        (org-mcp-test--headline-path-titles
+         (cadr groups))
+        '("Section B"))))))
 
 (ert-deftest org-mcp-test-grep-multiple-matches-one-section ()
   "Pin that consecutive matches in the same section form one group."
@@ -8044,8 +8181,51 @@ A match in a nested section lists all ancestor titles in order."
       (should (= (length groups) 1))
       (should
        (equal
-        (alist-get 'headline_path (car groups))
+        (org-mcp-test--headline-path-titles (car groups))
         '("Parent" "Child"))))))
+
+(ert-deftest org-mcp-test-grep-headline-path-entries-are-objects ()
+  "Pin that each org-grep headline_path entry is a metadata object.
+Entries carry all seven per-node fields (title, todo, priority, tags,
+scheduled, deadline, uri); local tags distinguish the tagged ancestor
+from its descendants; the deepest entry's uri equals the group uri."
+  (org-mcp-test--with-temp-org-files
+      ((test-file
+        (format (concat
+                 "* Work :work:\n"
+                 "** TODO Big Project :project:\n"
+                 ":PROPERTIES:\n:ID: %s\n:END:\n"
+                 "*** WAIT Subtask\n"
+                 "findme here\n")
+                org-mcp-test--content-with-id-id)))
+    (let ((org-todo-keywords '((sequence "TODO" "WAIT" "|" "DONE"))))
+      (let* ((result (org-mcp-test--call-grep "findme" test-file))
+             (groups (alist-get 'groups result))
+             (group (car groups))
+             (path (alist-get 'headline_path group)))
+        (should (= (length groups) 1))
+        (should
+         (equal
+          (org-mcp-test--headline-path-titles group)
+          '("Work" "Big Project" "Subtask")))
+        (org-mcp-test--should-node-metadata
+         (nth 0 path)
+         :tags '("work"))
+        (org-mcp-test--should-node-metadata
+         (nth 1 path)
+         :todo "TODO"
+         :tags '("project")
+         :uri org-mcp-test--content-with-id-uri)
+        (org-mcp-test--should-node-metadata
+         (nth 2 path)
+         :todo "WAIT"
+         :tags nil)
+        (should
+         (string-prefix-p
+          "org-headline://" (alist-get 'uri (nth 0 path))))
+        (should
+         (equal
+          (alist-get 'uri (nth 2 path)) (alist-get 'uri group)))))))
 
 (ert-deftest org-mcp-test-grep-match-in-pre-heading-content ()
   "Pin that org-grep matches lines before the first heading.
@@ -8075,7 +8255,8 @@ correct headline_path and match text."
       (should (= (length groups) 1))
       (let ((group (car groups)))
         (should
-         (equal (alist-get 'headline_path group) '("My Heading")))
+         (equal
+          (org-mcp-test--headline-path-titles group) '("My Heading")))
         (let ((matches (alist-get 'matches group)))
           (should (= (length matches) 1))
           (should (= (alist-get 'line (car matches)) 2))
@@ -8165,7 +8346,8 @@ on, so the emitted URI round-trips through `org-read-headline'."
       (should (= (length groups) 1))
       (should
        (equal
-        (alist-get 'headline_path (car groups)) '("Tasks [1/3]"))))))
+        (org-mcp-test--headline-path-titles (car groups))
+        '("Tasks [1/3]"))))))
 
 (ert-deftest org-mcp-test-grep-headline-path-raw-for-bracket-link ()
   "Pin that headline_path contains the raw bracket-link markup.
@@ -8180,7 +8362,7 @@ the grep path must preserve raw markup so it matches
       (should (= (length groups) 1))
       (should
        (equal
-        (alist-get 'headline_path (car groups))
+        (org-mcp-test--headline-path-titles (car groups))
         '("See [[https://example.com][docs]]"))))))
 
 (ert-deftest org-mcp-test-grep-uri-encodes-raw-title-with-stats-cookie

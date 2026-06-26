@@ -11,8 +11,15 @@ org-mcp NEWS -- history of user-visible changes
 
 *** Added `org-grep' tool for searching across Org files
     Search for a literal substring across one or all allowed files.
-    Results are grouped by containing section and annotated with
-    headline paths and resource URIs (readable via =resources/read=).
+    Results are grouped by containing section.  Each group's
+    `headline_path' traces the section's ancestors as objects
+    carrying `title', `todo', `priority', local `tags', `scheduled',
+    `deadline', and a resource `uri' (readable via =resources/read=).
+
+*** Richer node metadata in `org-read-outline'
+    Each outline node now also carries the headline's `todo' state,
+    `priority', local `tags', `scheduled', `deadline', and resource
+    `uri' alongside `title', `level', and `children'.
 
 *** Added `org-archive-subtree' tool for archiving subtrees
     Archives a headline subtree to its configured location (the

@@ -58,7 +58,7 @@ Before using the MCP server, you must start it in Emacs with =M-x mcp-server-lib
 - *Description:* Get the hierarchical structure of an Org file
 - *URI Pattern:* =org-outline://{filename}= where filename is the absolute path to the file
 - *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
-- *Returns:* JSON representation of the document structure with headings and their levels
+- *Returns:* JSON representation of the document structure, up to two levels deep (level-3 and deeper headings are omitted).  Each node carries =title=, =level=, and =children=, plus the headline's =todo= (state string, or =null= when none), =priority= (single-letter string, or =null= when no =[#x]= cookie), local =tags= (array of the headline's own tags, =[]= when none — inherited tags are not included), =scheduled= and =deadline= (raw timestamp strings, or =null=), and =uri= (=org-id://= when the headline has an =ID= property, =org-headline://= otherwise).
 - *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 Example:
@@ -70,10 +70,25 @@ Returns: JSON structure like:
   "headings": [
     {
       "title": "Project Alpha",
+      "todo": "TODO",
+      "priority": "A",
+      "tags": ["work"],
+      "scheduled": null,
+      "deadline": null,
+      "uri": "org-headline:///home/user/org/projects.org#Project%20Alpha",
       "level": 1,
       "children": [
-        {"title": "Requirements", "level": 2, "children": []},
-        {"title": "Implementation", "level": 2, "children": []}
+        {
+          "title": "Requirements",
+          "todo": null,
+          "priority": null,
+          "tags": [],
+          "scheduled": "<2026-06-25 Thu>",
+          "deadline": null,
+          "uri": "org-headline:///home/user/org/projects.org#Project%20Alpha/Requirements",
+          "level": 2,
+          "children": []
+        }
       ]
     }
   ]
@@ -245,7 +260,7 @@ Empty configuration returns:
   - =case_sensitive= (boolean, optional, default =false=): When =true=, the match is case-sensitive.
 - *Returns:* JSON object with a =groups= array. Each group represents a contiguous run of matching lines within one section:
   - =file=: absolute path of the source file
-  - =headline_path=: array of headline title strings tracing the path to the containing section (empty array for content before the first heading)
+  - =headline_path=: array of node objects tracing the path to the containing section, from the outermost ancestor to the section's own headline (empty array for content before the first heading). Each object has =title=, =todo= (state string or =null=), =priority= (single-letter string or =null=), local =tags= (array of the headline's own tags, =[]= when none), =scheduled= and =deadline= (raw timestamp strings or =null=), and =uri= (=org-id://= or =org-headline://=). The last entry's =uri= equals the group =uri= below.
   - =uri=: resource URI — =org-id://= when the section has an ID, =org-headline://= otherwise. Pass directly to =resources/read=. To use the read tools instead, extract the =uuid= (for =org-read-by-id=) or the file and fragment path (for =org-read-headline=) from the URI.
   - =matches=: array of ={line, text}= objects — =line= is the 1-based line number, =text= is the full line content
 - *Group rules:* Groups appear in document order, per file in =org-mcp-allowed-files= order. A new group starts whenever the containing section changes. One match per source line.
@@ -514,7 +529,7 @@ Example:
 - *Description:* Get hierarchical structure of an Org file as JSON outline
 - *Parameters:*
   - =file= (string, required): Absolute path to an Org file
-- *Returns:* JSON object with hierarchical outline structure
+- *Returns:* JSON object with hierarchical outline structure. See the =org-outline://= resource above for the per-node fields (=title=, =todo=, =priority=, =tags=, =scheduled=, =deadline=, =uri=, =level=, =children=).
 - *Configuration:* File must be in =org-mcp-allowed-files=
 - *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
