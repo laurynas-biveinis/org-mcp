@@ -583,9 +583,10 @@ This is already done"
 ;; Expected patterns and validation regexes
 ;;
 ;; Note on property drawer patterns: The patterns use ` *` (zero or more
-;; spaces) before :PROPERTIES:, :ID:, and :END: lines to maintain compatibility
-;; across Emacs versions. Emacs 27.2 indents property drawers with 3 spaces,
-;; while Emacs 28+ does not add indentation.
+;; spaces) before :PROPERTIES:, :ID:, and :END: lines so they match regardless
+;; of `org-adapt-indentation'. When it is non-nil (its default before Org 9.5),
+;; Org indents drawer lines; the ID-property tests that do not bind it must
+;; tolerate either setting.
 
 (defconst org-mcp-test--expected-parent-task-from-nested-siblings
   (format
@@ -2115,8 +2116,8 @@ assertions exercise org-archive's documented default behavior rather
 than the developer's or CI's global configuration.  Also binds
 `org-adapt-indentation' to nil so the archived property drawer and body
 land at column 0 regardless of Org version: its default flipped from t
-to nil in Org 9.5, and the t default (Org bundled with Emacs 27.2)
-indents drawer and body, which the archive assertions do not expect.
+to nil in Org 9.5, and the older t default indents drawer and body,
+which the archive assertions do not expect.
 A test needing a non-default value rebinds it inside BODY.
 Finally binds `default-archive-file' to the source file's default
 archive path (its name with `_archive' appended) via
@@ -4903,12 +4904,12 @@ as a URI-format error, not let it fall through to a downstream
     org-mcp-test-add-todo-nbsp-org-headline-parent-uri-rejected
     ()
   "NBSP-only `org-headline://' parent_uri is rejected at the dispatch boundary.
-NBSP (U+00A0) carries no meaningful content for a URI suffix.  Emacs
-27.2's `[[:space:]]' class does NOT match NBSP, so a `string-blank-p'
-check would let this slip through; the dispatch boundary must
-explicitly match NBSP so a no-meaningful-content suffix is rejected
-with the URI-format validation error regardless of which blank
-character was used."
+NBSP (U+00A0) carries no meaningful content for a URI suffix.  A
+`string-blank-p' check matches only `[ \\t\\n\\r]' and would let an
+NBSP-only suffix slip through; the dispatch boundary must explicitly
+match NBSP so a no-meaningful-content suffix is rejected with the
+URI-format validation error regardless of which blank character was
+used."
   (org-mcp-test--assert-add-todo-error-message
    "org-headline://\u00A0"
    "Invalid resource URI format: org-headline://\u00A0"))
@@ -4955,10 +4956,9 @@ whitespace and the empty string take the same error path."
 
 (ert-deftest org-mcp-test-add-todo-nbsp-after-uri-rejected ()
   "Test that `after_uri' containing only NBSP (U+00A0) is rejected.
-On Emacs 27.2 `[[:space:]]' does not match NBSP, so a pure-NBSP
-`after_uri' must take the same error path as ASCII whitespace via
-the explicit NBSP branch of the validator's combined character
-class.  Locks that branch against a refactor that drops NBSP
+A pure-NBSP `after_uri' must take the same error path as ASCII
+whitespace via the explicit NBSP branch of the validator's combined
+character class.  Locks that branch against a refactor that drops NBSP
 coverage and lets a whitespace-only value through."
   (org-mcp-test--assert-add-todo-after-uri-rejected
    org-mcp-test--content-nested-siblings
@@ -5452,9 +5452,8 @@ prevent); lock the symmetric rejection at the validation boundary."
 
 (ert-deftest org-mcp-test-add-todo-after-uri-nbsp-uuid-after-prefix ()
   "Test that `org-id://' followed by an NBSP-only UUID is rejected.
-On Emacs 27.2 `[[:space:]]' does not match NBSP, so an NBSP-only
-suffix must take the same error path as ASCII whitespace via the
-explicit NBSP branch of `org-mcp--blank-or-nbsp-only-p'.  Locks
+An NBSP-only suffix must take the same error path as ASCII whitespace
+via the explicit NBSP branch of `org-mcp--blank-or-nbsp-only-p'.  Locks
 that branch against a refactor that drops NBSP coverage from the
 suffix check and lets the value through."
   (org-mcp-test--assert-add-todo-after-uri-rejected
@@ -5592,8 +5591,8 @@ which pins the same property for `after_uri'."
   "Test that `position' containing only NBSP (U+00A0) is rejected.
 Companion to `add-todo-nbsp-after-uri-rejected'.  `validate-position'
 compares against the literal strings \"start\" and \"end\" with
-`string=', so a pure-NBSP value falls through to the catch-all
-error regardless of Emacs 27.2's `[[:space:]]' behaviour."
+`string=', so a pure-NBSP value falls through to the catch-all error
+like any other unrecognized value."
   (org-mcp-test--call-add-todo-expecting-error
    org-mcp-test--content-empty
    "New Task"

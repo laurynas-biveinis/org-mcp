@@ -88,8 +88,9 @@ tool and resource description.")
 
 (defun org-mcp--blank-or-nbsp-only-p (s)
   "Return non-nil if S is empty or has only whitespace and NBSP chars.
-NBSP is matched explicitly because Emacs 27.2's `[[:space:]]'
-excludes U+00A0."
+NBSP (U+00A0) is listed explicitly in the character class so it is
+always rejected, independent of whether `[[:space:]]' matches NBSP --
+that depends on the active syntax table and the Emacs version."
   (string-match-p "\\`[[:space:]\u00A0]*\\'" s))
 
 (defun org-mcp--extract-uri-suffix (uri prefix)
