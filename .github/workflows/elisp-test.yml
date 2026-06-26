@@ -22,10 +22,6 @@ jobs:
           - "30.1"
           - "29.4"
           - "28.2"
-          - "27.2"
-        exclude:
-          - os: macos-latest
-            emacs_version: "27.2"
 
     permissions:
       contents: read
@@ -51,7 +47,7 @@ jobs:
 
       - name: Run tests
         env:
-          EMACS_TEST_JUNIT_REPORT: ${{ (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2') && 'org-mcp-test.xml' || '' }}
+          EMACS_TEST_JUNIT_REPORT: ${{ matrix.emacs_version != '28.2' && 'org-mcp-test.xml' || '' }}
         run: |
           eask clean all
           eask package
@@ -64,7 +60,7 @@ jobs:
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
-        if: matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2'
+        if: matrix.emacs_version != '28.2'
         with:
           name: test-results-${{ matrix.os }}-emacs-${{ matrix.emacs_version }}
           path: org-mcp-test.xml
@@ -72,7 +68,7 @@ jobs:
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
-        if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2' && matrix.os == 'ubuntu-latest')
+        if: (matrix.emacs_version != '28.2' && matrix.os == 'ubuntu-latest')
         with:
           files: org-mcp-test.xml
           check_name: Test Results (Emacs ${{ matrix.emacs_version }})
@@ -80,7 +76,7 @@ jobs:
 
       - name: Publish Test Results (macOS)
         uses: dorny/test-reporter@v3
-        if: (matrix.emacs_version != '27.2' && matrix.emacs_version != '28.2' && matrix.os == 'macos-latest')
+        if: (matrix.emacs_version != '28.2' && matrix.os == 'macos-latest')
         with:
           name: Test Results (macOS, Emacs ${{ matrix.emacs_version }})
           path: org-mcp-test.xml

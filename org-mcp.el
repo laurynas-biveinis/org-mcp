@@ -5,7 +5,7 @@
 ;; Author: Laurynas Biveinis <laurynas.biveinis@gmail.com>
 ;; Keywords: convenience, files, matching, outlines
 ;; Version: 0.10.0
-;; Package-Requires: ((emacs "27.1") (mcp-server-lib "0.4.0"))
+;; Package-Requires: ((emacs "28.2") (mcp-server-lib "0.4.0"))
 ;; Homepage: https://github.com/laurynas-biveinis/org-mcp
 
 ;; This file is NOT part of GNU Emacs.

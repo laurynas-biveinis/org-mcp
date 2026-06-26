@@ -2,6 +2,10 @@ org-mcp NEWS -- history of user-visible changes
 
 * Changes in org-mcp 0.10.0 (unreleased)
 
+** Incompatible Changes
+
+*** Raised the minimum Emacs version from 27.1 to 28.2
+
 ** New Features
 
 *** Added `org-get-agenda' tool for day/week/month agenda views

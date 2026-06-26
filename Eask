@@ -9,7 +9,7 @@
 
 (source "melpa")
 
-(depends-on "emacs" "27.1")
+(depends-on "emacs" "28.2")
 (depends-on "mcp-server-lib" "0.4.0")
 
 (setq network-security-level 'low)
