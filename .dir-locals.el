@@ -1,8 +1,9 @@
 ;;; Directory Local Variables
 ;;; For more information see (info "(emacs) Directory Variables")
 
-((emacs-lisp-mode . ((fill-column . 70)
+((emacs-lisp-mode . ((fill-column . 80)
                      (indent-tabs-mode . nil)
+                     (sentence-end-double-space . t)
                      (elisp-lint-indent-specs . ((org-mcp--modify-and-save . 3)
                                                  (org-mcp--with-visiting-org-file . 2)
                                                  (org-mcp--with-uri-prefix-dispatch . 1)
