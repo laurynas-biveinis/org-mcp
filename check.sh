@@ -18,6 +18,8 @@
 #     - It may still produce formatting issues even after a successful
 #       elisp-autofmt call, but much fewer of them, and more suitable for fixing
 #       by the LLM.
+#   - Run eask lint keywords and eask lint regexps
+#     - Skip if there were syntax errors
 #   - Run ERT tests
 #     - Skip if there were syntax errors
 # - Org (elisp-adjacent): call Emacs org-lint on Org files
@@ -76,7 +78,10 @@ rm -f ./*.elc
 # Only run elisp-lint if there are no errors so far
 if [ $ERRORS -eq 0 ]; then
 	echo -n "Running elisp-lint... "
-	if eask lint elisp-lint; then
+	# The default run lints the package files (Eask `files'). org-mcp-test.el
+	# is not a package file, so lint it explicitly too.
+	if eask lint elisp-lint &&
+		eask lint elisp-lint org-mcp-test.el; then
 		echo "OK!"
 	else
 		echo "elisp-lint failed"
@@ -88,6 +93,31 @@ fi
 
 # Remove byte-compiled files after elisp-lint
 rm -f ./*.elc
+
+# These linters read source forms, not byte-compiled output, so gate them on
+# syntax errors like the ERT block rather than the broader ERRORS.
+if [ $ELISP_SYNTAX_FAILED -eq 0 ]; then
+	echo -n "Running eask lint keywords... "
+	if eask lint keywords; then
+		echo "OK!"
+	else
+		echo "eask lint keywords failed"
+		ERRORS=$((ERRORS + 1))
+	fi
+
+	echo -n "Running eask lint regexps... "
+	# The default run lints the package files (Eask `files'). org-mcp-test.el
+	# is not a package file, so lint it explicitly too.
+	if eask lint regexps &&
+		eask lint regexps org-mcp-test.el; then
+		echo "OK!"
+	else
+		echo "eask lint regexps failed"
+		ERRORS=$((ERRORS + 1))
+	fi
+else
+	echo "Skipping eask lint keywords and regexps due to syntax errors"
+fi
 
 # Only run ERT tests if there are no Elisp syntax errors
 if [ $ELISP_SYNTAX_FAILED -eq 0 ]; then

@@ -53,9 +53,12 @@ jobs:
           eask package
           eask install
           eask compile
+          eask compile org-mcp-test.el
           eask lint elisp-lint
+          eask lint elisp-lint org-mcp-test.el
           eask lint keywords
           eask lint regexps
+          eask lint regexps org-mcp-test.el
           eask run script test
 
       - name: Upload test results

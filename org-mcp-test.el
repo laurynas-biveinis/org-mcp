@@ -47,8 +47,8 @@ SCHEDULED: <2026-04-26>
 * TODO Next month task
 SCHEDULED: <2026-05-10>
 "
-  "Three scheduled tasks spanning the April-May 2026 month
-boundary: 2026-04-03, 2026-04-26, and 2026-05-10.")
+  "Three scheduled tasks spanning a month boundary.
+Dates: 2026-04-03, 2026-04-26, and 2026-05-10.")
 
 (defconst org-mcp-test--agenda-two-task-content
   "* TODO First agenda task
@@ -153,8 +153,8 @@ Main package file"
 :PROPERTIES:
 :CATEGORY: work
 "
-  "File whose `:PROPERTIES:' drawer body runs to end of file without an
-`:END:' line and without a heading line.")
+  "File whose `:PROPERTIES:' drawer body runs to end of file.
+There is no `:END:' line and no heading line.")
 
 (defconst org-mcp-test--content-file-with-end-typo-then-real-end
   "#+TITLE: Test Document
@@ -164,8 +164,8 @@ Main package file"
 :END:
 * Existing Heading
 "
-  "File whose `:PROPERTIES:' drawer body contains a `:END:typo' line
-before the real `:END:'.")
+  "File whose `:PROPERTIES:' drawer body contains a `:END:typo' line.
+The typo line precedes the real `:END:'.")
 
 (defconst org-mcp-test--content-file-with-properties-opener-stray
   "#+TITLE: Test Document
@@ -199,16 +199,16 @@ before the real `:END:'.")
 :CATEGORY: work
 :END:
 * Existing Heading"
-  "File whose very first line is `:PROPERTIES:' (no `#+TITLE:' or
-other keyword before it).")
+  "File whose very first line is `:PROPERTIES:'.
+No `#+TITLE:' or other keyword precedes it.")
 
 (defconst org-mcp-test--content-drawer-only-eof-no-newline
   ":PROPERTIES:
 :CATEGORY: work
 :END:"
-  "Drawer-only file with no heading; `:END:' is the last line and
-the file ends mid-line (no trailing `\\n').  `point-max' coincides
-with the end of `:END:'.")
+  "Drawer-only file with no heading and no trailing newline.
+`:END:' is the last line and the file ends mid-line; `point-max'
+coincides with the end of `:END:'.")
 
 (defconst org-mcp-test--content-file-with-unterminated-logbook
   "#+TITLE: Test Document
@@ -303,15 +303,15 @@ CLOCK: [2026-05-14 Wed 09:00]--[2026-05-14 Wed 10:30] =>  1:30
 :END:
 Some parent body text.
 ** Existing Child"
-  "Parent with planning line, property drawer, logbook drawer, plain
-body, and one child heading.")
+  "Parent with planning, property, and logbook drawers.
+Also has plain body text and one child heading.")
 
 (defconst org-mcp-test--content-parent-no-children-then-other-top
   "* Parent Task
 Parent body.
 * Other Top"
-  "Parent with body but no children, followed by another top-level
-heading.")
+  "Parent with body but no children.
+Followed by another top-level heading.")
 
 (defconst org-mcp-test--content-parent-single-child-then-other-top-id
   "after-uri-single-child-then-other-top-id-001"
@@ -418,8 +418,8 @@ This is actually a child of Third Parent, not First Parent!"
 
 (defconst org-mcp-test--content-two-parents-one-with-id-child-id
   "after-uri-wrong-parent-child-id-001"
-  "ID for `Unrelated Child' in
-`content-two-parents-one-with-id-child'.")
+  "ID for `Unrelated Child' in the two-parents fixture.
+See `content-two-parents-one-with-id-child'.")
 
 (defconst org-mcp-test--content-two-parents-one-with-id-child
   (format
@@ -432,9 +432,10 @@ Content of childless parent.
 :END:
 Content of unrelated child."
    org-mcp-test--content-two-parents-one-with-id-child-id)
-  "Two top-level parents; the second (`Other Parent') has a child
-(`Unrelated Child') with an `:ID:', the first (`Childless Parent')
-has body but no children.")
+  "Two top-level parents with different shapes.
+The second parent (`Other Parent') has a child (`Unrelated Child')
+with an `:ID:'; the first (`Childless Parent') has body but no
+children.")
 
 (defconst org-mcp-test--content-todo-with-tags
   "* TODO Task with Tags :work:urgent:\nTask description."
@@ -466,8 +467,8 @@ Third occurrence of pattern."
 :CATEGORY: work
 * TODO Existing Heading
 Some body content."
-  "File with an unterminated `:PROPERTIES:' drawer plus a TODO heading
-with body content.")
+  "File with an unterminated `:PROPERTIES:' drawer and TODO heading.
+The heading has body content.")
 
 (defconst org-mcp-test--content-malformed-header-logbook-unterminated
   "#+TITLE: Test Document
@@ -475,9 +476,9 @@ with body content.")
 CLOCK: [2026-01-01 Mon 09:00]--[2026-01-01 Mon 10:00] =>  1:00
 * Existing Heading
 Some content."
-  "File with an unterminated `:LOGBOOK:' drawer in its header.  Used
-to verify that any drawer keyword (not just `:PROPERTIES:') is
-recognised by the file-header walker.")
+  "File with an unterminated `:LOGBOOK:' drawer in its header.
+Used to verify that any drawer keyword, not just `:PROPERTIES:',
+is recognised by the file-header walker.")
 
 (defconst org-mcp-test--content-malformed-header-heading-in-drawer
   "#+TITLE: Test Document
@@ -485,8 +486,8 @@ recognised by the file-header walker.")
 :CATEGORY: work
 * Heading Inside Drawer
 * Real Heading"
-  "File with a heading line trapped inside an unterminated
-`:PROPERTIES:' drawer in the header block.")
+  "File with a heading line trapped inside an unterminated drawer.
+The `:PROPERTIES:' drawer is in the header block.")
 
 (defconst
   org-mcp-test--content-leading-source-block-with-drawer-syntax
@@ -495,17 +496,17 @@ recognised by the file-header walker.")
 #+END_SRC
 * Real Heading
 "
-  "File with a leading `#+BEGIN_SRC' block whose body contains a
-`:LOGBOOK:'-looking line that is literal source content, not a
-real drawer.  Followed by a single top-level heading.")
+  "File with a leading `#+BEGIN_SRC' block and one heading.
+The block body contains a `:LOGBOOK:'-looking line that is literal
+source content, not a real drawer.")
 
 (defconst org-mcp-test--content-leading-source-block-unterminated
   "#+BEGIN_SRC text
 some content
 * Real Heading
 "
-  "File with an unterminated `#+BEGIN_SRC' block at file head: no
-matching `#+END_SRC' before the first heading or end of buffer.")
+  "File with an unterminated `#+BEGIN_SRC' block at file head.
+No matching `#+END_SRC' before the first heading or end of buffer.")
 
 (defconst
   org-mcp-test--content-leading-dynamic-block-with-drawer-syntax
@@ -514,10 +515,10 @@ matching `#+END_SRC' before the first heading or end of buffer.")
 #+END:
 * Real Heading
 "
-  "File with a leading dynamic block (`#+BEGIN: ... #+END:'
-colon-terminated, no underscore) whose body contains a
-`:LOGBOOK:'-looking line that is literal block content, not a
-real drawer.  Followed by a single top-level heading.")
+  "File with a leading dynamic block, then one top-level heading.
+The `#+BEGIN: ... #+END:' block is colon-terminated with no
+underscore; its body contains a `:LOGBOOK:'-looking line that is
+literal block content, not a real drawer.")
 
 (defconst org-mcp-test--content-leading-block-with-dotted-name
   "#+BEGIN_my.block
@@ -525,10 +526,11 @@ real drawer.  Followed by a single top-level heading.")
 #+END_my.block
 * Real Heading
 "
-  "File with a leading named block whose name (`my.block') contains
-a `.', which Org's parser accepts but a narrower `[-_[:alnum:]]'
-character class would reject.  Body contains a `:LOGBOOK:'-looking
-line that is literal block content, not a real drawer.")
+  "File with a leading named block whose name contains a dot.
+The name `my.block' is accepted by Org's parser but a narrower
+`[-_[:alnum:]]' character class would reject it.  Body contains a
+`:LOGBOOK:'-looking line that is literal block content, not a real
+drawer.")
 
 (defconst org-mcp-test--content-parent-child-then-other-top
   "* Parent Task
@@ -641,8 +643,8 @@ Second child content.
    " *:END:\n"
    (regexp-quote org-mcp-test--body-text-multiline)
    "\n\\'")
-  "Whole-file pattern after a body-bearing child insert at EOF when the
-fixture has no trailing newline.")
+  "Whole-file pattern after a body-bearing child insert at EOF.
+The fixture has no trailing newline.")
 
 (defconst org-mcp-test--expected-regex-renamed-second-child
   (format (concat
@@ -799,11 +801,11 @@ fixture has no trailing newline.")
    "\\* TODO New Top Task +.*:urgent:\n"
    org-mcp-test--regex-id-drawer
    "\\* Existing Heading\\'")
-  "Whole-file regex for a `start' insert after a lowercase
-`:properties:'/`:end:' file-level drawer.  The preserved file-level
-drawer keeps its lowercase keywords; the new heading's auto-generated
-ID drawer uses uppercase `:PROPERTIES:'/`:END:', distinguishing the
-two drawers in the regex.")
+  "Whole-file regex for a `start' insert after a lowercase drawer.
+The preserved file-level `:properties:'/`:end:' drawer keeps its
+lowercase keywords; the new heading's auto-generated ID drawer uses
+uppercase `:PROPERTIES:'/`:END:', distinguishing the two drawers in
+the regex.")
 
 (defconst org-mcp-test--regex-top-level-start-after-end-typo
   (concat
@@ -815,8 +817,9 @@ two drawers in the regex.")
    "\\* TODO New Task +.*:work:\n"
    org-mcp-test--regex-id-drawer
    "\\* Existing Heading\n\\'")
-  "Regex for a top-level `start' insert into a file whose drawer
-contains a `:END:typo' line before the real `:END:'.")
+  "Regex for a top-level `start' insert into a file with a typo drawer.
+The file's drawer contains a `:END:typo' line before the real
+`:END:'.")
 
 (defconst org-mcp-test--regex-top-level-start-after-properties-stray
   (concat
@@ -826,8 +829,8 @@ contains a `:END:typo' line before the real `:END:'.")
    "\\* TODO New Task +.*:work:\n"
    org-mcp-test--regex-id-drawer
    "\\* Existing Heading\n\\'")
-  "Whole-file regex for a file with `:PROPERTIES: stray text\\n:END:\\n*
-heading' after a `start' insert.  New heading lands between the stray
+  "Whole-file regex for a file with a stray-text `:PROPERTIES:' opener.
+After a `start' insert, the new heading lands between the stray
 drawer-like paragraph and the existing heading.")
 
 (defconst
@@ -841,9 +844,9 @@ drawer-like paragraph and the existing heading.")
    "\\* TODO New Top Task +.*:urgent:\n"
    org-mcp-test--regex-id-drawer
    "\\* Existing Heading\\'")
-  "Whole-file regex for a file with `#+TITLE:', blank line, `:PROPERTIES:'
-drawer, then a heading, after a `start' insert.  New heading lands
-after the drawer.")
+  "Whole-file regex for a `start' insert after a blank-line drawer.
+The file has `#+TITLE:', a blank line, then a `:PROPERTIES:' drawer
+and a heading; the new heading lands after the drawer.")
 
 (defconst org-mcp-test--regex-top-level-end-single-newline
   (concat
@@ -851,9 +854,8 @@ after the drawer.")
    "\\* TODO New Top Task +.*:urgent:\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Whole-file regex with `* Existing Heading' followed immediately
-by `* TODO New Top Task' (exactly one `\\n' between -- no spurious
-blank line).")
+  "Whole-file regex: `* Existing Heading' then `* TODO New Top Task'.
+Exactly one `\\n' between them -- no spurious blank line.")
 
 (defconst org-mcp-test--regex-child-end-single-newline
   (concat
@@ -862,9 +864,9 @@ blank line).")
    "\\*\\* TODO New Child +.*:work:\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Whole-file regex with `Parent body.' followed immediately by
-`** TODO New Child' (exactly one `\\n' between -- no spurious blank
-line).  `* Parent Task' is the file's last subtree.")
+  "Whole-file regex: `Parent body.' then `** TODO New Child'.
+Exactly one `\\n' between them -- no spurious blank line.  `* Parent
+Task' is the file's last subtree.")
 
 (defconst org-mcp-test--regex-child-end-with-body-single-newline
   (concat
@@ -874,10 +876,10 @@ line).  `* Parent Task' is the file's last subtree.")
    org-mcp-test--regex-id-drawer
    (regexp-quote org-mcp-test--body-text-multiline)
    "\n\\'")
-  "Whole-file regex with `\\* Parent Task' / `Parent body.' / `\\*\\*
-TODO New Child ... :work:' + its `:ID:' drawer + the multiline
-body, ending with a single trailing `\\n'.  `\\* Parent Task' is
-the file's last subtree.")
+  "Whole-file regex for a child insert under the file's last subtree.
+Matches `\\* Parent Task' / `Parent body.' / `\\*\\* TODO New Child
+... :work:' + its `:ID:' drawer + the multiline body, ending with a
+single trailing `\\n'.  `\\* Parent Task' is the file's last subtree.")
 
 (defconst org-mcp-test--regex-top-level-start-after-stray-end
   (concat
@@ -886,9 +888,10 @@ the file's last subtree.")
    "\\* TODO New Task +.*:work:\n"
    org-mcp-test--regex-id-drawer
    "\\* Existing Heading\\'")
-  "Whole-file regex for a file with `#+TITLE:', a bare `:END:' line, then
-an existing heading, after a `start' insert.  New heading lands between
-the bare `:END:' and the existing heading.")
+  "Whole-file regex for a `start' insert after a bare `:END:' line.
+The file has `#+TITLE:', a bare `:END:' line, then an existing
+heading; the new heading lands between the bare `:END:' and that
+heading.")
 
 (defconst
   org-mcp-test--regex-top-level-start-after-indented-properties
@@ -900,10 +903,10 @@ the bare `:END:' and the existing heading.")
    "\\* TODO New Top Task +.*:urgent:\n"
    org-mcp-test--regex-id-drawer
    "\\* Existing Heading\\'")
-  "Whole-file regex for a top-level `start' insert after a one-space-
-indented `:PROPERTIES:' drawer.  The preserved indented drawer keeps
-its leading single space; the new heading's auto-generated ID drawer
-is at column 0, distinguishing the two drawers in the regex.")
+  "Whole-file regex for a `start' insert after an indented drawer.
+The preserved one-space-indented `:PROPERTIES:' drawer keeps its
+leading single space; the new heading's auto-generated ID drawer is
+at column 0, distinguishing the two drawers in the regex.")
 
 (defconst org-mcp-test--regex-top-level-start-after-hashtag-paragraph
   (concat
@@ -912,8 +915,8 @@ is at column 0, distinguishing the two drawers in the regex.")
    "\\* TODO New Task +.*:work:\n"
    org-mcp-test--regex-id-drawer
    "\\* Existing Heading\\'")
-  "Whole-file regex for a top-level `start' insert that lands after a
-`#hashtag-paragraph' line.")
+  "Whole-file regex for a `start' insert after a hashtag paragraph.
+The new heading lands after a `#hashtag-paragraph' line.")
 
 (defconst org-mcp-test--regex-top-level-start-drawer-only-at-top
   (concat
@@ -923,8 +926,8 @@ is at column 0, distinguishing the two drawers in the regex.")
    "\\* TODO New Top Task +.*:urgent:\n"
    org-mcp-test--regex-id-drawer
    "\\* Existing Heading\\'")
-  "Whole-file regex for a file starting directly with a `:PROPERTIES:'
-drawer (no `#+TITLE:' header), after a `start' insert.  New heading
+  "Whole-file regex for a file starting with a `:PROPERTIES:' drawer.
+There is no `#+TITLE:' header; after a `start' insert the new heading
 lands after the drawer.")
 
 (defconst
@@ -936,8 +939,8 @@ lands after the drawer.")
    "\\* TODO New Top Task +.*:urgent:\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Whole-file regex matching a 3-line `:PROPERTIES:' drawer
-followed by `\\* TODO New Top Task ... :urgent:' and its `:ID:'
+  "Whole-file regex matching a 3-line `:PROPERTIES:' drawer.
+Followed by `\\* TODO New Top Task ... :urgent:' and its `:ID:'
 drawer.  Exactly one `\\n' between `:END:' and the new heading.")
 
 (defconst org-mcp-test--regex-top-level-start-bare-headings
@@ -946,9 +949,9 @@ drawer.  Exactly one `\\n' between `:END:' and the new heading.")
    org-mcp-test--regex-id-drawer
    "\\* Existing\n"
    "\\* Other\\'")
-  "Whole-file regex for a file containing bare headings only (no header
-block), after a `start' insert.  New heading lands at `point-min',
-before `* Existing'.")
+  "Whole-file regex for a file containing bare headings only.
+There is no header block; after a `start' insert the new heading
+lands at `point-min', before `* Existing'.")
 
 (defconst
   org-mcp-test--regex-top-level-start-orphan-deeper-before-top-level
@@ -958,9 +961,10 @@ before `* Existing'.")
    "\\* TODO New Top Task +.*:urgent:\n"
    org-mcp-test--regex-id-drawer
    "\\* Real\n\\'")
-  "Whole-file regex after `start' insert into a file with an
-orphan level-3 heading before a level-1 heading: new heading lands
-between the orphan and `* Real', leaving the orphan unparented.")
+  "Whole-file regex for a `start' insert with a leading orphan heading.
+The file has an orphan level-3 heading before a level-1 heading; the
+new heading lands between the orphan and `* Real', leaving the orphan
+unparented.")
 
 (defconst org-mcp-test--regex-top-level-start-orphan-deeper-only
   (concat
@@ -969,9 +973,10 @@ between the orphan and `* Real', leaving the orphan unparented.")
    "\\* TODO New Top Task +.*:urgent:\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Whole-file regex after `start' insert into a file whose only
-heading is an orphan level-3: new heading lands at `point-max',
-honouring the `no top-level heading → collapse to end' rule.")
+  "Whole-file regex for a `start' insert with a lone orphan heading.
+The file's only heading is an orphan level-3; the new heading lands
+at `point-max', honouring the `no top-level heading → collapse to
+end' rule.")
 
 (defconst org-mcp-test--regex-top-level-start-stacks-newest-first
   (concat
@@ -981,9 +986,9 @@ honouring the `no top-level heading → collapse to end' rule.")
    "\\* TODO First Top +.*:urgent:\n"
    " *:PROPERTIES:\n *:ID: +%s\n *:END:\n"
    "\\* Existing\\'")
-  "Whole-file regex template: two stacked TODOs (`* TODO Second
-Top' above `* TODO First Top') above `* Existing'.  The two `%s'
-slots take the heading `:ID:' values in file order.")
+  "Whole-file regex template for two stacked TODOs above `* Existing'.
+`* TODO Second Top' is above `* TODO First Top'; the two `%s' slots
+take the heading `:ID:' values in file order.")
 
 (defconst org-mcp-test--regex-child-under-parent
   (format
@@ -1049,8 +1054,8 @@ The `%s' slot is the new heading's `:ID:' value; format with
    "\\*\\* TODO Child Task +.*:work:.*\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Pattern for child TODO added to a parent that has only a property
-drawer (no body, no children).")
+  "Pattern for child TODO added to a property-drawer-only parent.
+The parent has no body and no children.")
 
 (defconst org-mcp-test--regex-child-at-start-after-all-metadata
   (concat
@@ -1066,10 +1071,10 @@ drawer (no body, no children).")
    "\\*\\* TODO Child Task +.*:work:.*\n"
    org-mcp-test--regex-id-drawer
    "\\*\\* Existing Child\\'")
-  "Pattern for child TODO added with `position=\"start\"' under a parent
-that combines planning, property drawer, logbook drawer, plain body,
-and an existing child.  The new heading sits flush against the existing
-child, after all metadata.")
+  "Pattern for a `start' child TODO under a metadata-rich parent.
+The parent combines planning, property drawer, logbook drawer, plain
+body, and an existing child; the new heading sits flush against the
+existing child, after all metadata.")
 
 (defconst org-mcp-test--regex-child-end-no-blank-before-other-top
   (concat
@@ -1079,8 +1084,9 @@ child, after all metadata.")
    "\\*\\* TODO New Child +.*:work:.*\n"
    org-mcp-test--regex-id-drawer
    "\\* Other Top\\'")
-  "Pattern for a child appended at end of parent, between `** Existing
-Child' and `* Other Top'.  No blank line before `* Other Top'.")
+  "Pattern for a child appended at end of parent before `* Other Top'.
+It lands between `** Existing Child' and `* Other Top', with no blank
+line before `* Other Top'.")
 
 (defconst org-mcp-test--regex-start-collapse-no-blank-before-other-top
   (concat
@@ -1089,9 +1095,9 @@ Child' and `* Other Top'.  No blank line before `* Other Top'.")
    "\\*\\* TODO New Child +.*:work:.*\n"
    org-mcp-test--regex-id-drawer
    "\\* Other Top\\'")
-  "Whole-file regex for `start' insert into a childless parent that is
-followed by `* Other Top'.  No blank line between the new child and
-`* Other Top'.")
+  "Whole-file regex for a `start' insert into a childless parent.
+The parent is followed by `* Other Top', with no blank line between
+the new child and `* Other Top'.")
 
 (defconst org-mcp-test--regex-after-uri-no-blank-before-other-top
   (format (concat
@@ -1105,9 +1111,9 @@ followed by `* Other Top'.  No blank line between the new child and
            org-mcp-test--regex-id-drawer
            "\\* Other Top\\'")
           org-mcp-test--content-parent-single-child-then-other-top-id)
-  "Whole-file regex for after-uri insertion after the parent's last
-child, when the parent is followed by another top-level heading.
-No blank line before that following heading.")
+  "Whole-file regex for after-uri insertion at a parent's last child.
+The parent is followed by another top-level heading, with no blank
+line before that following heading.")
 
 (defconst org-mcp-test--regex-child-at-start-of-parent
   (format
@@ -1184,11 +1190,10 @@ The `%s' slot is the new heading's `:ID:' value; format with
    "\\*\\* TODO New Child +.*:work:.*\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Pattern after adding a child under `Real Heading' in a file with
-a leading `#+BEGIN_SRC' block.  The source block (including its
-`:LOGBOOK:'-looking body line) is preserved verbatim; the new
-child lands as a level-2 heading under `Real Heading' with an
-auto-generated `:ID:' drawer on the new heading.")
+  "Pattern after adding a child past a leading source block.
+The child goes under `Real Heading'; the `#+BEGIN_SRC' block,
+including its `:LOGBOOK:'-looking body line, is preserved verbatim,
+and the new child gets an auto-generated `:ID:' drawer.")
 
 (defconst org-mcp-test--regex-child-after-leading-dynamic-block
   (concat
@@ -1199,12 +1204,11 @@ auto-generated `:ID:' drawer on the new heading.")
    "\\*\\* TODO New Child +.*:work:.*\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Pattern after adding a child under `Real Heading' in a file with
-a leading `#+BEGIN: clocktable' dynamic block.  The dynamic block
-(including its `:LOGBOOK:'-looking body line) is preserved
-verbatim; the new child lands as a level-2 heading under `Real
-Heading' with an auto-generated `:ID:' drawer on the new
-heading.")
+  "Pattern after adding a child past a leading dynamic block.
+The child goes under `Real Heading'; the `#+BEGIN: clocktable'
+dynamic block, including its `:LOGBOOK:'-looking body line, is
+preserved verbatim, and the new child gets an auto-generated `:ID:'
+drawer.")
 
 (defconst org-mcp-test--regex-child-after-leading-dotted-block
   (concat
@@ -1215,10 +1219,10 @@ heading.")
    "\\*\\* TODO New Child +.*:work:.*\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Pattern after adding a child under `Real Heading' in a file with
-a leading `#+BEGIN_my.block' opener (block name containing `.').
-The block is preserved verbatim; the new child lands as a level-2
-heading under `Real Heading' with an auto-generated `:ID:' drawer.")
+  "Pattern after adding a child past a leading dotted-name block.
+The child goes under `Real Heading'; the `#+BEGIN_my.block' opener
+has a block name containing `.'.  The block is preserved verbatim,
+and the new child gets an auto-generated `:ID:' drawer.")
 
 (defconst org-mcp-test--regex-second-child-same-level
   (concat
@@ -1230,8 +1234,8 @@ heading under `Real Heading' with an auto-generated `:ID:' drawer.")
    "\\*\\*\\* TODO Second Child +.*:work:.*\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Pattern for second child (level 3) added at same level as first
-child (level 3) under parent (level 2).")
+  "Pattern for a second level-3 child added beside the first.
+Both level-3 children sit under a level-2 parent.")
 
 (defconst org-mcp-test--regex-top-level-end-with-body
   (concat
@@ -1240,8 +1244,8 @@ child (level 3) under parent (level 2).")
    org-mcp-test--regex-id-drawer
    (regexp-quote org-mcp-test--body-text-multiline)
    "\n\\'")
-  "Pattern for a top-level TODO appended after an existing heading with
-a body.  Whole-file anchored.")
+  "Pattern for a top-level TODO with a body appended after a heading.
+Whole-file anchored.")
 
 (defconst org-mcp-test--regex-todo-with-body
   (concat
@@ -1258,9 +1262,9 @@ a body.  Whole-file anchored.")
    "Some text\\.\n"
    "\\*\\* Sub heading in body\n"
    "More text\\.\n?\\'")
-  "Pattern for a top-level TODO whose body contains a level-2
-sub-heading; the `:ID:' drawer immediately follows the new
-heading, not the body's sub-heading.")
+  "Pattern for a top-level TODO whose body contains a sub-heading.
+The level-2 sub-heading is in the body; the `:ID:' drawer immediately
+follows the new heading, not the sub-heading.")
 
 (defconst org-mcp-test--regex-todo-with-literal-block-end
   (concat
@@ -1342,9 +1346,9 @@ heading, not the body's sub-heading.")
    "\\* TODO New Task +:.*work.*urgent.*:\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Whole-file regex matching `#+TITLE: Test Document' followed
-immediately by `\\* TODO New Task ...' and its `:ID:' drawer.
-No blank line between the title and the new heading.")
+  "Whole-file regex matching `#+TITLE: Test Document' then a new TODO.
+`\\* TODO New Task ...' and its `:ID:' drawer follow immediately, with
+no blank line between the title and the new heading.")
 
 (defconst org-mcp-test--regex-top-level-paragraph-no-heading
   (concat
@@ -1353,9 +1357,9 @@ No blank line between the title and the new heading.")
    "\\* TODO New Task +:.*work.*urgent.*:\n"
    org-mcp-test--regex-id-drawer
    "\\'")
-  "Pattern for a new TODO appended after a plain paragraph in a
-heading-less file.  The paragraph stays in the zeroth section above
-the new heading; it must not become the heading's section body.")
+  "Pattern for a new TODO appended after a paragraph.
+The file is heading-less; the paragraph stays in the zeroth section
+above the new heading and must not become the heading's section body.")
 
 (defconst org-mcp-test--pattern-add-todo-parent-id-uri
   (concat
@@ -1620,9 +1624,9 @@ while leaving `hello world' (lowercase) untouched.")
     "\\*\\* Third Child #3\n?"
     "\\'")
    org-mcp-test--content-with-id-id)
-  "Pattern for nested headlines edit-body test result.  The first
-child gains no `:ID:' drawer; `org-id-get-create' resolves to the
-edit target (`* Parent Task', which already has one).")
+  "Pattern for nested headlines edit-body test result.
+The first child gains no `:ID:' drawer; `org-id-get-create' resolves
+to the edit target (`* Parent Task', which already has one).")
 
 (defconst org-mcp-test--pattern-edit-body-empty
   (format
@@ -1643,10 +1647,10 @@ edit target (`* Parent Task', which already has one).")
     "New content added\\.\n"
     "\\'")
    org-mcp-test--content-with-id-id)
-  "Whole-file regex for `edit-body-empty': new body added to
-`** Third Child #3' as the file's last subtree.  An auto-generated
-`:ID:' drawer attaches to that heading; the body is on its own line
-after `:END:'; the file ends with a trailing newline.")
+  "Whole-file regex for `edit-body-empty' adding a new body.
+The body is added to `** Third Child #3' as the file's last subtree;
+an auto-generated `:ID:' drawer attaches to that heading; the body is
+on its own line after `:END:'; the file ends with a trailing newline.")
 
 (defconst org-mcp-test--pattern-edit-body-empty-with-props
   (format (concat
@@ -1657,9 +1661,9 @@ after `:END:'; the file ends with a trailing newline.")
            "Content added after properties\\.\n"
            "\\'")
           org-mcp-test--timestamp-id)
-  "Whole-file regex: heading with only `:ID:' drawer metadata; new
-body content on its own line after `:END:'; file ends with a
-trailing newline.")
+  "Whole-file regex for a heading with only `:ID:' drawer metadata.
+New body content is on its own line after `:END:'; the file ends with
+a trailing newline.")
 
 (defconst org-mcp-test--pattern-edit-body-empty-with-deeper-heading
   (format (concat
@@ -1670,10 +1674,9 @@ trailing newline.")
            "intro text\n"
            "\\*\\* Sub heading\n?\\'")
           org-mcp-test--timestamp-id)
-  "Whole-file regex for empty-body edit with new content containing
-a deeper heading.  The deeper `** Sub heading' carries no `:ID:'
-drawer; the edit target's existing `:ID:' is preserved and returned
-as the URI.")
+  "Whole-file regex for an empty-body edit adding a deeper heading.
+The deeper `** Sub heading' carries no `:ID:' drawer; the edit
+target's existing `:ID:' is preserved and returned as the URI.")
 
 (defconst org-mcp-test--pattern-edit-body-accept-lower-level
   (concat
@@ -1696,9 +1699,10 @@ as the URI.")
    "some text\n"
    "\\*\\*\\* Subheading content\n"
    "\\*\\* Third Child #3\n?\\'")
-  "Whole-file regex: `* Parent Task' (with `:ID:' drawer) plus
-`** Second Child' (also with `:ID:') whose body contains a
-deeper `*** Subheading content' carrying no `:ID:' drawer.")
+  "Whole-file regex for nested headings with mixed `:ID:' drawers.
+`* Parent Task' has an `:ID:' drawer; `** Second Child' also has one,
+and its body contains a deeper `*** Subheading content' carrying no
+`:ID:' drawer.")
 
 (defconst org-mcp-test--pattern-tool-read-headline-single
   (concat
@@ -1787,10 +1791,10 @@ the archive file becomes `<source>_custom'.")
   "#+ARCHIVE: %s_fromkeyword::
 * TODO Task to Archive
 Some content here."
-  "Task under a file-level `#+ARCHIVE:' keyword with no per-headline
-`:ARCHIVE:' property.  The literal `%s' is org-archive's placeholder
-for the source file's base name, so the archive file becomes
-`<source>_fromkeyword'.")
+  "Task under a file-level `#+ARCHIVE:' keyword.
+The headline has no per-headline `:ARCHIVE:' property.  The literal
+`%s' is org-archive's placeholder for the source file's base name, so
+the archive file becomes `<source>_fromkeyword'.")
 
 (defconst org-mcp-test--content-archive-infile-location
   "* TODO Task to Archive
@@ -1798,23 +1802,24 @@ for the source file's base name, so the archive file becomes
 :ARCHIVE:  ::* Archived Tasks
 :END:
 Some content here."
-  "Task whose `:ARCHIVE:' property selects an in-file location (the
-file part before `::' is empty), so archiving moves the subtree under
-a heading within the source file itself rather than to a separate
-file.")
+  "Task whose `:ARCHIVE:' property selects an in-file location.
+The file part before `::' is empty, so archiving moves the subtree
+under a heading within the source file itself rather than to a
+separate file.")
 
 (defconst org-mcp-test--content-archive-nested
   "* Parent
 Parent body.
 ** TODO Child to Archive
 Child content here."
-  "Two-level Org tree: a `Parent' headline with body and a nested
-`Child to Archive' TODO subheading carrying its own body.")
+  "Two-level Org tree with a parent and one nested TODO child.
+The `Parent' headline has body; the nested `Child to Archive' TODO
+subheading carries its own body.")
 
 (defconst org-mcp-test--expected-archive-nested-source-regex
   "\\`\\* Parent\nParent body\\.\\s-*\\'"
-  "Regex matching an Org file with a single top-level `Parent' headline
-followed by its body line and no sub-headings.")
+  "Regex matching an Org file with a single top-level `Parent' headline.
+It is followed by its body line and has no sub-headings.")
 
 (defconst org-mcp-test--content-archive-malformed-location
   "* TODO Task to Archive
@@ -1822,8 +1827,8 @@ followed by its body line and no sub-headings.")
 :ARCHIVE:  no-separator-here
 :END:
 Some content here."
-  "Task whose `:ARCHIVE:' property omits the `::' separator, so
-org-archive's location parser rejects the spec as malformed.")
+  "Task whose `:ARCHIVE:' property omits the `::' separator.
+Org-archive's location parser rejects the spec as malformed.")
 
 (defconst org-mcp-test--expected-archive-source-regex "\\`\\s-*\\'"
   "Regex matching an Org file whose content is empty or whitespace only.")
@@ -1831,8 +1836,8 @@ org-archive's location parser rejects the spec as malformed.")
 (defconst org-mcp-test--expected-archive-simple-unchanged-source-regex
   (concat
    "\\`" (regexp-quote org-mcp-test--content-archive-simple) "\\'")
-  "Regex matching the exact content of
-`org-mcp-test--content-archive-simple', byte for byte.")
+  "Regex matching `org-mcp-test--content-archive-simple' exactly.
+Matches that fixture's content byte for byte.")
 
 (defconst org-mcp-test--expected-archive-infile-source-regex
   (concat
@@ -1844,9 +1849,9 @@ org-archive's location parser rejects the spec as malformed.")
    ":END:\n"
    "Some content here\\.\n?"
    "\\'")
-  "Regex matching an Org file with a top-level `Archived Tasks' heading,
-under it a level-2 `TODO Task to Archive' entry with a PROPERTIES
-drawer, and a single body line.")
+  "Regex matching an Org file with an `Archived Tasks' subtree.
+The top-level `Archived Tasks' heading has a level-2 `TODO Task to
+Archive' entry with a PROPERTIES drawer and a single body line.")
 
 (defun org-mcp-test--archive-file-regex (&optional id heading body)
   "Regex matching an Org archive file with one archived TODO entry.
@@ -1875,20 +1880,21 @@ single whole-file match also pins the archived entry's identity."
 
 (defconst org-mcp-test--expected-archive-simple-file-regex
   (org-mcp-test--archive-file-regex)
-  "Regex matching an Org archive file with a mode-line comment, an
-\"Archived entries from file\" section header, and a single
-`* TODO Task to Archive' entry with a PROPERTIES drawer and a
-\"Some content here.\" body.")
+  "Regex matching a simple Org archive file with one archived entry.
+It has a mode-line comment, an \"Archived entries from file\" section
+header, and a single `* TODO Task to Archive' entry with a PROPERTIES
+drawer and a \"Some content here.\" body.")
 
 (defconst org-mcp-test--expected-archive-with-id-file-regex
   (org-mcp-test--archive-file-regex
    org-mcp-test--content-with-id-id
    "Task with ID"
    "First line of content.\nSecond line of content.\nThird line of content.")
-  "Regex matching an Org archive file with a mode-line comment, an
-\"Archived entries from file\" section header, and a single `Task with
-ID' TODO entry whose original `:ID:' is preserved among the ARCHIVE_*
-properties in its PROPERTIES drawer, followed by three body lines.")
+  "Regex matching an Org archive file for a `Task with ID' entry.
+It has a mode-line comment, an \"Archived entries from file\" section
+header, and a single `Task with ID' TODO entry whose original `:ID:'
+is preserved among the ARCHIVE_* properties in its PROPERTIES drawer,
+followed by three body lines.")
 
 (defconst org-mcp-test--content-preexisting-archive-entry
   "* TODO Pre-existing archived entry\n"
@@ -1898,8 +1904,8 @@ properties in its PROPERTIES drawer, followed by three body lines.")
   (concat
    "Cannot archive: an Emacs buffer visiting this "
    "file has unsaved")
-  "Partial error string for the unsaved-changes guard, up to but not
-including the recovery-hint suffix.")
+  "Partial error string for the unsaved-changes guard.
+Covers the message up to but not including the recovery-hint suffix.")
 
 ;; Test helpers
 
@@ -1924,7 +1930,7 @@ including the recovery-hint suffix.")
       (buffer-string)))))
 
 (defun org-mcp-test--discard-buffer-visiting (file)
-  "Kill every buffer visiting FILE, discarding unsaved changes."
+  "Kill every buffer visiting FILE, discarding any unsaved edits."
   (dolist (buf (buffer-list))
     (when-let* ((buf-file (buffer-file-name buf))
                 ((string=
@@ -1949,7 +1955,7 @@ changes) and delete the file if it exists."
          (delete-file ,archive-file)))))
 
 (defun org-mcp-test--archive-tool-response (uri)
-  "Call the org-archive-subtree tool with URI; return the parsed response."
+  "Call the `org-archive-subtree' tool with URI; return the response."
   (mcp-server-lib-process-jsonrpc-parsed
    (mcp-server-lib-create-tools-call-request
     "org-archive-subtree" 1 `((uri . ,uri)))
@@ -2109,6 +2115,8 @@ The created temp file is automatically added to `org-mcp-allowed-files'."
 (defmacro org-mcp-test--with-archive-setup
     (file-var initial-content ids &rest body)
   "Like `org-mcp-test--with-id-setup' with org-archive options pinned.
+FILE-VAR is bound to the temp file, INITIAL-CONTENT seeds it, and
+IDS lists IDs to register, as in `org-mcp-test--with-id-setup'.
 Binds `org-archive-location', `org-archive-default-command',
 `org-archive-subtree-save-file-p', `org-archive-file-header-format',
 and `org-archive-mark-done' to their stock defaults so archive
@@ -2192,11 +2200,11 @@ and binds `sequences' and `semantics' from the result for use in BODY."
     (expected-alist
      expected-persistent expected-inheritance expected-exclude)
   "Call org-get-tag-config tool and check result against expected values.
-EXPECTED-ALIST is the expected value for org-tag-alist (string).
-EXPECTED-PERSISTENT is the expected value for org-tag-persistent-alist (string).
-EXPECTED-INHERITANCE is the expected value for org-use-tag-inheritance (string).
+EXPECTED-ALIST is the expected value for `org-tag-alist' (string).
+EXPECTED-PERSISTENT is the expected `org-tag-persistent-alist' (string).
+EXPECTED-INHERITANCE is the expected `org-use-tag-inheritance' (string).
 EXPECTED-EXCLUDE is the expected value for
-org-tags-exclude-from-inheritance (string)."
+`org-tags-exclude-from-inheritance' (string)."
   (declare (indent defun) (debug t))
   `(org-mcp-test--with-enabled
      (let ((result
@@ -2225,7 +2233,7 @@ org-tags-exclude-from-inheritance (string)."
 (defun org-mcp-test--get-allowed-files-and-check
     (allowed-files expected-files)
   "Call org-get-allowed-files tool and verify the result.
-ALLOWED-FILES is the value to bind to org-mcp-allowed-files.
+ALLOWED-FILES is the value to bind to `org-mcp-allowed-files'.
 EXPECTED-FILES is a list of expected file paths."
   (let ((org-mcp-allowed-files allowed-files))
     (org-mcp-test--with-enabled
@@ -2247,8 +2255,8 @@ EXPECTED-FILES is a list of expected file paths."
     (file-var initial-content todo-keywords tag-alist ids &rest body)
   "Helper for org-add-todo test.
 Sets up FILE-VAR with INITIAL-CONTENT and org configuration.
-TODO-KEYWORDS is the org-todo-keywords config (nil for default).
-TAG-ALIST is the org-tag-alist config (nil for default).
+TODO-KEYWORDS is the `org-todo-keywords' config (nil for default).
+TAG-ALIST is the `org-tag-alist' config (nil for default).
 IDS is optional list of ID strings to register (nil for no ID tracking).
 Executes BODY with org-mcp enabled and standard variables set."
   (declare (indent 2))
@@ -2312,8 +2320,8 @@ BODY is the body text or nil.
 PARENT-URI is the URI of the parent item.
 
 Keyword arguments:
-:TODO-KEYWORDS is the org-todo-keywords config (nil for default).
-:TAG-ALIST is the org-tag-alist config (nil for default).
+:TODO-KEYWORDS is the `org-todo-keywords' config (nil for default).
+:TAG-ALIST is the `org-tag-alist' config (nil for default).
 :AFTER-URI is the URI of a sibling to insert after.
 :POSITION is optional placement (\"start\" or \"end\").
 :IDS is optional list of ID strings to register (nil for no ID tracking).
@@ -2572,13 +2580,13 @@ BASENAME is the expected file basename.
 EXPECTED-PATTERN is a regexp that the file content should match.
 
 Keyword arguments:
-:TODO-KEYWORDS is the org-todo-keywords config (nil for default).
-:TAG-ALIST is the org-tag-alist config (nil for default).
+:TODO-KEYWORDS is the `org-todo-keywords' config (nil for default).
+:TAG-ALIST is the `org-tag-alist' config (nil for default).
 :IDS is a list of ID strings to register (nil for no ID tracking).
 :AFTER-URI is the URI of a sibling to insert after.
 :POSITION is placement (\"start\" or \"end\").
 :OVERRIDE-BINDINGS is a list of let-style bindings to override
-variables after setup, e.g., ((org-tag-alist nil)).
+variables after setup, e.g. `((org-tag-alist nil))'.
 :PIN-NEW-HEADING-UUID, when non-nil, treats EXPECTED-PATTERN as a
 `format' template carrying one `%s' slot for the new heading's
 `:ID:' value.  The macro captures the UUID from the tool's
@@ -2944,6 +2952,8 @@ FILE is the file path to read the outline from."
   (deadline :null)
   uri)
  "Assert NODE's per-node metadata equals the expected values.
+TODO, PRIORITY, TAGS, SCHEDULED, and DEADLINE give the expected
+field values.
 NODE is a decoded org-read-outline node or org-grep `headline_path'
 entry.  The defaults describe a heading with no keyword, priority,
 tags, or planning as read via org-read-outline; pass TAGS as nil for
@@ -3574,9 +3584,9 @@ silently treated as omitted: clients must omit the key to get today."
 
 (ert-deftest org-mcp-test-tool-get-agenda-ignores-other-agenda-files
     ()
-  "Test org-get-agenda ignores the user's `org-agenda-files'.
+  "Test org-get-agenda ignores the variable `org-agenda-files'.
 Pins the scope-isolation contract: the agenda is built only from
-`org-mcp-allowed-files', so a task living in a file the user has in
+`org-mcp-allowed-files', so a task in a file listed in the variable
 `org-agenda-files' but not in the allowed list must not leak into the
 result, while the allowed file's task still appears."
   (org-mcp-test--with-temp-org-files
@@ -3603,9 +3613,10 @@ result, while the allowed file's task still appears."
   "Test org-get-agenda ignores an active agenda file restriction lock.
 Pins the scope-isolation contract against
 `org-agenda-set-restriction-lock': when the user has locked the agenda
-to a file outside `org-mcp-allowed-files', the lock is the `org-restrict'
-symbol property on `org-agenda-files', which `org-agenda-list' honors
-above the dynamic variable.  The tool must still build only from the
+to a file outside `org-mcp-allowed-files', the lock is the
+`org-restrict' symbol property on the variable `org-agenda-files',
+which `org-agenda-list' honors above the dynamic variable.  The tool
+must still build only from the
 allowed files, so the foreign task must not leak.  The lock state is
 restored afterward so a concurrent interactive agenda keeps its
 restriction."
@@ -3873,8 +3884,8 @@ rather than leak a hidden buffer."
 
 (ert-deftest org-mcp-test-update-todo-state-clear ()
   "Setting `new_state' to empty string clears the TODO keyword.
-The heading keeps its ID, properties, and body, mirroring `C-c C-t'
-cycling back to no state."
+The heading keeps its ID, properties, and body, mirroring an
+`org-todo' cycle back to no state."
   (let ((test-content org-mcp-test--content-with-id-todo))
     (org-mcp-test--with-temp-org-files ((test-file test-content))
       (let ((org-todo-keywords '((sequence "TODO" "|" "DONE"))))
@@ -3889,9 +3900,9 @@ cycling back to no state."
            org-mcp-test--expected-regex-todo-cleared-with-id))))))
 
 (ert-deftest org-mcp-test-update-todo-state-clear-keeps-closed ()
-  "Clearing the keyword from a DONE heading keeps its CLOSED stamp
-when `org-closed-keep-when-no-todo' is t, even with `org-log-done'
-enabling stamp removal for the nil case."
+  "Clearing the keyword from a DONE heading keeps its CLOSED stamp.
+This holds when `org-closed-keep-when-no-todo' is t, even with
+`org-log-done' enabling stamp removal for the nil case."
   (let ((test-content org-mcp-test--content-done-closed-id))
     (org-mcp-test--with-temp-org-files ((test-file test-content))
       (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
@@ -3908,9 +3919,9 @@ enabling stamp removal for the nil case."
            org-mcp-test--expected-regex-done-cleared-keeps-closed))))))
 
 (ert-deftest org-mcp-test-update-todo-state-clear-removes-closed ()
-  "Clearing the keyword from a DONE heading drops its CLOSED stamp
-when both `org-closed-keep-when-no-todo' is nil and `org-log-done'
-is set; with either condition unmet the stamp is kept."
+  "Clearing the keyword from a DONE heading drops its CLOSED stamp.
+This needs both `org-closed-keep-when-no-todo' nil and `org-log-done'
+set; with either condition unmet the stamp is kept."
   (let ((test-content org-mcp-test--content-done-closed-id))
     (org-mcp-test--with-temp-org-files ((test-file test-content))
       (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
@@ -4171,12 +4182,11 @@ pre-register IDs via `with-id-setup'."
 (ert-deftest
     org-mcp-test-id-fallback-scan-skips-cache-when-tracking-off
     ()
-  "Test that DB-miss ID resolution skips the cache write when
-`org-id-track-globally' is nil.  Locks the gating contract: users
-who have opted out of global ID tracking must not get implicit
-`org-id-locations' mutations from MCP tool calls; the fallback
-scan still resolves the ID and the tool succeeds, but the DB
-stays untouched."
+  "Test DB-miss ID resolution skips the cache write when untracked.
+The gate is `org-id-track-globally' nil: users who have opted out of
+global ID tracking must not get implicit `org-id-locations' mutations
+from MCP tool calls; the fallback scan still resolves the ID and the
+tool succeeds, but the DB stays untouched."
   (org-mcp-test--with-temp-org-files
       ((test-file org-mcp-test--content-with-id-todo))
     (let ((org-id-track-globally nil)
@@ -4196,12 +4206,12 @@ stays untouched."
 (ert-deftest
     org-mcp-test-id-fallback-scan-tolerates-cache-write-failure
     ()
-  "Test that a signal from `org-id-add-location' does not poison
-ID resolution.  When the fallback scan finds the ID, the cache
-write into `org-id-locations' is best-effort: a failing
-`org-id-add-location' (locked file, write error, broken DB) must
-not surface as a tool error, because the resolution semantically
-already succeeded by the time the cache write is attempted."
+  "Test a signal from `org-id-add-location' does not poison resolution.
+When the fallback scan finds the ID, the cache write into
+`org-id-locations' is best-effort.  A failing `org-id-add-location'
+call (locked file, write error, broken DB) must not surface as a tool
+error, because the resolution semantically already succeeded by the
+time the cache write is attempted."
   (org-mcp-test--with-temp-org-files
       ((test-file org-mcp-test--content-with-id-todo))
     (let ((org-id-track-globally t)
@@ -4213,7 +4223,7 @@ already succeeded by the time the cache write is attempted."
       (should-not
        (org-id-find-id-file org-mcp-test--content-with-id-id))
       (cl-letf (((symbol-function 'org-id-add-location)
-                 (lambda (&rest _) (error "cache write boom"))))
+                 (lambda (&rest _) (error "Cache write boom"))))
         (mcp-server-lib-ert-call-tool
          "org-update-todo-state"
          `((uri . ,org-mcp-test--content-with-id-uri)
@@ -4485,8 +4495,9 @@ as a level-3 child of the new heading."
 (ert-deftest
     org-mcp-test-add-todo-top-level-position-start-orphan-deeper-only
     ()
-  "Pin that `position=\"start\"' on a file whose only heading is an
-orphan level-3 honours the `collapse to end' rule.  With no
+  "Pin the `collapse to end' rule for a lone orphan level-3 heading.
+A `start' insert on a file whose only heading is an orphan level-3
+honours that rule.  With no
 level-1 heading anywhere, the documented behaviour for `start' is
 to land at `point-max', so the new heading sits after the orphan
 and the orphan stays unparented.  A regression that broadened the
@@ -4580,11 +4591,11 @@ into the new heading's body."
 (ert-deftest
     org-mcp-test-add-todo-top-level-position-start-after-lowercase-properties
     ()
-  "Test `position=\"start\"' skips a file-level drawer whose opener
-and closer use lowercase keywords (`:properties:' ... `:end:').
-Pins the `case-fold-search' binding in
-`org-mcp--skip-file-header-element' that lets the closer regex
-match `:end:' as well as `:END:'."
+  "Test `position=\"start\"' skips a lowercase-keyword drawer.
+The file-level drawer's opener and closer use lowercase keywords,
+`:properties:' ... `:end:'.  Pins the `case-fold-search' binding in
+`org-mcp--skip-file-header-element' that lets the closer regex match
+`:end:' as well as `:END:'."
   (org-mcp-test--add-todo-top-level-start-and-check
    org-mcp-test--content-file-with-lowercase-properties-drawer
    org-mcp-test--regex-top-level-start-after-lowercase-properties))
@@ -5096,9 +5107,10 @@ This tests the bug where the second child was created at level 4 instead of leve
 
 (ert-deftest org-mcp-test-add-todo-with-after-uri ()
   "Test adding TODO after a sibling using after_uri.
-Tests that adding after a level 3 sibling correctly creates level 3 (not level 1).
-Reproduces the emacs.org scenario: level 2 parent (via path), level 3 sibling (via ID).
-Fixture ends mid-line at `point-max', also locking the no-body EOF path."
+Tests that adding after a level-3 sibling correctly creates a level-3
+heading, not level 1.  Reproduces the emacs.org scenario: a level-2
+parent via path and a level-3 sibling via ID.  Fixture ends mid-line
+at `point-max', also locking the no-body EOF path."
   ;; BUG: org-insert-heading creates level 1 (*) instead of level 3 (***)
   (org-mcp-test--add-todo-and-check
    org-mcp-test--content-level2-parent-level3-children
@@ -5160,8 +5172,8 @@ is the buffer's last char."
 (ert-deftest
     org-mcp-test-add-todo-with-body-containing-deeper-headline
     ()
-  "Test that `:ID:' lands on the new heading, not on a deeper
-headline inside the body.
+  "Test that `:ID:' lands on the new heading, not a deeper headline.
+The deeper headline is inside the body.
 `org-mcp--validate-body-no-headlines' deliberately allows headlines
 strictly deeper than the new heading's level (they form valid child
 structure).  Regression: with such a body, the final
@@ -5493,8 +5505,8 @@ before the ID lookup, independent of whether the ID exists."
    nil "top-level"))
 
 (ert-deftest org-mcp-test-add-todo-after-uri-equals-ancestor-id ()
-  "Test that the parent-self `after_uri' check uses the parent's own
-`:ID:', not an inherited one.
+  "Test parent-self `after_uri' check uses the parent's own `:ID:'.
+It must not use an inherited one.
 Targets `Parent' (no `:ID:' of its own) under `Ancestor' (has
 `:ID:').  Passing the ancestor's `:ID:' as `after_uri' must surface
 `not found under parent' (the ID names neither the parent nor any
@@ -5510,15 +5522,15 @@ if `org-mcp--position-after-sibling' passed INHERIT=t to
    nil "not found under parent"))
 
 (ert-deftest org-mcp-test-add-todo-after-uri-literal-nil-string ()
-  "Test that `after_uri=\"org-id://nil\"' under a parent with no `:ID:'
-surfaces the `not found under parent' diagnostic, not the parent-self
-rejection.
+  "Test `after_uri=\"org-id://nil\"' under a parent with no `:ID:'.
+It surfaces the `not found under parent' diagnostic, not the
+parent-self rejection.
 Pins the nil-guard on the parent-self check: `org-entry-get nil \"ID\"'
 returns nil when the parent lacks `:ID:', and `(string= nil \"nil\")'
-returns t because `string=' coerces the symbol `nil' to its print
+returns t because `string=' coerces the symbol nil to its print
 name.  Without the guard the check would fire spuriously and surface
 the misleading `refers to parent_uri itself' message for the
-literal-`nil' UUID."
+literal-nil UUID."
   (org-mcp-test--assert-add-todo-after-uri-rejected
    org-mcp-test--content-ancestor-id-parent-no-id
    "Ancestor/Parent"
@@ -5542,9 +5554,9 @@ different validator (e.g. the mutex), surfaces as a test failure."
    :error-message-regex "Field position must be one of"))
 
 (ert-deftest org-mcp-test-add-todo-invalid-position-uppercase ()
-  "Pin that `org-mcp--validate-position' compares POSITION case-sensitively,
-rejecting \"START\".  A future `downcase'-tolerant rewrite would
-silently widen the accepted set."
+  "Pin that `org-mcp--validate-position' compares POSITION exactly.
+The comparison is case-sensitive, rejecting \"START\".  A future
+`downcase'-tolerant rewrite would silently widen the accepted set."
   (org-mcp-test--call-add-todo-expecting-error
    org-mcp-test--content-empty
    "New Task"
@@ -5633,8 +5645,8 @@ of ...' error reaches the caller rather than the mutex's generic
     org-mcp-test-add-todo-invalid-position-empty-with-after-uri-equals-parent-id
     ()
   "Test ordering: empty `position' beats the parent-self check.
-Companion to `add-todo-invalid-position-empty-with-after-uri'
-(mutex case): with `position=\"\"' AND `after_uri' that names
+Companion to the `add-todo-invalid-position-empty-with-after-uri'
+mutex case: with `position=\"\"' AND `after_uri' that names
 `parent_uri's own `:ID:', the per-field rejection from
 `org-mcp--validate-position' must fire BEFORE the parent-self
 check inside `org-mcp--position-after-sibling'.  Pins the
@@ -5658,8 +5670,8 @@ per-field-first contract for the parent-self cross-field check."
     org-mcp-test-add-todo-invalid-position-empty-with-after-uri-top-level-parent
     ()
   "Test ordering: empty `position' beats the not-top-level check.
-Companion to `add-todo-invalid-position-empty-with-after-uri'
-(mutex case): with `position=\"\"' AND a top-level `parent_uri' (no
+Companion to the `add-todo-invalid-position-empty-with-after-uri'
+mutex case: with `position=\"\"' AND a top-level `parent_uri' (no
 fragment) combined with any `after_uri', the per-field rejection
 from `org-mcp--validate-position' must fire BEFORE
 `org-mcp--check-after-uri-not-top-level'.  Pins the
@@ -5741,9 +5753,10 @@ set\"."
 (ert-deftest
     org-mcp-test-add-todo-top-level-unterminated-hyphen-digit-drawer-names-keyword
     ()
-  "Pin the drawer-keyword regex's `[-_[:alnum:]]+' character class on
-non-alphabetic input.  An unterminated file-level `:MY-DRAWER_1:'
-combines hyphen, underscore, and digit; the walker must enter the
+  "Pin the drawer-keyword regex's character class on non-alpha input.
+The `[-_[:alnum:]]+' class faces non-alphabetic input: an unterminated
+file-level `:MY-DRAWER_1:' combines hyphen, underscore, and digit; the
+walker must enter the
 drawer branch and surface the name in the error.  The
 `:PROPERTIES:', `:LOGBOOK:', and `:CUSTOMDRAWER:' tests alone cannot
 distinguish `[-_[:alnum:]]+' from a narrower `[[:alpha:]]+'."
@@ -6648,11 +6661,12 @@ inserted content."
 (ert-deftest
     org-mcp-test-edit-body-empty-with-deeper-heading-returns-target-uri
     ()
-  "Test that empty-body edit with new content containing a deeper
-heading returns the edit target's URI, not the deeper heading's.
-The empty branch of `replace-body-content' has different
-save-excursion marker mechanics from the non-empty branch covered
-by `edit-body-accept-lower-level-headline'.  Combined with the
+  "Test empty-body edit with a deeper-heading body returns target URI.
+The new content contains a deeper heading; the result is the edit
+target's URI, not the deeper heading's.  The empty branch of
+`replace-body-content' has different `save-excursion' mechanics from
+the non-empty branch covered by
+`edit-body-accept-lower-level-headline'.  Combined with the
 deeper-heading flavor of the URI-return bug, this exercises a code
 path neither `edit-body-empty' (no deeper heading in body) nor
 `edit-body-accept-lower-level-headline' (non-empty body) hits."
@@ -6669,8 +6683,8 @@ path neither `edit-body-empty' (no deeper heading in body) nor
      org-mcp-test--timestamp-id)))
 
 (ert-deftest org-mcp-test-edit-body-nested-headlines ()
-  "Test that body edit on a parent returns the parent's URI and
-preserves its child subtree.  The first-child flavor of the
+  "Test body edit on a parent returns its URI, keeping the subtree.
+The first-child flavor of the
 URI-return bug: after body insertion, point landed on `** First
 Child' (the parent's first child) and `org-id-get-create' attached
 a fresh `:ID:' to it, returning that URI instead of the parent's
@@ -6701,9 +6715,9 @@ point on the parent so its existing `:ID:' is returned."
      nil)))
 
 (ert-deftest org-mcp-test-edit-body-accept-lower-level-headline ()
-  "Test that body containing a strictly-deeper heading is accepted
-and that the returned URI points to the edit target, not to the
-body-internal heading.  `validate-body-no-headlines' only rejects
+  "Test a body with a strictly-deeper heading is accepted.
+The returned URI points to the edit target, not the body-internal
+heading.  `validate-body-no-headlines' only rejects
 headings at or above the target level, so a level-3 sub-heading
 inside a level-2 edit is legitimate child structure.  After
 insertion, point can land past the deeper heading;
@@ -6891,9 +6905,10 @@ created."
 (ert-deftest
     org-mcp-test-archive-subtree-guard-fires-on-custom-location
     ()
-  "Pin that the unsaved-changes guard checks the resolved archive file,
-not the default `_archive', when a per-headline `:ARCHIVE:' property
-redirects the destination.  This catches drift between the tool's
+  "Pin that the unsaved guard checks the resolved archive file.
+It does not check the default `_archive' when a per-headline
+`:ARCHIVE:' property redirects the destination.  This catches drift
+between the tool's
 pre-flight `org-archive--compute-location' call and the file
 `org-archive-subtree' actually opens: the guard must fire on the
 `_custom' file a modified buffer is visiting."
@@ -6941,10 +6956,9 @@ parsing runs."
       (org-mcp-test--field-non-string-regex "uri" 42))))
 
 (ert-deftest org-mcp-test-archive-subtree-nonexistent-headline ()
-  "Pin that archiving a headline absent from the file errors and leaves
-the source unchanged.  `org-mcp--goto-headline-from-uri' runs before
-any archive logic, so a missing headline aborts the tool with no
-write."
+  "Pin that archiving an absent headline errors, leaving source intact.
+`org-mcp--goto-headline-from-uri' runs before any archive logic, so a
+missing headline aborts the tool with no write."
   ;; No archive bindings needed: this aborts before any archive logic runs.
   (org-mcp-test--with-temp-org-files
       ((test-file org-mcp-test--content-archive-simple))
@@ -6955,10 +6969,10 @@ write."
         "Cannot find headline: Nonexistent Task"))))
 
 (ert-deftest org-mcp-test-archive-subtree-file-level-uri ()
-  "Pin that a fragment-less `org-headline://' URI errors and leaves the
-source unchanged.  Such a URI identifies a file but no headline, so the
-tool must reject it through the `mcp-server-lib-tool-error' channel
-rather than archive at point-min before the first heading."
+  "Pin that a fragment-less `org-headline://' URI errors, source intact.
+Such a URI identifies a file but no headline, so the tool must reject
+it through the `mcp-server-lib-tool-error' channel rather than archive
+at point-min before the first heading."
   ;; No archive bindings needed: this aborts before any archive logic runs.
   (org-mcp-test--with-temp-org-files
       ((test-file org-mcp-test--content-archive-simple))
@@ -7010,8 +7024,9 @@ list."
          returned-uri (concat ":ID:[ \t]+" (regexp-quote id)))))))
 
 (ert-deftest org-mcp-test-archive-subtree-in-file-location ()
-  "Pin in-file archiving: when the `:ARCHIVE:' location has an empty
-file part, the subtree moves under a heading within the source file
+  "Pin in-file archiving for an empty-file-part `:ARCHIVE:' location.
+When the location has an empty file part, the subtree moves under a
+heading within the source file
 itself, the returned `archive_file' is the source path, and no
 separate archive file is created.  Because the entry stays in the
 source file, which is already allowed, the returned `org-id://' URI
@@ -7034,8 +7049,8 @@ resolves via `resources/read' immediately -- with no change to
 
 (ert-deftest org-mcp-test-archive-subtree-kills-opened-archive-buffer
     ()
-  "Pin that archiving leaves no buffer visiting the archive file when
-the tool itself opened it.  `org-archive-subtree' opens the archive
+  "Pin that archiving leaves no buffer visiting a tool-opened archive.
+The tool itself opened it.  `org-archive-subtree' opens the archive
 file via `find-file-noselect'; the tool kills that buffer so a
 long-running server does not accumulate buffers visiting archive
 files."
@@ -7051,8 +7066,9 @@ files."
 (ert-deftest
     org-mcp-test-archive-subtree-keeps-preexisting-archive-buffer
     ()
-  "Pin that archiving preserves a buffer the user already had open on
-the archive file, killing only buffers the tool opened itself."
+  "Pin that archiving preserves a user's pre-opened archive buffer.
+It kills only buffers the tool opened itself, leaving a buffer the
+user already had open on the archive file."
   (org-mcp-test--with-archive-setup test-file
       org-mcp-test--content-archive-simple
       nil
@@ -7066,8 +7082,8 @@ the archive file, killing only buffers the tool opened itself."
 (ert-deftest
     org-mcp-test-archive-subtree-refreshes-other-archive-buffers
     ()
-  "Pin that archiving reverts *every* buffer visiting the archive file
-to the freshly written on-disk content, not only the one
+  "Pin that archiving reverts every buffer visiting the archive file.
+Each reverts to the freshly written on-disk content, not only the one
 `org-archive-subtree' filled and the tool saved.  When two buffers
 visit the archive file, the second would otherwise keep its stale
 pre-archive content while disk holds the archived subtree."
@@ -7091,10 +7107,10 @@ pre-archive content while disk holds the archived subtree."
 (ert-deftest
     org-mcp-test-archive-subtree-saves-archive-when-save-disabled
     ()
-  "Pin that the archive file is written to disk even when
-`org-archive-subtree-save-file-p' is nil.  The tool persists the
-archive itself rather than relying on org-archive's save policy, so a
-user setting that disables org-archive's own save cannot silently
+  "Pin that the archive is written to disk when saving is disabled.
+The guard is `org-archive-subtree-save-file-p' nil.  The tool persists
+the archive itself rather than relying on org-archive's save policy,
+so a user setting disabling org-archive's own save cannot silently
 drop the archived entry while the source is emptied."
   (org-mcp-test--with-archive-setup test-file
       org-mcp-test--content-archive-simple
@@ -7113,10 +7129,11 @@ drop the archived entry while the source is emptied."
 (ert-deftest
     org-mcp-test-archive-subtree-modified-archive-buffer-error
     ()
-  "Pin that archiving fails when the destination archive file has
-unsaved changes in a visiting buffer, mirroring the source-file
-guard.  Without this guard `org-archive-subtree' would force-save the
-archive buffer, flushing the user's unsaved edits to disk."
+  "Pin that archiving fails on an unsaved destination archive buffer.
+A visiting buffer with unsaved changes blocks archiving, mirroring the
+source-file guard.  Without this guard `org-archive-subtree' would
+force-save the archive buffer, flushing the user's unsaved edits to
+disk."
   (org-mcp-test--with-archive-setup test-file
       org-mcp-test--content-archive-simple
       nil
@@ -7131,9 +7148,9 @@ archive buffer, flushing the user's unsaved edits to disk."
           org-mcp-test--archive-unsaved-error-regex)))))
 
 (ert-deftest org-mcp-test-archive-subtree-ignores-default-command ()
-  "Pin that archiving moves the subtree to a file regardless of
-`org-archive-default-command'.  With the command customized to
-`org-archive-set-tag' (which would otherwise tag the entry in place
+  "Pin that archiving moves the subtree to a file in all cases.
+This holds regardless of `org-archive-default-command'.  With the
+command customized to `org-archive-set-tag' (which would otherwise tag
 without moving it), the tool still empties the source and writes the
 archive file."
   (org-mcp-test--with-archive-setup test-file
@@ -7891,9 +7908,9 @@ CASE-SENSITIVE controls case matching."
 (ert-deftest
     org-mcp-test-grep-column-zero-star-non-heading-not-a-boundary
     ()
-  "Pin that a column-0 `*bold*' line in the pre-heading area is not
-treated as a section boundary.  Matches after it (up to the first
-real heading) must still appear in the pre-heading group.
+  "Pin that a column-0 `*bold*' line is not a pre-heading boundary.
+Matches after it (up to the first real heading) must still appear in
+the pre-heading group.
 
 Regression for the `^\\*' vs `^\\*+ ' boundary-regex bug: the bare
 `^\\*' matched `*bold*' and truncated the pre-heading region there,
@@ -7911,9 +7928,9 @@ dropping matches that followed."
 
 (ert-deftest org-mcp-test-grep-column-zero-star-in-body-not-a-boundary
     ()
-  "Pin that a column-0 `*bold*' line inside a section body does not
-truncate that section.  Matches after it (before the next real
-heading) must still appear in the same section group.
+  "Pin that a column-0 `*bold*' line in a body does not truncate it.
+Matches after it (before the next real heading) must still appear in
+the same section group.
 
 Regression for the `^\\*' vs `^\\*+ ' boundary-regex bug: the bare
 `^\\*' matched `*bold*' and set section-end there, dropping the
@@ -7947,8 +7964,9 @@ must match only lines that contain the literal characters."
         (alist-get 'text (car (alist-get 'matches (car groups)))))))))
 
 (ert-deftest org-mcp-test-grep-one-match-per-line ()
-  "Pin that org-grep reports one entry per source line even when
-the pattern appears multiple times on the same line."
+  "Pin that org-grep reports one entry per source line.
+This holds even when the pattern appears multiple times on the same
+line."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Section\ntoken token on one line\n"))
     (let* ((result (org-mcp-test--call-grep "token" test-file))
@@ -7957,8 +7975,7 @@ the pattern appears multiple times on the same line."
       (should (= (length (alist-get 'matches (car groups))) 1)))))
 
 (ert-deftest org-mcp-test-grep-match-in-heading-title ()
-  "Pin that a match on the heading title line itself is reported
-in that heading's own group."
+  "Pin that a heading-title match is reported in its own group."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Contains the token here\nbody text\n"))
     (let* ((result (org-mcp-test--call-grep "token" test-file))
@@ -8040,8 +8057,9 @@ the search is case-insensitive."
       (should (string= (alist-get 'file (car groups)) file-a)))))
 
 (ert-deftest org-mcp-test-grep-missing-allowed-file-skipped ()
-  "Pin that a configured-but-missing allowed file is skipped in multi-file
-search rather than aborting; matches from present files are still returned.
+  "Pin that a configured-but-missing allowed file is skipped.
+In multi-file search the missing file is skipped rather than aborting;
+matches from present files are still returned.
 
 Regression for the missing `file-exists-p' guard in the multi-file branch
 of `org-mcp--tool-grep'."
@@ -8245,8 +8263,8 @@ file-level URI (the trailing-slash org-headline:// form)."
           (should (= (alist-get 'line (car matches)) 1)))))))
 
 (ert-deftest org-mcp-test-grep-match-in-section-body ()
-  "Pin that org-grep finds a match in a heading's body and returns
-correct headline_path and match text."
+  "Pin that org-grep finds a match in a heading's body.
+It returns the correct headline_path and match text."
   (org-mcp-test--with-temp-org-files
       ((test-file "* My Heading\nThis is some body text\n"))
     (let* ((result (org-mcp-test--call-grep "body" test-file))
@@ -8308,7 +8326,7 @@ narrow a search and would return every line in the file."
 
 (ert-deftest org-mcp-test-grep-newline-in-pattern ()
   "Pin that a `pattern' containing a newline is rejected at the tool boundary.
-A newline in pattern causes re-search-forward to match across two
+A newline in pattern causes `re-search-forward' to match across two
 physical lines, reporting only the end line and skipping occurrences
 on the second matched line -- violating the one-match-per-source-line
 contract.  Reject at the boundary to avoid silent wrong output."
@@ -8319,8 +8337,9 @@ contract.  Reject at the boundary to avoid silent wrong output."
 (ert-deftest
     org-mcp-test-grep-file-field-is-canonical-for-relative-arg
     ()
-  "Pin that the file field is the canonical absolute path even when
-a relative `file' arg resolves to an allowed file.
+  "Pin that the file field is the canonical absolute path.
+This holds even when a relative `file' arg resolves to an allowed
+file.
 The validation accepts a relative path (truename comparison), but the
 emitted `file' field and URI must use the canonical allowed-list form
 so follow-up reads (which require absolute paths) succeed."
@@ -8367,8 +8386,8 @@ the grep path must preserve raw markup so it matches
 (ert-deftest org-mcp-test-grep-uri-encodes-raw-title-with-stats-cookie
     ()
   "Pin that the org-headline:// URI fragment encodes the raw cookie title.
-The fragment must contain `Tasks%20%5B1%2F3%5D' (raw) not `Tasks'
-(stripped), so it round-trips through `org-read-headline'."
+The fragment must contain `Tasks%20%5B1%2F3%5D' (raw), not the
+stripped `Tasks', so it round-trips through `org-read-headline'."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Tasks [1/3]\nbody token here\n"))
     (let* ((result (org-mcp-test--call-grep "token" test-file))
@@ -8462,8 +8481,8 @@ deletion uses `delete-region', not `org-cut-subtree'."
   (concat
    org-mcp-test--content-refile-siblings-target
    org-mcp-test--content-refile-lone-mover)
-  "A `Target' with children `Child A' (with ID) and `Child C', plus a
-top-level `Mover'.")
+  "A `Target' with two children, plus a top-level `Mover'.
+The children are `Child A' (with ID) and `Child C'.")
 
 (defconst org-mcp-test--expected-refile-after-sibling-regex
   (concat
@@ -8646,8 +8665,8 @@ Guards against creating a cycle (a node becoming its own descendant)."
 
 (defconst org-mcp-test--refile-mover-id
   "22222222-2222-2222-2222-222222222222"
-  "Stable UUID assigned to the `Mover' headline in fixtures that need
-a pre-existing node ID.")
+  "Stable UUID assigned to the `Mover' headline.
+Used in fixtures that need a pre-existing node ID.")
 
 (defconst org-mcp-test--content-refile-mover-with-id
   (concat
@@ -8673,9 +8692,9 @@ a pre-existing node ID.")
   "A `Target' whose only child `Mover' already has an ID.")
 
 (ert-deftest org-mcp-test-refile-headline-noop-already-in-place ()
-  "Refiling a node already in the requested slot (with an ID) is a
-no-op: the file content is unchanged and the node's existing URI is
-returned."
+  "Refiling a node already in its requested slot is a no-op.
+The node has an ID; the file content is unchanged and the node's
+existing URI is returned."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-noop
     (list org-mcp-test--refile-mover-id)
@@ -8698,7 +8717,7 @@ returned."
         org-mcp-test--content-refile-noop)))))
 
 (ert-deftest org-mcp-test-refile-headline-position-after-uri-mutex ()
-  "position and after_uri together are rejected; file unchanged."
+  "Position and after_uri together are rejected; file unchanged."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-after-sibling
     (list org-mcp-test--refile-sibling-id)
@@ -8714,7 +8733,7 @@ returned."
 
 (ert-deftest org-mcp-test-refile-headline-after-uri-top-level-rejected
     ()
-  "after_uri combined with a top-level target is rejected."
+  "After_uri combined with a top-level target is rejected."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-after-sibling
     (list org-mcp-test--refile-sibling-id)
@@ -8727,7 +8746,7 @@ returned."
       "top-level target_parent_uri")))
 
 (ert-deftest org-mcp-test-refile-headline-after-uri-self-rejected ()
-  "after_uri referring to the node being refiled is rejected."
+  "After_uri referring to the node being refiled is rejected."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-noop
     (list org-mcp-test--refile-mover-id)
@@ -8753,8 +8772,9 @@ returned."
    "Mover body.\n"
    "** Subchild\n"
    "Subchild body.\n")
-  "A `Destination' plus a richly-decorated `Mover' (TODO, priority,
-tags, ID, custom property, body, and a nested `Subchild').")
+  "A `Destination' plus a richly-decorated `Mover'.
+The `Mover' has a TODO keyword, priority, tags, ID, custom property,
+body, and a nested `Subchild'.")
 
 (defconst org-mcp-test--expected-refile-preserve-regex
   (concat
@@ -8769,12 +8789,13 @@ tags, ID, custom property, body, and a nested `Subchild').")
    "Mover body\\.\n"
    "\\*\\*\\* Subchild\n"
    "Subchild body\\.\n\\'")
-  "Regex: `Mover' with all metadata and its `Subchild' moved under
-`Destination', re-leveled by one.")
+  "Regex for `Mover' with all metadata moved under `Destination'.
+Its `Subchild' moves too, re-leveled by one.")
 
 (ert-deftest org-mcp-test-refile-headline-preserves-metadata ()
-  "Refile preserves TODO state, priority, tags, properties, body, and
-child structure, re-leveling the whole subtree."
+  "Refile preserves all metadata and re-levels the whole subtree.
+It keeps TODO state, priority, tags, properties, body, and child
+structure."
   (let ((org-todo-keywords '((sequence "TODO" "DONE"))))
     (org-mcp-test--with-id-setup test-file
         org-mcp-test--content-refile-preserve
@@ -8818,7 +8839,7 @@ child structure, re-leveling the whole subtree."
       "not a whole file")))
 
 (defmacro org-mcp-test--assert-refile-unsaved-rejected (dirty-file)
-  "Assert a Mover->Target refile errors when DIRTY-FILE has unsaved changes.
+  "Assert a Mover->Target refile errors on an unsaved DIRTY-FILE.
 DIRTY-FILE is `source-file' or `target-file' -- the buffer left
 modified before the call; the refile must reject it and leave the
 file unchanged."
@@ -8849,10 +8870,10 @@ The source file is left unchanged."
 
 (ert-deftest org-mcp-test-refile-headline-cross-file-uri-resolves ()
   "A cross-file move preserves the node's existing ID and resolves it.
-Pins both that the pre-existing ID is carried across files unchanged
-(not re-minted) -- the returned URI equals the original `org-id://'
-URI -- and the `org-id-locations' repair: the moved node is read back
-via that URI and yields the destination content."
+Pins both that the pre-existing ID is carried across files unchanged,
+not re-minted -- the returned URI equals the original `org-id://' URI
+-- and the `org-id-locations' repair: the moved node is read back via
+that URI and yields the destination content."
   (org-mcp-test--with-temp-org-files
       ((source-file org-mcp-test--content-refile-mover-with-id)
        (target-file org-mcp-test--content-refile-lone-target))
@@ -8949,10 +8970,11 @@ untouched and both files unchanged."
         (should (null org-id-locations))))))
 
 (ert-deftest org-mcp-test-refile-headline-cross-file-after-sibling ()
-  "Cross-file refile with `after_uri' places the node among the
-target's children, not the source's: the moved node lands immediately
-after the named sibling in the destination file and the source is
-emptied.  Pins that `after_uri' resolves against the target buffer."
+  "Cross-file refile with `after_uri' lands node among target kids.
+The node lands among the target's children, not the source's,
+immediately after the named sibling in the destination file, and the
+source is emptied.  Pins that `after_uri' resolves against the target
+buffer."
   (org-mcp-test--with-temp-org-files
       ((source-file org-mcp-test--content-refile-lone-mover)
        (target-file org-mcp-test--content-refile-siblings-target))
@@ -9004,14 +9026,15 @@ unchanged."
    "\\*\\* Mover\n"
    org-mcp-test--regex-id-drawer
    " Body line\\.\n\\'")
-  "Regex: `Mover' demoted under `Target' with its body indented one
-space (the `org-adapt-indentation' non-nil case).")
+  "Regex for `Mover' demoted under `Target', body indented one space.
+This is the `org-adapt-indentation' non-nil case.")
 
 (ert-deftest org-mcp-test-refile-headline-adapt-indentation ()
-  "With `org-adapt-indentation' non-nil, a demoting refile indents the
-moved subtree's body.  The tool does not override the user's setting,
-so this pins the indented output under the pre-Org-9.5 default that the
-other refile tests (which bind the setting to nil) do not exercise."
+  "A demoting refile indents the moved subtree's body when adapting.
+With `org-adapt-indentation' non-nil, the body is indented.  The tool
+does not override the user's setting, so this pins the indented output
+under the pre-Org-9.5 default that the other refile tests (which bind
+the setting to nil) do not exercise."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-two-tops
     '()
@@ -9154,14 +9177,14 @@ insertion point (the marker must shift back over the removed text)."
    "\n"
    ":END:\n"
    "Body line.\n")
-  "Two top-level headlines `Target' and `Mover'; `Mover' is last and
-has an ID.")
+  "Two top-level headlines `Target' and `Mover'.
+`Mover' is last and has an ID.")
 
 (ert-deftest org-mcp-test-refile-headline-noop-top-level ()
-  "Refiling a top-level node already last at top level (with an ID) is
-a no-op: the file content is unchanged and the existing URI is
-returned.  Exercises the `(equal nil nil)' top-level parent branch of
-`org-mcp--refile-noop-p' that the named-parent noop test does not
+  "Refiling a top-level node already last at top level is a no-op.
+The node has an ID; the file content is unchanged and the existing URI
+is returned.  Exercises the `(equal nil nil)' top-level parent branch
+of `org-mcp--refile-noop-p' that the named-parent noop test does not
 reach."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-noop-top-level
@@ -9203,9 +9226,9 @@ reach."
   "A `Target' with children `Child A' (with ID) then `Mover' (with ID).")
 
 (ert-deftest org-mcp-test-refile-headline-noop-after-uri ()
-  "Refiling a node already immediately after the named `after_uri'
-sibling (with an ID) is a no-op.  Exercises the `after-id' branch of
-`org-mcp--refile-noop-p'."
+  "Refiling a node right after the `after_uri' sibling is a no-op.
+The node is already in that slot and has an ID.  Exercises the
+`after-id' branch of `org-mcp--refile-noop-p'."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-noop-after
     (list
@@ -9233,9 +9256,9 @@ sibling (with an ID) is a no-op.  Exercises the `after-id' branch of
         org-mcp-test--content-refile-noop-after)))))
 
 (ert-deftest org-mcp-test-refile-headline-noop-position-start ()
-  "Refiling a node already the first child with position=start (and an
-ID) is a no-op.  Exercises the `position=start' branch of
-`org-mcp--refile-noop-p'."
+  "Refiling a first child with position=start is a no-op.
+The node is already the first child and has an ID.  Exercises the
+`position=start' branch of `org-mcp--refile-noop-p'."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-noop
     (list org-mcp-test--refile-mover-id)
@@ -9945,4 +9968,9 @@ two do not interfere."
        org-mcp-test--expected-planning-time-repeater-regex))))
 
 (provide 'org-mcp-test)
+
+;; Local Variables:
+;; package-lint-main-file: "org-mcp.el"
+;; End:
+
 ;;; org-mcp-test.el ends here
