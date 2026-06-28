@@ -61,6 +61,10 @@ jobs:
           eask lint regexps org-mcp-test.el
           eask run script test
 
+      - name: Lint Org files
+        if: matrix.os == 'ubuntu-latest' && matrix.emacs_version == '30.1'
+        run: eask run script org-lint
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: matrix.emacs_version != '28.2'
