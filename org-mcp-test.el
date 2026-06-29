@@ -70,10 +70,14 @@ SCHEDULED: <2026-04-26>
   "nested-siblings-parent-id-002"
   "ID for Parent Task in org-mcp-test--content-nested-siblings.")
 
-(defconst org-mcp-test--content-nested-siblings
-  (format "#+TITLE: My Org Document
+(defconst org-mcp-test--ids-nested-parent-and-with-id
+  (list
+   org-mcp-test--content-nested-siblings-parent-id
+   org-mcp-test--content-with-id-id)
+  "Registered IDs: the nested-siblings parent and the with-id child.")
 
-* Parent Task
+(defconst org-mcp-test--subtree-parent-task-template
+  "* Parent Task
 :PROPERTIES:
 :ID:       %s
 :END:
@@ -87,8 +91,15 @@ It spans multiple lines.
 :END:
 Second child content.
 ** Third Child #3"
-          org-mcp-test--content-nested-siblings-parent-id
-          org-mcp-test--content-with-id-id)
+  "`format' template for the `Parent Task' subtree.
+Carries two `%s' slots: the parent ID and the `Second Child' ID.")
+
+(defconst org-mcp-test--content-nested-siblings
+  (concat
+   "#+TITLE: My Org Document\n\n"
+   (format org-mcp-test--subtree-parent-task-template
+           org-mcp-test--content-nested-siblings-parent-id
+           org-mcp-test--content-with-id-id))
   "Parent with multiple child tasks and doc file header.")
 
 (defconst org-mcp-test--content-outline-metadata
@@ -591,22 +602,9 @@ This is already done"
 ;; tolerate either setting.
 
 (defconst org-mcp-test--expected-parent-task-from-nested-siblings
-  (format
-   "* Parent Task
-:PROPERTIES:
-:ID:       nested-siblings-parent-id-002
-:END:
-Some parent content.
-** First Child 50%% Complete
-First child content.
-It spans multiple lines.
-** Second Child
-:PROPERTIES:
-:ID:       %s
-:END:
-Second child content.
-** Third Child #3"
-   org-mcp-test--content-with-id-id)
+  (format org-mcp-test--subtree-parent-task-template
+          org-mcp-test--content-nested-siblings-parent-id
+          org-mcp-test--content-with-id-id)
   "Expected content when extracting Parent Task from nested-siblings.")
 
 (defconst org-mcp-test--regex-after-sibling-level3
@@ -1961,6 +1959,31 @@ changes) and delete the file if it exists."
     "org-archive-subtree" 1 `((uri . ,uri)))
    mcp-server-lib-ert-server-id))
 
+(defun org-mcp-test--archive-task-uri (test-file)
+  "Return the `org-headline://' URI of `Task to Archive' in TEST-FILE."
+  (format "org-headline://%s#Task%%20to%%20Archive" test-file))
+
+(defun org-mcp-test--archive-tool-error (uri)
+  "Call the archive tool with URI and assert it returns an error result."
+  (should
+   (alist-get 'error (org-mcp-test--archive-tool-response uri))))
+
+(defun org-mcp-test--task-with-id-uri (test-file)
+  "Return the `org-headline://' URI of `Task with ID' in TEST-FILE."
+  (format "org-headline://%s#Task%%20with%%20ID" test-file))
+
+(defun org-mcp-test--tool-error-or-die (tool-name params)
+  "Call TOOL-NAME with PARAMS; signal an error if it unexpectedly succeeds.
+Intended as the error-form inside `org-mcp-test--assert-error-and-file':
+when the tool wrongly returns success, raise so the assertion fails."
+  (let ((result
+         (mcp-server-lib-ert-process-tool-response
+          (mcp-server-lib-process-jsonrpc-parsed
+           (mcp-server-lib-create-tools-call-request
+            tool-name 1 params)
+           mcp-server-lib-ert-server-id))))
+    (error "Expected error but got success: %s" result)))
+
 (defun org-mcp-test--archive-subtree (uri archive-file)
   "Archive subtree at URI; assert success and landing in ARCHIVE-FILE.
 Return the parsed tool result alist."
@@ -2177,6 +2200,21 @@ EXPECTED-TYPE is the sequence type."
   (should (equal (alist-get 'isFinal sem) expected-final))
   (should (equal (alist-get 'sequenceType sem) expected-type)))
 
+(defun org-mcp-test--check-single-todo-config
+    (sequences semantics type keywords semantic-specs)
+  "Assert SEQUENCES has one TYPE entry with KEYWORDS and SEMANTIC-SPECS.
+KEYWORDS is the expected keyword vector.  SEMANTIC-SPECS is a list of
+\(STATE FINAL) pairs checked in order against SEMANTICS, all of TYPE."
+  (should (= (length sequences) 1))
+  (org-mcp-test--check-todo-config-sequence
+   (aref sequences 0) type keywords)
+  (should (= (length semantics) (length semantic-specs)))
+  (let ((i 0))
+    (dolist (spec semantic-specs)
+      (org-mcp-test--check-todo-config-semantic
+       (aref semantics i) (nth 0 spec) (nth 1 spec) type)
+      (setq i (1+ i)))))
+
 (defmacro org-mcp-test--with-get-todo-config-result
     (keywords &rest body)
   "Call get-todo-config tool with KEYWORDS and run BODY with result bindings.
@@ -2296,6 +2334,11 @@ see e.g. `add-todo-position-nil-wire-accepted'."
    (and after-uri (list (cons 'after_uri after-uri)))
    (and position (list (cons 'position position)))))
 
+(defun org-mcp-test--add-todo-result (params)
+  "Call org-add-todo with PARAMS; return the parsed JSON result."
+  (json-read-from-string
+   (mcp-server-lib-ert-call-tool "org-add-todo" params)))
+
 (cl-defmacro
  org-mcp-test--call-add-todo-expecting-error
  (initial-content
@@ -2332,20 +2375,11 @@ message string."
     ,tag-alist
     ,ids
     (org-mcp-test--assert-error-and-file test-file
-      (let* ((params
-              (org-mcp-test--build-add-todo-params
-               ,title ,todo-state ,tags ,body ,parent-uri
-               ,after-uri ,position))
-             (request
-              (mcp-server-lib-create-tools-call-request
-               "org-add-todo" nil params))
-             (response
-              (mcp-server-lib-process-jsonrpc-parsed
-               request mcp-server-lib-ert-server-id))
-             (result
-              (mcp-server-lib-ert-process-tool-response response)))
-        ;; If we get here, the tool succeeded when we expected failure
-        (error "Expected error but got success: %s" result))
+      (org-mcp-test--tool-error-or-die
+       "org-add-todo"
+       (org-mcp-test--build-add-todo-params
+        ,title ,todo-state ,tags ,body ,parent-uri
+        ,after-uri ,position))
       ,error-message-regex)))
 
 (defun org-mcp-test--assert-add-todo-rejects-body-headline
@@ -2381,6 +2415,19 @@ name, printed value, and `type-of' name."
    (format "Field %s must be a string, got: %S (type: %s)"
            field-name bad-value (type-of bad-value))))
 
+(defun org-mcp-test--tool-call-error-message (tool-name params)
+  "Call TOOL-NAME with PARAMS, assert a tool error, and return its message."
+  (let* ((response
+          (mcp-server-lib-process-jsonrpc-parsed
+           (mcp-server-lib-create-tools-call-request
+            tool-name 1 params)
+           mcp-server-lib-ert-server-id))
+         (err
+          (should-error
+           (mcp-server-lib-ert-process-tool-response response)
+           :type 'mcp-server-lib-tool-error)))
+    (error-message-string err)))
+
 (defmacro org-mcp-test--assert-tool-error-message-regex
     (tool-name params error-message-regex)
   "Assert calling TOOL-NAME with PARAMS errors with message matching REGEX.
@@ -2395,19 +2442,11 @@ error-message assertion.  Modifying tools should use their own
 `org-mcp-test--assert-error-and-file' to pin file-unchanged behaviour."
   `(let ((org-mcp-allowed-files nil))
      (org-mcp-test--with-enabled
-       (let* ((request
-               (mcp-server-lib-create-tools-call-request
-                ,tool-name 1 ,params))
-              (response
-               (mcp-server-lib-process-jsonrpc-parsed
-                request mcp-server-lib-ert-server-id))
-              (err
-               (should-error
-                (mcp-server-lib-ert-process-tool-response response)
-                :type 'mcp-server-lib-tool-error)))
-         (should
-          (string-match-p
-           ,error-message-regex (error-message-string err)))))))
+       (should
+        (string-match-p
+         ,error-message-regex
+         (org-mcp-test--tool-call-error-message
+          ,tool-name ,params))))))
 
 (defun org-mcp-test--assert-add-todo-non-string-title (bad-value)
   "Assert BAD-VALUE for `title' is rejected at the tool boundary."
@@ -2545,9 +2584,7 @@ identifier to compose into a follow-up whole-file regex."
           (org-mcp-test--build-add-todo-params
            title "TODO" '("urgent") nil parent-uri
            nil "start"))
-         (result-text
-          (mcp-server-lib-ert-call-tool "org-add-todo" params))
-         (result (json-read-from-string result-text)))
+         (result (org-mcp-test--add-todo-result params)))
     (org-mcp-test--assert-add-todo-result-shape result title basename)
     (substring (alist-get 'uri result) (length "org-id://"))))
 
@@ -2570,12 +2607,8 @@ identifier to compose into a follow-up whole-file regex."
   override-bindings
   pin-new-heading-uuid)
  "Add TODO item with setup and verify the result.
-INITIAL-CONTENT is the initial Org file content.
-TITLE is the headline text.
-TODO-STATE is the TODO state.
-TAGS is a list of tag strings or nil.
-BODY is the body text or nil.
-PARENT-URI is the URI of the parent item.
+INITIAL-CONTENT, TITLE, TODO-STATE, TAGS, BODY, and PARENT-URI are as
+documented for `org-mcp-test--call-add-todo-expecting-error'.
 BASENAME is the expected file basename.
 EXPECTED-PATTERN is a regexp that the file content should match.
 
@@ -2641,6 +2674,106 @@ top-level `position=\"start\"' family's standard shape."
     ,expected-regex
     :position "start"))
 
+(defmacro org-mcp-test--add-new-task-and-check
+    (content parent-uri-format expected-regex &rest extra)
+  "Add `New Task' (TODO state, tags work+urgent, no body) and verify.
+CONTENT seeds the file; PARENT-URI-FORMAT is a `format' template taking
+`test-file'; EXPECTED-REGEX is verified after insertion; EXTRA forwards
+trailing keyword args to `org-mcp-test--add-todo-and-check'."
+  `(org-mcp-test--add-todo-and-check
+    ,content
+    "New Task"
+    "TODO"
+    '("work" "urgent")
+    nil
+    (format ,parent-uri-format test-file)
+    (file-name-nondirectory test-file)
+    ,expected-regex
+    ,@extra))
+
+(defmacro org-mcp-test--add-child-task-and-check
+    (content expected-regex &rest extra)
+  "Add `Child Task' (TODO, tag work, no body) under `Parent Task' and verify.
+CONTENT seeds the file; EXPECTED-REGEX is verified after insertion;
+EXTRA forwards trailing keyword args to `org-mcp-test--add-todo-and-check'."
+  `(org-mcp-test--add-todo-and-check
+    ,content
+    "Child Task"
+    "TODO"
+    '("work")
+    nil
+    (format "org-headline://%s#Parent%%20Task" test-file)
+    (file-name-nondirectory test-file)
+    ,expected-regex
+    ,@extra))
+
+(defmacro org-mcp-test--assert-add-child-position-error
+    (after-uri position error-regex &rest extra)
+  "Assert adding `New Task' under `Parent Task' errors for POSITION + AFTER-URI.
+ERROR-REGEX must match the signalled message; EXTRA forwards extra
+keyword args (e.g. :ids) to `org-mcp-test--call-add-todo-expecting-error'."
+  `(org-mcp-test--call-add-todo-expecting-error
+    org-mcp-test--content-nested-siblings
+    "New Task"
+    "TODO"
+    '("work")
+    nil
+    (format "org-headline://%s#Parent%%20Task" test-file)
+    :after-uri ,after-uri
+    :position ,position
+    :error-message-regex
+    ,error-regex
+    ,@extra))
+
+(defmacro org-mcp-test--add-review-after-sibling (body expected-regex)
+  "Add `Review org-mcp-test.el' after the level-3 sibling and verify.
+BODY is the new heading's body (nil or text); EXPECTED-REGEX is the
+whole-file regex verified after insertion.  Uses the level-2 parent /
+level-3 sibling fixture and inserts via the sibling's `org-id://' URI."
+  `(org-mcp-test--add-todo-and-check
+    org-mcp-test--content-level2-parent-level3-children
+    "Review org-mcp-test.el"
+    "TODO"
+    '("internet")
+    ,body
+    (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
+            test-file)
+    (file-name-nondirectory test-file)
+    ,expected-regex
+    :todo-keywords '((sequence "TODO" "|" "DONE"))
+    :tag-alist '("internet")
+    :ids
+    (list org-mcp-test--level2-parent-level3-sibling-id)
+    :after-uri
+    (format "org-id://%s"
+            org-mcp-test--level2-parent-level3-sibling-id)))
+
+(defmacro org-mcp-test--assert-add-todo-wire-null-accepted (null-key)
+  "Add a child via org-add-todo with an explicit wire NULL-KEY and verify.
+NULL-KEY is a symbol (`after_uri' or `position') sent as `(KEY . nil)'
+directly on the params alist, bypassing `build-add-todo-params', to pin
+that a JSON null is accepted as equivalent to omitting the key."
+  `(org-mcp-test--with-add-todo-setup test-file
+       org-mcp-test--content-nested-siblings
+     nil
+     nil
+     nil
+     (let* ((params
+             (list
+              (cons 'title "Child Task")
+              (cons 'todo_state "TODO")
+              (cons 'tags '("work"))
+              (cons 'body nil)
+              (cons
+               'parent_uri
+               (format "org-headline://%s#Parent%%20Task" test-file))
+              (cons ,null-key nil)))
+            (result (org-mcp-test--add-todo-result params)))
+       (org-mcp-test--assert-add-todo-result-shape
+        result "Child Task" (file-name-nondirectory test-file))
+       (org-mcp-test--verify-file-matches
+        test-file org-mcp-test--regex-child-under-parent))))
+
 ;; Helper functions for testing org-update-todo-state MCP tool
 
 (defun org-mcp-test--call-update-todo-state-expecting-error
@@ -2660,20 +2793,28 @@ message string."
   (let ((org-todo-keywords
          '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
     (org-mcp-test--assert-error-and-file test-file
-      (let* ((request
-              (mcp-server-lib-create-tools-call-request
-               "org-update-todo-state" 1
-               `((uri . ,resource-uri)
-                 (current_state . ,current-state)
-                 (new_state . ,new-state))))
-             (response
-              (mcp-server-lib-process-jsonrpc-parsed
-               request mcp-server-lib-ert-server-id))
-             (result
-              (mcp-server-lib-ert-process-tool-response response)))
-        ;; If we get here, the tool succeeded when we expected failure
-        (error "Expected error but got success: %s" result))
+      (org-mcp-test--tool-error-or-die
+       "org-update-todo-state"
+       `((uri . ,resource-uri)
+         (current_state . ,current-state)
+         (new_state . ,new-state)))
       error-message-regex)))
+
+(defmacro org-mcp-test--assert-update-todo-error
+    (current-state new-state &optional error-regex)
+  "On `content-with-id-todo', assert updating `Task with ID' errors.
+CURRENT-STATE and NEW-STATE are passed to the update; ERROR-REGEX, if
+non-nil, must match the signalled error.  `test-file' is bound for the
+body."
+  (declare (debug (form form &optional form)))
+  `(org-mcp-test--with-temp-org-files
+       ((test-file org-mcp-test--content-with-id-todo))
+     (org-mcp-test--call-update-todo-state-expecting-error
+      test-file
+      (org-mcp-test--task-with-id-uri test-file)
+      ,current-state
+      ,new-state
+      ,error-regex)))
 
 (defun org-mcp-test--update-todo-state-and-check
     (resource-uri
@@ -2703,6 +2844,56 @@ EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer."
       (should (equal (alist-get 'uri result) resource-uri)))
     (org-mcp-test--verify-file-matches
      test-file expected-content-regex)))
+
+(defun org-mcp-test--update-task-to-in-progress (test-file)
+  "Update `Task with ID' in TEST-FILE from TODO to IN-PROGRESS and verify."
+  (org-mcp-test--update-todo-state-and-check
+   (org-mcp-test--task-with-id-uri test-file)
+   "TODO"
+   "IN-PROGRESS"
+   test-file
+   org-mcp-test--expected-task-with-id-in-progress-regex))
+
+(defun org-mcp-test--update-with-id-to-done ()
+  "Call org-update-todo-state TODO->DONE on the standard with-id URI."
+  (mcp-server-lib-ert-call-tool
+   "org-update-todo-state"
+   `((uri . ,org-mcp-test--content-with-id-uri)
+     (current_state . "TODO")
+     (new_state . "DONE"))))
+
+(defmacro org-mcp-test--with-id-fallback-scan
+    (track-globally &rest body)
+  "Set up an untracked-DB ID-resolution scenario and run BODY.
+TRACK-GLOBALLY binds `org-id-track-globally'.  `test-file' holds
+`content-with-id-todo' as the sole allowed file with no DB record."
+  (declare (indent 1) (debug (form body)))
+  `(org-mcp-test--with-temp-org-files
+       ((test-file org-mcp-test--content-with-id-todo))
+     (let ((org-id-track-globally ,track-globally)
+           (org-id-locations-file nil)
+           (org-id-locations nil)
+           (org-mcp-allowed-files (list test-file))
+           (org-todo-keywords
+            '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
+       ,@body)))
+
+(defmacro org-mcp-test--assert-clear-done-closed
+    (keep-closed expected-regex)
+  "On a DONE+CLOSED heading, clear the keyword and verify the CLOSED stamp.
+KEEP-CLOSED binds `org-closed-keep-when-no-todo'; EXPECTED-REGEX is the
+whole-file regex after clearing.  `org-log-done' is bound to `time'."
+  `(org-mcp-test--with-temp-org-files
+       ((test-file org-mcp-test--content-done-closed-id))
+     (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
+           (org-closed-keep-when-no-todo ,keep-closed)
+           (org-log-done 'time))
+       (org-mcp-test--update-todo-state-and-check
+        (format "org-headline://%s#Finished%%20task" test-file)
+        "DONE"
+        ""
+        test-file
+        ,expected-regex))))
 
 ;; Helper functions for testing org-read-headline MCP tool
 
@@ -2832,20 +3023,10 @@ message string."
                      test-file
                      headline-path-or-uri)))))
       (org-mcp-test--assert-error-and-file test-file
-        (let* ((params
-                `((uri . ,uri)
-                  (current_title . ,current-title)
-                  (new_title . ,new-title)))
-               (request
-                (mcp-server-lib-create-tools-call-request
-                 "org-rename-headline" 1 params))
-               (response
-                (mcp-server-lib-process-jsonrpc-parsed
-                 request mcp-server-lib-ert-server-id))
-               (result
-                (mcp-server-lib-ert-process-tool-response response)))
-          ;; If we get here, the tool succeeded when we expected failure
-          (error "Expected error but got success: %s" result))
+        (org-mcp-test--tool-error-or-die
+         "org-rename-headline"
+         `((uri . ,uri)
+           (current_title . ,current-title) (new_title . ,new-title)))
         error-message-regex))))
 
 ;; Helper functions for testing org-edit-body MCP tool
@@ -2906,22 +3087,74 @@ params alist directly.
 ERROR-MESSAGE-REGEX, if non-nil, must match the signalled error's
 message string."
   (org-mcp-test--assert-error-and-file test-file
-    (let* ((params
-            `((resource_uri . ,resource-uri)
-              (old_body . ,old-body)
-              (new_body . ,new-body)
-              (replace_all . ,replace-all)))
-           (request
-            (mcp-server-lib-create-tools-call-request
-             "org-edit-body" 1 params))
-           (response
-            (mcp-server-lib-process-jsonrpc-parsed
-             request mcp-server-lib-ert-server-id))
-           (result
-            (mcp-server-lib-ert-process-tool-response response)))
-      ;; If we get here, the tool succeeded when we expected failure
-      (error "Expected error but got success: %s" result))
+    (org-mcp-test--tool-error-or-die
+     "org-edit-body"
+     `((resource_uri . ,resource-uri)
+       (old_body . ,old-body)
+       (new_body . ,new-body)
+       (replace_all . ,replace-all)))
     error-message-regex))
+
+(defmacro org-mcp-test--assert-edit-body-with-id
+    (content old-body new-body pattern &optional replace-all)
+  "Set up CONTENT with the standard ID and assert a successful body edit.
+The edit targets `org-mcp-test--content-with-id-uri', replaces OLD-BODY
+with NEW-BODY, expects the file to match PATTERN, and forwards
+REPLACE-ALL.  `test-file' is bound for the body."
+  (declare (indent 1) (debug (form form form form &optional form)))
+  `(org-mcp-test--with-id-setup test-file ,content
+     (list org-mcp-test--content-with-id-id)
+     (org-mcp-test--call-edit-body-and-check
+      test-file
+      org-mcp-test--content-with-id-uri
+      ,old-body
+      ,new-body
+      ,pattern
+      ,replace-all
+      org-mcp-test--content-with-id-id)))
+
+(defmacro org-mcp-test--assert-edit-body-error
+    (content old-body new-body &optional replace-all error-regex)
+  "Set up CONTENT with the standard ID and assert an edit-body error.
+The edit targets `org-mcp-test--content-with-id-uri', replaces OLD-BODY
+with NEW-BODY, and forwards REPLACE-ALL and ERROR-REGEX.  `test-file' is
+bound for the body."
+  (declare (indent 1) (debug (form form form &optional form form)))
+  `(org-mcp-test--with-id-setup test-file ,content
+     (list org-mcp-test--content-with-id-id)
+     (org-mcp-test--call-edit-body-expecting-error
+      test-file org-mcp-test--content-with-id-uri ,old-body ,new-body
+      ,replace-all ,error-regex)))
+
+(defmacro org-mcp-test--assert-edit-body-repeated-error (replace-all)
+  "On repeated-text content, assert a multiple-occurrence edit error.
+REPLACE-ALL is the wire value under test; the safety guard must fire so
+the file is left unchanged.  `test-file' is bound for the body."
+  (declare (debug (form)))
+  `(org-mcp-test--with-id-setup test-file
+       org-mcp-test--content-with-id-repeated-text
+     (list "test-id")
+     (org-mcp-test--call-edit-body-expecting-error
+      test-file "org-id://test-id" "occurrence of pattern" "REPLACED"
+      ,replace-all)))
+
+(defmacro org-mcp-test--assert-edit-body-empty-timestamp
+    (new-body pattern)
+  "On an empty-body node with a timestamp ID, assert adding NEW-BODY.
+The file must match PATTERN afterwards and the timestamp ID is
+preserved.  `test-file' is bound for the body."
+  (declare (debug (form form)))
+  `(org-mcp-test--with-id-setup test-file
+       org-mcp-test--content-with-id-no-body
+     (list org-mcp-test--timestamp-id)
+     (org-mcp-test--call-edit-body-and-check
+      test-file
+      (format "org-id://%s" org-mcp-test--timestamp-id)
+      ""
+      ,new-body
+      ,pattern
+      nil
+      org-mcp-test--timestamp-id)))
 
 ;; Helper functions for testing org-read-file MCP tool
 
@@ -2930,6 +3163,38 @@ message string."
 FILE is the file path to read."
   (let ((params `((file . ,file))))
     (mcp-server-lib-ert-call-tool "org-read-file" params)))
+
+(defun org-mcp-test--call-get-agenda (params)
+  "Call the org-get-agenda tool with PARAMS; return the parsed result."
+  (json-read-from-string
+   (mcp-server-lib-ert-call-tool "org-get-agenda" params)))
+
+(defun org-mcp-test--get-agenda-expecting-error (params)
+  "Call org-get-agenda with PARAMS expecting a tool error."
+  (should-error
+   (mcp-server-lib-ert-process-tool-response
+    (mcp-server-lib-process-jsonrpc-parsed
+     (mcp-server-lib-create-tools-call-request
+      "org-get-agenda" nil params)
+     mcp-server-lib-ert-server-id))
+   :type 'mcp-server-lib-tool-error))
+
+(defmacro org-mcp-test--with-agenda-and-foreign-file (&rest body)
+  "Run BODY with `agenda-file' allowed and a `foreign-file' outside it.
+`agenda-file' holds the basic agenda content as the sole allowed file;
+`foreign-file' holds month content (deleted on exit) used to prove the
+agenda ignores files outside `org-mcp-allowed-files'."
+  (declare (indent 0) (debug (body)))
+  `(org-mcp-test--with-temp-org-files
+       ((agenda-file org-mcp-test--agenda-basic-content))
+     (let ((foreign-file
+            (make-temp-file
+             "org-mcp-foreign"
+             nil ".org" org-mcp-test--agenda-month-content)))
+       (unwind-protect
+           (progn
+             ,@body)
+         (delete-file foreign-file)))))
 
 ;; Helper functions for testing org-read-outline MCP tool
 
@@ -3003,15 +3268,18 @@ EXPECTED-PATTERN is a regex pattern the result should match."
   (mcp-server-lib-ert-verify-resource-read
    uri `((uri . ,uri) (text . ,text) (mimeType . "text/plain"))))
 
+(defun org-mcp-test--read-resource-response (uri)
+  "Read the MCP resource at URI; return the parsed JSON-RPC response alist."
+  (json-parse-string (mcp-server-lib-process-jsonrpc
+                      (mcp-server-lib-create-resources-read-request
+                       uri)
+                      mcp-server-lib-ert-server-id)
+                     :object-type 'alist))
+
 (defun org-mcp-test--read-resource-expecting-error
     (uri expected-error-message)
   "Read resource at URI expecting an error with EXPECTED-ERROR-MESSAGE."
-  (let* ((request (mcp-server-lib-create-resources-read-request uri))
-         (response-json
-          (mcp-server-lib-process-jsonrpc
-           request mcp-server-lib-ert-server-id))
-         (response
-          (json-parse-string response-json :object-type 'alist)))
+  (let ((response (org-mcp-test--read-resource-response uri)))
     (unless (assoc 'error response)
       (error "Expected error but got success for URI: %s" uri))
     (mcp-server-lib-ert-check-error-object
@@ -3022,12 +3290,7 @@ EXPECTED-PATTERN is a regex pattern the result should match."
 (defun org-mcp-test--verify-resource-text-matches
     (uri expected-pattern)
   "Read resource at URI, assert success and text matches EXPECTED-PATTERN."
-  (let* ((request (mcp-server-lib-create-resources-read-request uri))
-         (response-json
-          (mcp-server-lib-process-jsonrpc
-           request mcp-server-lib-ert-server-id))
-         (response
-          (json-parse-string response-json :object-type 'alist)))
+  (let ((response (org-mcp-test--read-resource-response uri)))
     (should-not (alist-get 'error response))
     (let ((contents
            (alist-get 'contents (alist-get 'result response))))
@@ -3069,24 +3332,18 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
   (org-mcp-test--with-get-todo-config-result '((sequence
                                                 "TODO(t!)"
                                                 "DONE(d!)"))
-    (should (= (length sequences) 1))
-    (org-mcp-test--check-todo-config-sequence
-     (aref sequences 0) "sequence" ["TODO(t!)" "|" "DONE(d!)"])
-    (should (= (length semantics) 2))
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 0) "TODO" nil "sequence")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 1) "DONE" t "sequence")))
+    (org-mcp-test--check-single-todo-config
+     sequences
+     semantics
+     "sequence"
+     ["TODO(t!)" "|" "DONE(d!)"]
+     '(("TODO" nil) ("DONE" t)))))
 
 (ert-deftest org-mcp-test-tool-get-todo-config-single-keyword ()
   "Test org-get-todo-config with single keyword."
   (org-mcp-test--with-get-todo-config-result '((sequence "DONE"))
-    (should (= (length sequences) 1))
-    (org-mcp-test--check-todo-config-sequence
-     (aref sequences 0) "sequence" ["|" "DONE"])
-    (should (= (length semantics) 1))
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 0) "DONE" t "sequence")))
+    (org-mcp-test--check-single-todo-config
+     sequences semantics "sequence" ["|" "DONE"] '(("DONE" t)))))
 
 (ert-deftest org-mcp-test-tool-get-todo-config-explicit-bar ()
   "Test org-get-todo-config with explicit | and multiple states."
@@ -3096,20 +3353,12 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
                                                 "|"
                                                 "DONE"
                                                 "CANCELLED"))
-    (should (= (length sequences) 1))
-    (org-mcp-test--check-todo-config-sequence
-     (aref sequences 0)
+    (org-mcp-test--check-single-todo-config
+     sequences
+     semantics
      "sequence"
-     ["TODO" "NEXT" "|" "DONE" "CANCELLED"])
-    (should (= (length semantics) 4))
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 0) "TODO" nil "sequence")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 1) "NEXT" nil "sequence")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 2) "DONE" t "sequence")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 3) "CANCELLED" t "sequence")))
+     ["TODO" "NEXT" "|" "DONE" "CANCELLED"]
+     '(("TODO" nil) ("NEXT" nil) ("DONE" t) ("CANCELLED" t)))))
 
 (ert-deftest org-mcp-test-tool-get-todo-config-type ()
   "Test org-get-todo-config with type keywords."
@@ -3119,18 +3368,12 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
                                                 "Lucy"
                                                 "|"
                                                 "DONE"))
-    (should (= (length sequences) 1))
-    (org-mcp-test--check-todo-config-sequence
-     (aref sequences 0) "type" ["Fred" "Sara" "Lucy" "|" "DONE"])
-    (should (= (length semantics) 4))
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 0) "Fred" nil "type")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 1) "Sara" nil "type")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 2) "Lucy" nil "type")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 3) "DONE" t "type")))
+    (org-mcp-test--check-single-todo-config
+     sequences
+     semantics
+     "type"
+     ["Fred" "Sara" "Lucy" "|" "DONE"]
+     '(("Fred" nil) ("Sara" nil) ("Lucy" nil) ("DONE" t)))))
 
 (ert-deftest org-mcp-test-tool-get-todo-config-multiple-sequences ()
   "Test org-get-todo-config with multiple sequences."
@@ -3166,14 +3409,12 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
   "Test org-get-todo-config with no done states."
   (org-mcp-test--with-get-todo-config-result '((sequence
                                                 "TODO" "NEXT" "|"))
-    (should (= (length sequences) 1))
-    (org-mcp-test--check-todo-config-sequence
-     (aref sequences 0) "sequence" ["TODO" "NEXT" "|"])
-    (should (= (length semantics) 2))
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 0) "TODO" nil "sequence")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 1) "NEXT" nil "sequence")))
+    (org-mcp-test--check-single-todo-config
+     sequences
+     semantics
+     "sequence"
+     ["TODO" "NEXT" "|"]
+     '(("TODO" nil) ("NEXT" nil)))))
 
 (ert-deftest org-mcp-test-tool-get-todo-config-type-no-separator ()
   "Test org-get-todo-config with type keywords and no separator."
@@ -3181,16 +3422,12 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
                                                 "BUG"
                                                 "FEATURE"
                                                 "ENHANCEMENT"))
-    (should (= (length sequences) 1))
-    (org-mcp-test--check-todo-config-sequence
-     (aref sequences 0) "type" ["BUG" "FEATURE" "|" "ENHANCEMENT"])
-    (should (= (length semantics) 3))
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 0) "BUG" nil "type")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 1) "FEATURE" nil "type")
-    (org-mcp-test--check-todo-config-semantic
-     (aref semantics 2) "ENHANCEMENT" t "type")))
+    (org-mcp-test--check-single-todo-config
+     sequences
+     semantics
+     "type"
+     ["BUG" "FEATURE" "|" "ENHANCEMENT"]
+     '(("BUG" nil) ("FEATURE" nil) ("ENHANCEMENT" t)))))
 
 ;;; org-get-tag-config tests
 
@@ -3331,10 +3568,8 @@ date header is deterministic regardless of ambient Org configuration."
       ((agenda-file org-mcp-test--agenda-basic-content))
     (let* ((org-agenda-format-date "%Y-%m-%d")
            (result
-            (json-read-from-string
-             (mcp-server-lib-ert-call-tool
-              "org-get-agenda"
-              '((view . "day") (date . "2026-04-26")))))
+            (org-mcp-test--call-get-agenda
+             '((view . "day") (date . "2026-04-26"))))
            (agenda (alist-get 'agenda result))
            (view (alist-get 'view result))
            (date (alist-get 'date result))
@@ -3355,10 +3590,8 @@ boundary is deterministic."
       ((agenda-file org-mcp-test--agenda-basic-content))
     (let* ((org-agenda-start-on-weekday 1)
            (result
-            (json-read-from-string
-             (mcp-server-lib-ert-call-tool
-              "org-get-agenda"
-              '((view . "week") (date . "2026-04-26")))))
+            (org-mcp-test--call-get-agenda
+             '((view . "week") (date . "2026-04-26"))))
            (agenda (alist-get 'agenda result))
            (view (alist-get 'view result))
            (date (alist-get 'date result))
@@ -3378,10 +3611,8 @@ rolling 30-day window from the 26th would wrongly include."
   (org-mcp-test--with-temp-org-files
       ((agenda-file org-mcp-test--agenda-month-content))
     (let* ((result
-            (json-read-from-string
-             (mcp-server-lib-ert-call-tool
-              "org-get-agenda"
-              '((view . "month") (date . "2026-04-26")))))
+            (org-mcp-test--call-get-agenda
+             '((view . "month") (date . "2026-04-26"))))
            (agenda (alist-get 'agenda result))
            (view (alist-get 'view result))
            (date (alist-get 'date result))
@@ -3397,10 +3628,8 @@ rolling 30-day window from the 26th would wrongly include."
   (org-mcp-test--with-temp-org-files
       ((agenda-file org-mcp-test--agenda-basic-content))
     (let* ((result
-            (json-read-from-string
-             (mcp-server-lib-ert-call-tool
-              "org-get-agenda"
-              '((view . "DaY") (date . "2026-04-26")))))
+            (org-mcp-test--call-get-agenda
+             '((view . "DaY") (date . "2026-04-26"))))
            (view (alist-get 'view result)))
       (should (string= view "day")))))
 
@@ -3409,31 +3638,15 @@ rolling 30-day window from the 26th would wrongly include."
   (let ((org-mcp-allowed-files
          '("/no/such/org-mcp-agenda-test-file.org")))
     (org-mcp-test--with-enabled
-      (let* ((params '((view . "day") (date . "2026-04-26")))
-             (request
-              (mcp-server-lib-create-tools-call-request
-               "org-get-agenda" nil params))
-             (response
-              (mcp-server-lib-process-jsonrpc-parsed
-               request mcp-server-lib-ert-server-id)))
-        (should-error
-         (mcp-server-lib-ert-process-tool-response response)
-         :type 'mcp-server-lib-tool-error)))))
+      (org-mcp-test--get-agenda-expecting-error
+       '((view . "day") (date . "2026-04-26"))))))
 
 (ert-deftest org-mcp-test-tool-get-agenda-bad-view ()
   "Test org-get-agenda errors on invalid view."
   (org-mcp-test--with-temp-org-files
       ((agenda-file org-mcp-test--agenda-basic-content))
-    (let* ((params '((view . "fortnight") (date . "2026-04-26")))
-           (request
-            (mcp-server-lib-create-tools-call-request
-             "org-get-agenda" nil params))
-           (response
-            (mcp-server-lib-process-jsonrpc-parsed
-             request mcp-server-lib-ert-server-id)))
-      (should-error
-       (mcp-server-lib-ert-process-tool-response response)
-       :type 'mcp-server-lib-tool-error))))
+    (org-mcp-test--get-agenda-expecting-error
+     '((view . "fortnight") (date . "2026-04-26")))))
 
 (ert-deftest org-mcp-test-tool-get-agenda-default-date ()
   "Test org-get-agenda reports the literal \"today\" when date is omitted.
@@ -3442,10 +3655,7 @@ literal string \"today\" in the JSON `date' field and still renders an
 agenda."
   (org-mcp-test--with-temp-org-files
       ((agenda-file org-mcp-test--agenda-basic-content))
-    (let* ((result
-            (json-read-from-string
-             (mcp-server-lib-ert-call-tool
-              "org-get-agenda" '((view . "day")))))
+    (let* ((result (org-mcp-test--call-get-agenda '((view . "day"))))
            (agenda (alist-get 'agenda result))
            (view (alist-get 'view result))
            (date (alist-get 'date result)))
@@ -3461,10 +3671,7 @@ day/week/month matrix: omitting `date' returns the literal string
 \"today\" in the JSON `date' field and still renders an agenda."
   (org-mcp-test--with-temp-org-files
       ((agenda-file org-mcp-test--agenda-basic-content))
-    (let* ((result
-            (json-read-from-string
-             (mcp-server-lib-ert-call-tool
-              "org-get-agenda" '((view . "week")))))
+    (let* ((result (org-mcp-test--call-get-agenda '((view . "week"))))
            (agenda (alist-get 'agenda result))
            (view (alist-get 'view result))
            (date (alist-get 'date result)))
@@ -3492,9 +3699,7 @@ different day to prove the global does not leak into the resolved
                  (calendar-absolute-from-gregorian '(6 1 2026)))))
       (let* ((org-agenda-start-day "2026-06-10")
              (result
-              (json-read-from-string
-               (mcp-server-lib-ert-call-tool
-                "org-get-agenda" '((view . "day")))))
+              (org-mcp-test--call-get-agenda '((view . "day"))))
              (view (alist-get 'view result))
              (date (alist-get 'date result))
              (start-day (alist-get 'start_day result)))
@@ -3523,10 +3728,8 @@ unrecognized input -- resolution org-mcp deliberately delegates to Org."
                       (calendar-absolute-from-gregorian
                        '(6 1 2026)))))))
         (let* ((result
-                (json-read-from-string
-                 (mcp-server-lib-ert-call-tool
-                  "org-get-agenda"
-                  '((view . "day") (date . "notadate")))))
+                (org-mcp-test--call-get-agenda
+                 '((view . "day") (date . "notadate"))))
                (agenda (alist-get 'agenda result))
                (date (alist-get 'date result)))
           (should (equal forwarded-start-day "notadate"))
@@ -3552,10 +3755,8 @@ asserted."
                    (setq forwarded-date from-string)
                    (encode-time (list 0 0 12 1 6 2026 nil -1 nil)))))
         (let* ((result
-                (json-read-from-string
-                 (mcp-server-lib-ert-call-tool
-                  "org-get-agenda"
-                  '((view . "month") (date . "notadate")))))
+                (org-mcp-test--call-get-agenda
+                 '((view . "month") (date . "notadate"))))
                (agenda (alist-get 'agenda result))
                (view (alist-get 'view result))
                (date (alist-get 'date result)))
@@ -3571,16 +3772,8 @@ silently treated as omitted: clients must omit the key to get today."
   (org-mcp-test--with-temp-org-files
       ((agenda-file org-mcp-test--agenda-basic-content))
     (dolist (blank-date '("" " " "\u00A0"))
-      (let* ((params `((view . "day") (date . ,blank-date)))
-             (request
-              (mcp-server-lib-create-tools-call-request
-               "org-get-agenda" nil params))
-             (response
-              (mcp-server-lib-process-jsonrpc-parsed
-               request mcp-server-lib-ert-server-id)))
-        (should-error
-         (mcp-server-lib-ert-process-tool-response response)
-         :type 'mcp-server-lib-tool-error)))))
+      (org-mcp-test--get-agenda-expecting-error
+       `((view . "day") (date . ,blank-date))))))
 
 (ert-deftest org-mcp-test-tool-get-agenda-ignores-other-agenda-files
     ()
@@ -3589,23 +3782,14 @@ Pins the scope-isolation contract: the agenda is built only from
 `org-mcp-allowed-files', so a task in a file listed in the variable
 `org-agenda-files' but not in the allowed list must not leak into the
 result, while the allowed file's task still appears."
-  (org-mcp-test--with-temp-org-files
-      ((agenda-file org-mcp-test--agenda-basic-content))
-    (let ((foreign-file
-           (make-temp-file
-            "org-mcp-foreign"
-            nil ".org" org-mcp-test--agenda-month-content)))
-      (unwind-protect
-          (let* ((org-agenda-files (list foreign-file))
-                 (result
-                  (json-read-from-string
-                   (mcp-server-lib-ert-call-tool
-                    "org-get-agenda"
-                    '((view . "day") (date . "2026-04-26")))))
-                 (agenda (alist-get 'agenda result)))
-            (should (string-match "Test agenda line" agenda))
-            (should-not (string-match "On reference day" agenda)))
-        (delete-file foreign-file)))))
+  (org-mcp-test--with-agenda-and-foreign-file
+    (let* ((org-agenda-files (list foreign-file))
+           (result
+            (org-mcp-test--call-get-agenda
+             '((view . "day") (date . "2026-04-26"))))
+           (agenda (alist-get 'agenda result)))
+      (should (string-match "Test agenda line" agenda))
+      (should-not (string-match "On reference day" agenda)))))
 
 (ert-deftest
     org-mcp-test-tool-get-agenda-ignores-file-restriction-lock
@@ -3620,13 +3804,8 @@ must still build only from the
 allowed files, so the foreign task must not leak.  The lock state is
 restored afterward so a concurrent interactive agenda keeps its
 restriction."
-  (org-mcp-test--with-temp-org-files
-      ((agenda-file org-mcp-test--agenda-basic-content))
-    (let ((foreign-file
-           (make-temp-file
-            "org-mcp-foreign"
-            nil ".org" org-mcp-test--agenda-month-content))
-          (saved-restrict (get 'org-agenda-files 'org-restrict)))
+  (org-mcp-test--with-agenda-and-foreign-file
+    (let ((saved-restrict (get 'org-agenda-files 'org-restrict)))
       (unwind-protect
           (let* ((foreign-truename (file-truename foreign-file))
                  (org-agenda-restrict t)
@@ -3634,10 +3813,8 @@ restriction."
             (put
              'org-agenda-files 'org-restrict (list foreign-truename))
             (let* ((result
-                    (json-read-from-string
-                     (mcp-server-lib-ert-call-tool
-                      "org-get-agenda"
-                      '((view . "day") (date . "2026-04-26")))))
+                    (org-mcp-test--call-get-agenda
+                     '((view . "day") (date . "2026-04-26"))))
                    (agenda (alist-get 'agenda result)))
               (should (string-match "Test agenda line" agenda))
               (should-not (string-match "On reference day" agenda))
@@ -3645,8 +3822,7 @@ restriction."
                (equal
                 (get 'org-agenda-files 'org-restrict)
                 (list foreign-truename)))))
-        (put 'org-agenda-files 'org-restrict saved-restrict)
-        (delete-file foreign-file)))))
+        (put 'org-agenda-files 'org-restrict saved-restrict)))))
 
 (ert-deftest
     org-mcp-test-tool-get-agenda-ignores-subtree-restriction-lock
@@ -3679,10 +3855,8 @@ must appear."
              'org-restrict
              (list (file-truename agenda-file)))
             (let* ((result
-                    (json-read-from-string
-                     (mcp-server-lib-ert-call-tool
-                      "org-get-agenda"
-                      '((view . "day") (date . "2026-04-26")))))
+                    (org-mcp-test--call-get-agenda
+                     '((view . "day") (date . "2026-04-26"))))
                    (agenda (alist-get 'agenda result)))
               (should (string-match "First agenda task" agenda))
               (should (string-match "Second agenda task" agenda))))
@@ -3759,10 +3933,8 @@ month/year extraction that only the month span performs."
   (org-mcp-test--with-temp-org-files
       ((agenda-file org-mcp-test--agenda-basic-content))
     (let* ((result
-            (json-read-from-string
-             (mcp-server-lib-ert-call-tool
-              "org-get-agenda"
-              '((view . "month") (date . "2025-02-15")))))
+            (org-mcp-test--call-get-agenda
+             '((view . "month") (date . "2025-02-15"))))
            (view (alist-get 'view result))
            (start-day (alist-get 'start_day result)))
       (should (string= view "month"))
@@ -3783,9 +3955,7 @@ the test host's clock and timezone."
                (lambda ()
                  (encode-time (list 0 0 12 15 6 2027 nil -1 nil)))))
       (let* ((result
-              (json-read-from-string
-               (mcp-server-lib-ert-call-tool
-                "org-get-agenda" '((view . "month")))))
+              (org-mcp-test--call-get-agenda '((view . "month"))))
              (view (alist-get 'view result))
              (start-day (alist-get 'start_day result)))
         (should (string= view "month"))
@@ -3801,10 +3971,8 @@ rather than the preceding Monday."
       ((agenda-file org-mcp-test--agenda-basic-content))
     (let* ((org-agenda-start-on-weekday nil)
            (result
-            (json-read-from-string
-             (mcp-server-lib-ert-call-tool
-              "org-get-agenda"
-              '((view . "week") (date . "2026-04-26")))))
+            (org-mcp-test--call-get-agenda
+             '((view . "week") (date . "2026-04-26"))))
            (view (alist-get 'view result))
            (start-day (alist-get 'start_day result)))
       (should (string= view "week"))
@@ -3827,10 +3995,8 @@ from outside the allow-list into the result."
             (let* ((org-mcp-allowed-files
                     (list agenda-file foreign-dir))
                    (result
-                    (json-read-from-string
-                     (mcp-server-lib-ert-call-tool
-                      "org-get-agenda"
-                      '((view . "day") (date . "2026-04-26")))))
+                    (org-mcp-test--call-get-agenda
+                     '((view . "day") (date . "2026-04-26"))))
                    (agenda (alist-get 'agenda result)))
               (should (string-match "Test agenda line" agenda))
               (should-not (string-match "On reference day" agenda))))
@@ -3872,15 +4038,7 @@ rather than leak a hidden buffer."
              '((sequence
                 "TODO(t!)" "IN-PROGRESS(i!)" "|" "DONE(d!)"))))
         ;; Update TODO to IN-PROGRESS
-        (let ((resource-uri
-               (format "org-headline://%s#Task%%20with%%20ID"
-                       test-file)))
-          (org-mcp-test--update-todo-state-and-check
-           resource-uri
-           "TODO"
-           "IN-PROGRESS"
-           test-file
-           org-mcp-test--expected-task-with-id-in-progress-regex))))))
+        (org-mcp-test--update-task-to-in-progress test-file)))))
 
 (ert-deftest org-mcp-test-update-todo-state-clear ()
   "Setting `new_state' to empty string clears the TODO keyword.
@@ -3890,8 +4048,7 @@ The heading keeps its ID, properties, and body, mirroring an
     (org-mcp-test--with-temp-org-files ((test-file test-content))
       (let ((org-todo-keywords '((sequence "TODO" "|" "DONE"))))
         (let ((resource-uri
-               (format "org-headline://%s#Task%%20with%%20ID"
-                       test-file)))
+               (org-mcp-test--task-with-id-uri test-file)))
           (org-mcp-test--update-todo-state-and-check
            resource-uri
            "TODO"
@@ -3903,50 +4060,19 @@ The heading keeps its ID, properties, and body, mirroring an
   "Clearing the keyword from a DONE heading keeps its CLOSED stamp.
 This holds when `org-closed-keep-when-no-todo' is t, even with
 `org-log-done' enabling stamp removal for the nil case."
-  (let ((test-content org-mcp-test--content-done-closed-id))
-    (org-mcp-test--with-temp-org-files ((test-file test-content))
-      (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            (org-closed-keep-when-no-todo t)
-            (org-log-done 'time))
-        (let ((resource-uri
-               (format "org-headline://%s#Finished%%20task"
-                       test-file)))
-          (org-mcp-test--update-todo-state-and-check
-           resource-uri
-           "DONE"
-           ""
-           test-file
-           org-mcp-test--expected-regex-done-cleared-keeps-closed))))))
+  (org-mcp-test--assert-clear-done-closed
+   t org-mcp-test--expected-regex-done-cleared-keeps-closed))
 
 (ert-deftest org-mcp-test-update-todo-state-clear-removes-closed ()
   "Clearing the keyword from a DONE heading drops its CLOSED stamp.
 This needs both `org-closed-keep-when-no-todo' nil and `org-log-done'
 set; with either condition unmet the stamp is kept."
-  (let ((test-content org-mcp-test--content-done-closed-id))
-    (org-mcp-test--with-temp-org-files ((test-file test-content))
-      (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
-            (org-closed-keep-when-no-todo nil)
-            (org-log-done 'time))
-        (let ((resource-uri
-               (format "org-headline://%s#Finished%%20task"
-                       test-file)))
-          (org-mcp-test--update-todo-state-and-check
-           resource-uri
-           "DONE"
-           ""
-           test-file
-           org-mcp-test--expected-regex-done-cleared-removes-closed))))))
+  (org-mcp-test--assert-clear-done-closed
+   nil org-mcp-test--expected-regex-done-cleared-removes-closed))
 
 (ert-deftest org-mcp-test-update-todo-state-mismatch ()
   "Test TODO state update fails on state mismatch."
-  (let ((test-content org-mcp-test--content-with-id-todo))
-    (org-mcp-test--with-temp-org-files ((test-file test-content))
-      ;; Try to update with wrong current state
-      (let ((resource-uri
-             (format "org-headline://%s#Task%%20with%%20ID"
-                     test-file)))
-        (org-mcp-test--call-update-todo-state-expecting-error
-         test-file resource-uri "IN-PROGRESS" "DONE")))))
+  (org-mcp-test--assert-update-todo-error "IN-PROGRESS" "DONE"))
 
 (ert-deftest org-mcp-test-update-todo-state-empty-on-no-state-heading
     ()
@@ -3982,13 +4108,7 @@ The complement of `empty-on-no-state-heading': the comparison must
 remain strict when the heading actually has a TODO state, so a
 caller asserting `\"\"' on a `TODO' heading still gets a state
 mismatch."
-  (let ((test-content org-mcp-test--content-with-id-todo))
-    (org-mcp-test--with-temp-org-files ((test-file test-content))
-      (let ((resource-uri
-             (format "org-headline://%s#Task%%20with%%20ID"
-                     test-file)))
-        (org-mcp-test--call-update-todo-state-expecting-error
-         test-file resource-uri "" "DONE")))))
+  (org-mcp-test--assert-update-todo-error "" "DONE"))
 
 (ert-deftest org-mcp-test-update-todo-with-timestamp-id ()
   "Test updating TODO state using timestamp-format ID (not UUID)."
@@ -4006,29 +4126,16 @@ mismatch."
 
 (ert-deftest org-mcp-test-update-todo-state-invalid ()
   "Test TODO state update fails for invalid new state."
-  (let ((test-content org-mcp-test--content-with-id-todo))
-    (org-mcp-test--with-temp-org-files ((test-file test-content))
-      ;; Try to update to invalid state
-      (let ((resource-uri
-             (format "org-headline://%s#Task%%20with%%20ID"
-                     test-file)))
-        (org-mcp-test--call-update-todo-state-expecting-error
-         test-file resource-uri "TODO" "INVALID-STATE")))))
+  (org-mcp-test--assert-update-todo-error "TODO" "INVALID-STATE"))
 
 (ert-deftest org-mcp-test-update-todo-state-non-string-current-state
     ()
   "Pin that non-string `current_state' is rejected at the tool boundary.
 `org-mcp--validate-string-field' fires before the internal `string='
 state-match comparison would signal `wrong-type-argument'."
-  (let ((test-content org-mcp-test--content-with-id-todo))
-    (org-mcp-test--with-temp-org-files ((test-file test-content))
-      (let ((resource-uri
-             (format "org-headline://%s#Task%%20with%%20ID"
-                     test-file)))
-        (org-mcp-test--call-update-todo-state-expecting-error
-         test-file resource-uri 42 "DONE"
-         (org-mcp-test--field-non-string-regex
-          "current_state" 42))))))
+  (org-mcp-test--assert-update-todo-error
+   42 "DONE"
+   (org-mcp-test--field-non-string-regex "current_state" 42)))
 
 (ert-deftest
     org-mcp-test-update-todo-state-null-current-state-rejected
@@ -4040,15 +4147,9 @@ undocumented working path that happened to match no-TODO-state
 headings because `(string= nil nil)' returns t.  After dropping
 `allow-nil', nil takes the same rejection path as any other
 non-string."
-  (let ((test-content org-mcp-test--content-with-id-todo))
-    (org-mcp-test--with-temp-org-files ((test-file test-content))
-      (let ((resource-uri
-             (format "org-headline://%s#Task%%20with%%20ID"
-                     test-file)))
-        (org-mcp-test--call-update-todo-state-expecting-error
-         test-file resource-uri nil "DONE"
-         (org-mcp-test--field-non-string-regex
-          "current_state" nil))))))
+  (org-mcp-test--assert-update-todo-error
+   nil "DONE"
+   (org-mcp-test--field-non-string-regex "current_state" nil)))
 
 (ert-deftest org-mcp-test-update-todo-state-non-string-uri ()
   "Pin that non-string `uri' is rejected at the tool boundary.
@@ -4062,19 +4163,12 @@ parsing runs."
 
 (ert-deftest org-mcp-test-update-todo-state-non-string-new-state ()
   "Pin that non-string `new_state' is rejected at the tool boundary.
-Locks the tool-boundary string-field guard ahead of the value-keyword
-guard: `org-mcp--validate-string-field' fires before
-`org-mcp--validate-todo-state' so all string parameters share the
-same error class regardless of whether the value is also
-keyword-constrained."
-  (let ((test-content org-mcp-test--content-with-id-todo))
-    (org-mcp-test--with-temp-org-files ((test-file test-content))
-      (let ((resource-uri
-             (format "org-headline://%s#Task%%20with%%20ID"
-                     test-file)))
-        (org-mcp-test--call-update-todo-state-expecting-error
-         test-file resource-uri "TODO" 42
-         (org-mcp-test--field-non-string-regex "new_state" 42))))))
+The string-field guard runs ahead of the todo-state keyword check, so
+a non-string `new_state' fails as a plain type error rather than
+reaching `org-mcp--validate-todo-state'."
+  (org-mcp-test--assert-update-todo-error
+   "TODO" 42
+   (org-mcp-test--field-non-string-regex "new_state" 42)))
 
 (ert-deftest org-mcp-test-update-todo-state-with-open-buffer ()
   "Test TODO state update works when file is open in another buffer."
@@ -4085,21 +4179,14 @@ keyword-constrained."
         ;; Open the file in a buffer
         (org-mcp-test--with-file-buffer buffer test-file
           ;; Update TODO state while buffer is open
-          (let ((resource-uri
-                 (format "org-headline://%s#Task%%20with%%20ID"
-                         test-file)))
-            (org-mcp-test--update-todo-state-and-check
-             resource-uri
-             "TODO"
-             "IN-PROGRESS"
-             test-file
-             org-mcp-test--expected-task-with-id-in-progress-regex)
-            ;; Verify the buffer was also updated
-            (with-current-buffer buffer
-              (goto-char (point-min))
-              (should
-               (re-search-forward "^\\* IN-PROGRESS Task with ID"
-                                  nil t)))))))))
+          (org-mcp-test--update-task-to-in-progress test-file)
+          ;; Verify the buffer was also updated
+          (with-current-buffer buffer
+            (goto-char (point-min))
+            (should
+             (re-search-forward "^\\* IN-PROGRESS Task with ID"
+                                nil
+                                t))))))))
 
 (ert-deftest org-mcp-test-update-todo-state-with-modified-buffer ()
   "Test TODO state update fails when buffer has unsaved changes."
@@ -4158,26 +4245,15 @@ of re-scanning every allowed file.  Without this test, a
 regression that silently dropped the `org-id-add-location' call
 would still pass every existing ID-using test because they all
 pre-register IDs via `with-id-setup'."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-with-id-todo))
-    (let ((org-id-track-globally t)
-          (org-id-locations-file nil)
-          (org-id-locations nil)
-          (org-mcp-allowed-files (list test-file))
-          (org-todo-keywords
-           '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-      (should-not
+  (org-mcp-test--with-id-fallback-scan t
+    (should-not
+     (org-id-find-id-file org-mcp-test--content-with-id-id))
+    (org-mcp-test--update-with-id-to-done)
+    (should
+     (equal
+      (file-truename
        (org-id-find-id-file org-mcp-test--content-with-id-id))
-      (mcp-server-lib-ert-call-tool
-       "org-update-todo-state"
-       `((uri . ,org-mcp-test--content-with-id-uri)
-         (current_state . "TODO")
-         (new_state . "DONE")))
-      (should
-       (equal
-        (file-truename
-         (org-id-find-id-file org-mcp-test--content-with-id-id))
-        (file-truename test-file))))))
+      (file-truename test-file)))))
 
 (ert-deftest
     org-mcp-test-id-fallback-scan-skips-cache-when-tracking-off
@@ -4187,21 +4263,10 @@ The gate is `org-id-track-globally' nil: users who have opted out of
 global ID tracking must not get implicit `org-id-locations' mutations
 from MCP tool calls; the fallback scan still resolves the ID and the
 tool succeeds, but the DB stays untouched."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-with-id-todo))
-    (let ((org-id-track-globally nil)
-          (org-id-locations-file nil)
-          (org-id-locations nil)
-          (org-mcp-allowed-files (list test-file))
-          (org-todo-keywords
-           '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-      (mcp-server-lib-ert-call-tool
-       "org-update-todo-state"
-       `((uri . ,org-mcp-test--content-with-id-uri)
-         (current_state . "TODO")
-         (new_state . "DONE")))
-      (should-not
-       (org-id-find-id-file org-mcp-test--content-with-id-id)))))
+  (org-mcp-test--with-id-fallback-scan nil
+    (org-mcp-test--update-with-id-to-done)
+    (should-not
+     (org-id-find-id-file org-mcp-test--content-with-id-id))))
 
 (ert-deftest
     org-mcp-test-id-fallback-scan-tolerates-cache-write-failure
@@ -4212,23 +4277,12 @@ When the fallback scan finds the ID, the cache write into
 call (locked file, write error, broken DB) must not surface as a tool
 error, because the resolution semantically already succeeded by the
 time the cache write is attempted."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-with-id-todo))
-    (let ((org-id-track-globally t)
-          (org-id-locations-file nil)
-          (org-id-locations nil)
-          (org-mcp-allowed-files (list test-file))
-          (org-todo-keywords
-           '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-      (should-not
-       (org-id-find-id-file org-mcp-test--content-with-id-id))
-      (cl-letf (((symbol-function 'org-id-add-location)
-                 (lambda (&rest _) (error "Cache write boom"))))
-        (mcp-server-lib-ert-call-tool
-         "org-update-todo-state"
-         `((uri . ,org-mcp-test--content-with-id-uri)
-           (current_state . "TODO")
-           (new_state . "DONE")))))))
+  (org-mcp-test--with-id-fallback-scan t
+    (should-not
+     (org-id-find-id-file org-mcp-test--content-with-id-id))
+    (cl-letf (((symbol-function 'org-id-add-location)
+               (lambda (&rest _) (error "Cache write boom"))))
+      (org-mcp-test--update-with-id-to-done))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
   "Test TODO state update fails for non-existent headline path."
@@ -4258,14 +4312,9 @@ a malformed `:PROPERTIES:' drawer is rejected before any modification."
 
 (ert-deftest org-mcp-test-add-todo-top-level ()
   "Test adding a top-level TODO item."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-new-task-and-check
    org-mcp-test--content-empty
-   "New Task"
-   "TODO"
-   '("work" "urgent")
-   nil ; no body
-   (format "org-headline://%s#" test-file)
-   (file-name-nondirectory test-file)
+   "org-headline://%s#"
    org-mcp-test--regex-top-level-todo))
 
 (ert-deftest org-mcp-test-add-todo-no-keyword ()
@@ -4298,14 +4347,9 @@ a malformed `:PROPERTIES:' drawer is rejected before any modification."
 The README documents `org-headline://filename.org/' as the
 canonical top-level form; verify it parses as a no-fragment
 top-level reference equivalently to the bare and empty-`#' forms."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-new-task-and-check
    org-mcp-test--content-empty
-   "New Task"
-   "TODO"
-   '("work" "urgent")
-   nil ; no body
-   (format "org-headline://%s/" test-file)
-   (file-name-nondirectory test-file)
+   "org-headline://%s/"
    org-mcp-test--regex-top-level-todo))
 
 (ert-deftest
@@ -4322,41 +4366,26 @@ be called with an empty title.  Companion to
 `add-todo-top-level-trailing-slash-parent-uri' (slash, no `#')
 and `add-todo-child-parent-uri-trailing-slash-before-fragment'
 \(slash + populated fragment)."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-new-task-and-check
    org-mcp-test--content-empty
-   "New Task"
-   "TODO"
-   '("work" "urgent")
-   nil ; no body
-   (format "org-headline://%s/#" test-file)
-   (file-name-nondirectory test-file)
+   "org-headline://%s/#"
    org-mcp-test--regex-top-level-todo))
 
 (ert-deftest org-mcp-test-add-todo-top-level-position-start-empty-file
     ()
   "Test position=\"start\" on an empty file behaves like default."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-new-task-and-check
    org-mcp-test--content-empty
-   "New Task"
-   "TODO"
-   '("work" "urgent")
-   nil ; no body
-   (format "org-headline://%s#" test-file)
-   (file-name-nondirectory test-file)
+   "org-headline://%s#"
    org-mcp-test--regex-top-level-todo
    :position "start"))
 
 (ert-deftest org-mcp-test-add-todo-top-level-position-end-empty-file
     ()
   "Test position=\"end\" on an empty file behaves like default."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-new-task-and-check
    org-mcp-test--content-empty
-   "New Task"
-   "TODO"
-   '("work" "urgent")
-   nil ; no body
-   (format "org-headline://%s#" test-file)
-   (file-name-nondirectory test-file)
+   "org-headline://%s#"
    org-mcp-test--regex-top-level-todo
    :position "end"))
 
@@ -4372,14 +4401,9 @@ paragraph is preserved as zeroth-section content rather than being
 absorbed into the new heading's body.  Pins the don't-absorb rule
 the walker design encodes (see the `#'-prefixed branch's comment
 in `org-mcp--skip-file-header-element')."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-new-task-and-check
    org-mcp-test--content-title-and-paragraph
-   "New Task"
-   "TODO"
-   '("work" "urgent")
-   nil ; no body
-   (format "org-headline://%s#" test-file)
-   (file-name-nondirectory test-file)
+   "org-headline://%s#"
    org-mcp-test--regex-top-level-paragraph-no-heading
    :position "end"))
 
@@ -4392,14 +4416,9 @@ with `end' at end-of-buffer; otherwise the paragraph that the
 walker stopped on would be absorbed into the new heading's body.
 Locks the same don't-absorb rule as the `position=\"end\"' twin
 test for the `start' branch of `insert-top-level-heading'."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-new-task-and-check
    org-mcp-test--content-title-and-paragraph
-   "New Task"
-   "TODO"
-   '("work" "urgent")
-   nil ; no body
-   (format "org-headline://%s#" test-file)
-   (file-name-nondirectory test-file)
+   "org-headline://%s#"
    org-mcp-test--regex-top-level-paragraph-no-heading
    :position "start"))
 
@@ -4409,14 +4428,9 @@ Locks the `insert-top-level-heading' empty-branch contract for the
 `file-header only' case: with `#+TITLE:' present but no existing
 heading, the new heading must be inserted flush after the title and
 the existing header content preserved verbatim."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-new-task-and-check
    org-mcp-test--content-title-only
-   "New Task"
-   "TODO"
-   '("work" "urgent")
-   nil ; no body
-   (format "org-headline://%s#" test-file)
-   (file-name-nondirectory test-file)
+   "org-headline://%s#"
    org-mcp-test--regex-top-level-todo-after-title-only))
 
 (ert-deftest org-mcp-test-add-todo-top-level-position-start-title-only
@@ -4427,14 +4441,9 @@ Exercises the `has-headline=nil' arm of
 The empty-file tests don't catch a regression in that arm (no
 header to differ on), and the title-only-default test doesn't
 either (POSITION=nil); this one does."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-new-task-and-check
    org-mcp-test--content-title-only
-   "New Task"
-   "TODO"
-   '("work" "urgent")
-   nil ; no body
-   (format "org-headline://%s#" test-file)
-   (file-name-nondirectory test-file)
+   "org-headline://%s#"
    org-mcp-test--regex-top-level-todo-after-title-only
    :position "start"))
 
@@ -4741,14 +4750,8 @@ keyword-constrained."
 
 (ert-deftest org-mcp-test-add-todo-child-under-parent ()
   "Test adding a child TODO under an existing parent."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-child-task-and-check
    org-mcp-test--content-nested-siblings
-   "Child Task"
-   "TODO"
-   '("work")
-   nil ; no body
-   (format "org-headline://%s#Parent%%20Task" test-file)
-   (file-name-nondirectory test-file)
    org-mcp-test--regex-child-under-parent))
 
 (ert-deftest
@@ -4862,23 +4865,14 @@ boundary.  EXPECTED-SUBSTR is a literal substring of the expected
 Used to lock the validation-boundary error class for malformed URIs
 that previously surfaced as a misleading downstream error."
   (org-mcp-test--with-temp-org-files ((test-file ""))
-    (let* ((params
-            (org-mcp-test--build-add-todo-params
-             "Task" "TODO" nil nil parent-uri
-             nil))
-           (request
-            (mcp-server-lib-create-tools-call-request
-             "org-add-todo" 1 params))
-           (response
-            (mcp-server-lib-process-jsonrpc-parsed
-             request mcp-server-lib-ert-server-id))
-           (err
-            (should-error
-             (mcp-server-lib-ert-process-tool-response response)
-             :type 'mcp-server-lib-tool-error)))
-      (should
-       (string-match-p
-        (regexp-quote expected-substr) (error-message-string err))))))
+    (should
+     (string-match-p
+      (regexp-quote expected-substr)
+      (org-mcp-test--tool-call-error-message
+       "org-add-todo"
+       (org-mcp-test--build-add-todo-params
+        "Task" "TODO" nil nil parent-uri
+        nil))))))
 
 (ert-deftest org-mcp-test-add-todo-bare-org-id-parent-uri-rejected ()
   "Bare `org-id://' parent_uri is rejected at the validation boundary.
@@ -4989,28 +4983,7 @@ directly with `(cons 'after_uri nil)' so the wire-null contract is
 pinned independent of helper shape -- a future helper that omits
 nil keys would otherwise silently strip the only coverage of the
 JSON-null wire form."
-  (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-nested-siblings
-    nil
-    nil
-    nil
-    (let* ((params
-            (list
-             (cons 'title "Child Task")
-             (cons 'todo_state "TODO")
-             (cons 'tags '("work"))
-             (cons 'body nil)
-             (cons
-              'parent_uri
-              (format "org-headline://%s#Parent%%20Task" test-file))
-             (cons 'after_uri nil)))
-           (result-text
-            (mcp-server-lib-ert-call-tool "org-add-todo" params))
-           (result (json-read-from-string result-text)))
-      (org-mcp-test--assert-add-todo-result-shape
-       result "Child Task" (file-name-nondirectory test-file))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--regex-child-under-parent))))
+  (org-mcp-test--assert-add-todo-wire-null-accepted 'after_uri))
 
 (ert-deftest org-mcp-test-add-todo-position-nil-wire-accepted ()
   "Test that an explicit JSON `null' on the wire for `position' succeeds.
@@ -5024,28 +4997,7 @@ independent of helper shape -- a regression that tightened
 `org-mcp--validate-position' to require an explicit \"start\" or
 \"end\" string would otherwise pass every existing position
 test, since none of them put nil on the wire."
-  (org-mcp-test--with-add-todo-setup test-file
-      org-mcp-test--content-nested-siblings
-    nil
-    nil
-    nil
-    (let* ((params
-            (list
-             (cons 'title "Child Task")
-             (cons 'todo_state "TODO")
-             (cons 'tags '("work"))
-             (cons 'body nil)
-             (cons
-              'parent_uri
-              (format "org-headline://%s#Parent%%20Task" test-file))
-             (cons 'position nil)))
-           (result-text
-            (mcp-server-lib-ert-call-tool "org-add-todo" params))
-           (result (json-read-from-string result-text)))
-      (org-mcp-test--assert-add-todo-result-shape
-       result "Child Task" (file-name-nondirectory test-file))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--regex-child-under-parent))))
+  (org-mcp-test--assert-add-todo-wire-null-accepted 'position))
 
 (ert-deftest
     org-mcp-test-add-todo-position-nil-with-after-uri-wire-accepted
@@ -5081,9 +5033,7 @@ raw `position' value (including wire null) would fail here."
               (format "org-headline://%s#Parent%%20Task" test-file))
              (cons 'after_uri org-mcp-test--content-with-id-uri)
              (cons 'position nil)))
-           (result-text
-            (mcp-server-lib-ert-call-tool "org-add-todo" params))
-           (result (json-read-from-string result-text)))
+           (result (org-mcp-test--add-todo-result params)))
       (org-mcp-test--assert-add-todo-result-shape
        result
        "New Task After Second"
@@ -5112,22 +5062,8 @@ heading, not level 1.  Reproduces the emacs.org scenario: a level-2
 parent via path and a level-3 sibling via ID.  Fixture ends mid-line
 at `point-max', also locking the no-body EOF path."
   ;; BUG: org-insert-heading creates level 1 (*) instead of level 3 (***)
-  (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-level2-parent-level3-children
-   "Review org-mcp-test.el"
-   "TODO"
-   '("internet")
-   nil
-   (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
-           test-file)
-   (file-name-nondirectory test-file)
-   org-mcp-test--regex-after-sibling-level3
-   :todo-keywords '((sequence "TODO" "|" "DONE"))
-   :tag-alist '("internet")
-   :ids `(,org-mcp-test--level2-parent-level3-sibling-id)
-   :after-uri
-   (format "org-id://%s"
-           org-mcp-test--level2-parent-level3-sibling-id)))
+  (org-mcp-test--add-review-after-sibling
+   nil org-mcp-test--regex-after-sibling-level3))
 
 (ert-deftest
     org-mcp-test-add-todo-after-uri-eof-no-trailing-newline-with-body
@@ -5140,22 +5076,9 @@ line, and the body-insertion block previously left that `\\n' in
 place after the body's own terminator, producing a trailing blank
 line at EOF.  Locks the fix that drops the leftover `\\n' when it
 is the buffer's last char."
-  (org-mcp-test--add-todo-and-check
-   org-mcp-test--content-level2-parent-level3-children
-   "Review org-mcp-test.el"
-   "TODO"
-   '("internet")
+  (org-mcp-test--add-review-after-sibling
    org-mcp-test--body-text-multiline
-   (format "org-headline://%s#Top%%20Level/Review%%20the%%20package"
-           test-file)
-   (file-name-nondirectory test-file)
-   org-mcp-test--regex-after-sibling-level3-with-body
-   :todo-keywords '((sequence "TODO" "|" "DONE"))
-   :tag-alist '("internet")
-   :ids `(,org-mcp-test--level2-parent-level3-sibling-id)
-   :after-uri
-   (format "org-id://%s"
-           org-mcp-test--level2-parent-level3-sibling-id)))
+   org-mcp-test--regex-after-sibling-level3-with-body))
 
 (ert-deftest org-mcp-test-add-todo-with-body ()
   "Test adding TODO with body text."
@@ -5357,10 +5280,7 @@ This is valid Org-mode syntax and should be allowed."
    org-mcp-test--regex-todo-after-second-child
    :todo-keywords '((sequence "TODO" "|" "DONE"))
    :tag-alist '("work")
-   :ids
-   (list
-    org-mcp-test--content-nested-siblings-parent-id
-    org-mcp-test--content-with-id-id)
+   :ids org-mcp-test--ids-nested-parent-and-with-id
    :after-uri org-mcp-test--content-with-id-uri))
 
 (ert-deftest
@@ -5626,20 +5546,11 @@ and the cross-field rejection from
 must run first, so the more specific `Field position must be one
 of ...' error reaches the caller rather than the mutex's generic
 `mutually exclusive' message."
-  (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-nested-siblings
-   "New Task"
-   "TODO"
-   '("work")
-   nil
-   (format "org-headline://%s#Parent%%20Task" test-file)
-   :after-uri org-mcp-test--content-with-id-uri
-   :position ""
-   :ids
-   (list
-    org-mcp-test--content-nested-siblings-parent-id
-    org-mcp-test--content-with-id-id)
-   :error-message-regex "Field position must be one of"))
+  (org-mcp-test--assert-add-child-position-error
+   org-mcp-test--content-with-id-uri
+   ""
+   "Field position must be one of"
+   :ids org-mcp-test--ids-nested-parent-and-with-id))
 
 (ert-deftest
     org-mcp-test-add-todo-invalid-position-empty-with-after-uri-equals-parent-id
@@ -5954,10 +5865,7 @@ the property drawer rather than inside it."
            org-mcp-test--content-nested-siblings-parent-id)
    (file-name-nondirectory test-file)
    org-mcp-test--regex-child-at-start-of-parent-pinned
-   :ids
-   (list
-    org-mcp-test--content-nested-siblings-parent-id
-    org-mcp-test--content-with-id-id)
+   :ids org-mcp-test--ids-nested-parent-and-with-id
    :position "start"
    :pin-new-heading-uuid t))
 
@@ -5981,28 +5889,16 @@ the existing first child, with one blank-line separator."
 The parent fixture has a `:PROPERTIES:' drawer and a plain-text
 body line; the new heading must land after both and before the
 first existing child."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-child-task-and-check
    org-mcp-test--content-nested-siblings
-   "Child Task"
-   "TODO"
-   '("work")
-   nil ; no body
-   (format "org-headline://%s#Parent%%20Task" test-file)
-   (file-name-nondirectory test-file)
    org-mcp-test--regex-child-at-start-of-parent-pinned
    :position "start"
    :pin-new-heading-uuid t))
 
 (ert-deftest org-mcp-test-add-todo-position-end-with-children ()
   "Test position=\"end\" on a parent with children appends as last child."
-  (org-mcp-test--add-todo-and-check
+  (org-mcp-test--add-child-task-and-check
    org-mcp-test--content-nested-siblings
-   "Child Task"
-   "TODO"
-   '("work")
-   nil ; no body
-   (format "org-headline://%s#Parent%%20Task" test-file)
-   (file-name-nondirectory test-file)
    org-mcp-test--regex-child-under-parent-pinned
    :position "end"
    :pin-new-heading-uuid t))
@@ -6110,16 +6006,10 @@ must fire BEFORE URI resolution — otherwise the downstream
 \"Sibling not found\" error would surface instead.  Anchors on
 `mutually exclusive' to pin both the error class and that
 ordering."
-  (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-nested-siblings
-   "New Task"
-   "TODO"
-   '("work")
-   nil
-   (format "org-headline://%s#Parent%%20Task" test-file)
-   :after-uri "org-id://does-not-matter"
-   :position "start"
-   :error-message-regex "mutually exclusive"))
+  (org-mcp-test--assert-add-child-position-error
+   "org-id://does-not-matter"
+   "start"
+   "mutually exclusive"))
 
 (ert-deftest org-mcp-test-add-todo-position-end-with-after-uri ()
   "Test that explicit `position=\"end\"' combined with `after_uri' is rejected.
@@ -6129,16 +6019,10 @@ from omission and still rejects the pair.  Anchors on `mutually
 exclusive' to pin that the mutex consults the raw pre-normalised
 string, not the post-validation symbol — otherwise an `end' symbol
 would be indistinguishable from a nil that defaulted to it."
-  (org-mcp-test--call-add-todo-expecting-error
-   org-mcp-test--content-nested-siblings
-   "New Task"
-   "TODO"
-   '("work")
-   nil
-   (format "org-headline://%s#Parent%%20Task" test-file)
-   :after-uri org-mcp-test--content-with-id-uri
-   :position "end"
-   :error-message-regex "mutually exclusive"))
+  (org-mcp-test--assert-add-child-position-error
+   org-mcp-test--content-with-id-uri
+   "end"
+   "mutually exclusive"))
 
 (ert-deftest org-mcp-test-add-todo-parent-id-uri ()
   "Test adding TODO with parent specified as org-id:// URI."
@@ -6156,10 +6040,7 @@ would be indistinguishable from a nil that defaulted to it."
    :todo-keywords
    '((sequence "TODO(t!)" "|" "DONE(d!)"))
    :tag-alist '("work")
-   :ids
-   (list
-    org-mcp-test--content-nested-siblings-parent-id
-    org-mcp-test--content-with-id-id)))
+   :ids org-mcp-test--ids-nested-parent-and-with-id))
 
 (ert-deftest org-mcp-test-add-todo-mutex-tags-error ()
   "Test that mutually exclusive tags are rejected."
@@ -6438,33 +6319,21 @@ The navigation function should find headlines even when they have TODO keywords.
 
 (ert-deftest org-mcp-test-edit-body-single-line ()
   "Test org-edit-body tool for single-line replacement."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-with-id
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-and-check
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Second child content."
-     "Updated second child content."
-     org-mcp-test--pattern-edit-body-single-line
-     nil
-     org-mcp-test--content-with-id-id)))
+    "Second child content."
+    "Updated second child content."
+    org-mcp-test--pattern-edit-body-single-line))
 
 (ert-deftest org-mcp-test-edit-body-multiline ()
   "Test org-edit-body tool for multi-line replacement."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-with-id
       org-mcp-test--content-with-id-todo
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-and-check
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Second line of content."
-     "This has been replaced
+    "Second line of content."
+    "This has been replaced
 with new multiline
 content here."
-     org-mcp-test--pattern-edit-body-multiline
-     nil
-     org-mcp-test--content-with-id-id)))
+    org-mcp-test--pattern-edit-body-multiline))
 
 (ert-deftest org-mcp-test-edit-body-case-sensitive-match ()
   "Test that org-edit-body matches `old_body' case-sensitively.
@@ -6472,26 +6341,15 @@ The fixture body contains `hello world' (lowercase, first) and
 `Hello world' (capitalized, second).  A request to replace
 `Hello world' must touch only the capitalized occurrence;
 case-insensitive matching would touch the lowercase line instead."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-with-id
       org-mcp-test--content-with-id-case-mixed-body
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-and-check
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Hello world"
-     "REPLACED"
-     org-mcp-test--pattern-edit-body-case-sensitive
-     nil
-     org-mcp-test--content-with-id-id)))
+    "Hello world"
+    "REPLACED"
+    org-mcp-test--pattern-edit-body-case-sensitive))
 
 (ert-deftest org-mcp-test-edit-body-multiple-without-replaceall ()
   "Test error for multiple occurrences without replace_all."
-  (org-mcp-test--with-id-setup test-file
-      org-mcp-test--content-with-id-repeated-text
-    `("test-id")
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file "org-id://test-id" "occurrence of pattern" "REPLACED"
-     nil)))
+  (org-mcp-test--assert-edit-body-repeated-error nil))
 
 (ert-deftest org-mcp-test-edit-body-replace-all ()
   "Test org-edit-body tool with replace_all functionality."
@@ -6515,13 +6373,8 @@ tool boundary, where `(not \"false\")' is nil and the
 multiple-occurrence guard skips firing.  Removing the `\"false\"'
 branch in `org-mcp--tool-edit-body' would let the string pass
 through as truthy, silently bypassing the guard."
-  (org-mcp-test--with-id-setup test-file
-      org-mcp-test--content-with-id-repeated-text
-    `("test-id")
-    ;; Should error because multiple occurrences exist
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file "org-id://test-id" "occurrence of pattern" "REPLACED"
-     "false")))
+  ;; Should error because multiple occurrences exist
+  (org-mcp-test--assert-edit-body-repeated-error "false"))
 
 (ert-deftest org-mcp-test-edit-body-replace-all-json-false ()
   "Test that a real MCP client's JSON `false' fires the safety guard.
@@ -6532,44 +6385,31 @@ real client sending `{\"replace_all\": false}' therefore delivers
 nil and the multiple-occurrence guard skips firing -- silently
 replacing every occurrence even though the client explicitly opted
 out."
-  (org-mcp-test--with-id-setup test-file
-      org-mcp-test--content-with-id-repeated-text
-    `("test-id")
-    ;; Should error because multiple occurrences exist
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file "org-id://test-id" "occurrence of pattern" "REPLACED"
-     :json-false)))
+  ;; Should error because multiple occurrences exist
+  (org-mcp-test--assert-edit-body-repeated-error :json-false))
 
 (ert-deftest org-mcp-test-edit-body-non-string-new-body ()
   "Pin that non-string `new_body' is rejected at the tool boundary.
 `org-mcp--validate-string-field' fires before
 `validate-body-no-unbalanced-blocks' or downstream `insert' calls
 would signal `wrong-type-argument'."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-error
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     "anything"
-     42 ; non-string new_body
-     nil
-     (org-mcp-test--field-non-string-regex "new_body" 42))))
+    "anything"
+    42 ; non-string new_body
+    nil
+    (org-mcp-test--field-non-string-regex "new_body" 42)))
 
 (ert-deftest org-mcp-test-edit-body-non-string-old-body ()
   "Pin that non-string `old_body' is rejected at the tool boundary.
 `org-mcp--validate-string-field' fires before the internal `string='
 or `regexp-quote' calls would signal `wrong-type-argument'."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-error
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     42 ; non-string old_body
-     "replacement"
-     nil
-     (org-mcp-test--field-non-string-regex "old_body" 42))))
+    42 ; non-string old_body
+    "replacement"
+    nil
+    (org-mcp-test--field-non-string-regex "old_body" 42)))
 
 (ert-deftest org-mcp-test-edit-body-non-string-resource-uri ()
   "Pin that non-string `resource_uri' is rejected at the tool boundary.
@@ -6588,15 +6428,10 @@ parsing runs."
 
 (ert-deftest org-mcp-test-edit-body-not-found ()
   "Test org-edit-body tool error when text is not found."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-error
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     "nonexistent text"
-     "replacement"
-     nil)))
+    "nonexistent text"
+    "replacement"))
 
 (ert-deftest org-mcp-test-edit-body-unterminated-drawer ()
   "Test that `org-edit-body' validates the file header.
@@ -6631,32 +6466,19 @@ guarantee for every modifying tool."
 
 (ert-deftest org-mcp-test-edit-body-empty-old-non-empty-body ()
   "Test error when old_body is empty but body has content."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-error
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     "" ; Empty old_body
-     "replacement"
-     nil)))
+    "" ; Empty old_body
+    "replacement"))
 
 (ert-deftest org-mcp-test-edit-body-empty-with-properties ()
   "Test adding content to empty body with properties drawer.
 The pre-existing `:ID:' drawer is preserved verbatim across the
 edit -- no orphaned-ID cascade attaches a fresh `:ID:' to the
 inserted content."
-  (org-mcp-test--with-id-setup test-file
-      org-mcp-test--content-with-id-no-body
-    `(,org-mcp-test--timestamp-id)
-    (org-mcp-test--call-edit-body-and-check
-     test-file
-     (format "org-id://%s" org-mcp-test--timestamp-id)
-     ""
-     "Content added after properties."
-     org-mcp-test--pattern-edit-body-empty-with-props
-     nil
-     org-mcp-test--timestamp-id)))
+  (org-mcp-test--assert-edit-body-empty-timestamp
+   "Content added after properties."
+   org-mcp-test--pattern-edit-body-empty-with-props))
 
 (ert-deftest
     org-mcp-test-edit-body-empty-with-deeper-heading-returns-target-uri
@@ -6670,17 +6492,9 @@ the non-empty branch covered by
 deeper-heading flavor of the URI-return bug, this exercises a code
 path neither `edit-body-empty' (no deeper heading in body) nor
 `edit-body-accept-lower-level-headline' (non-empty body) hits."
-  (org-mcp-test--with-id-setup test-file
-      org-mcp-test--content-with-id-no-body
-    `(,org-mcp-test--timestamp-id)
-    (org-mcp-test--call-edit-body-and-check
-     test-file
-     (format "org-id://%s" org-mcp-test--timestamp-id)
-     ""
-     "intro text\n** Sub heading"
-     org-mcp-test--pattern-edit-body-empty-with-deeper-heading
-     nil
-     org-mcp-test--timestamp-id)))
+  (org-mcp-test--assert-edit-body-empty-timestamp
+   "intro text\n** Sub heading"
+   org-mcp-test--pattern-edit-body-empty-with-deeper-heading))
 
 (ert-deftest org-mcp-test-edit-body-nested-headlines ()
   "Test body edit on a parent returns its URI, keeping the subtree.
@@ -6703,16 +6517,11 @@ point on the parent so its existing `:ID:' is returned."
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-in-middle ()
   "Test org-edit-body rejects new_body with headline marker in middle."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-error
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Second child content."
-     "replacement text
-* This would become a headline"
-     nil)))
+    "Second child content."
+    "replacement text
+* This would become a headline"))
 
 (ert-deftest org-mcp-test-edit-body-accept-lower-level-headline ()
   "Test a body with a strictly-deeper heading is accepted.
@@ -6724,18 +6533,12 @@ insertion, point can land past the deeper heading;
 `org-id-get-create' in `complete-and-save' must still attach `:ID:'
 to the edit target and return the target's URI -- otherwise the
 deeper heading captures the URI and a fresh `:ID:' drawer."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-with-id
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-and-check
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Second child content."
-     "some text
+    "Second child content."
+    "some text
 *** Subheading content"
-     org-mcp-test--pattern-edit-body-accept-lower-level
-     nil
-     org-mcp-test--content-with-id-id)))
+    org-mcp-test--pattern-edit-body-accept-lower-level))
 
 (ert-deftest org-mcp-test-edit-body-reject-higher-level-headline ()
   "Test org-edit-body rejects new_body with higher-level headline.
@@ -6753,79 +6556,145 @@ When editing a level 2 node, level 1 headlines should be rejected."
 
 (ert-deftest org-mcp-test-edit-body-reject-headline-at-start ()
   "Test org-edit-body rejects new_body with headline at beginning."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-error
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Second child content."
-     "* Heading at start"
-     nil)))
+    "Second child content."
+    "* Heading at start"))
 
 (ert-deftest org-mcp-test-edit-body-reject-unbalanced-begin-block ()
   "Test org-edit-body rejects new_body with unbalanced BEGIN block."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-error
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Second child content."
-     "Some text
+    "Second child content."
+    "Some text
 #+BEGIN_EXAMPLE
-Code without END_EXAMPLE"
-     nil)))
+Code without END_EXAMPLE"))
 
 (ert-deftest org-mcp-test-edit-body-reject-orphaned-end-block ()
   "Test org-edit-body rejects new_body with orphaned END block."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-error
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Second child content."
-     "Some text
+    "Second child content."
+    "Some text
 #+END_SRC
-Without BEGIN_SRC"
-     nil)))
+Without BEGIN_SRC"))
 
 (ert-deftest org-mcp-test-edit-body-reject-mismatched-blocks ()
   "Test org-edit-body rejects new_body with mismatched blocks."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-edit-body-error
       org-mcp-test--content-nested-siblings
-    `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-edit-body-expecting-error
-     test-file
-     org-mcp-test--content-with-id-uri
-     "Second child content."
-     "Text here
+    "Second child content."
+    "Text here
 #+BEGIN_QUOTE
 Some quote
-#+END_EXAMPLE"
-     nil)))
+#+END_EXAMPLE"))
 
 ;; org-archive-subtree tests
+
+(defmacro org-mcp-test--with-archive-simple (&rest body)
+  "Run BODY with a simple archivable source bound to `test-file'.
+Seeds `org-mcp-test--content-archive-simple' with no pre-existing IDs."
+  (declare (indent 0) (debug (body)))
+  `(org-mcp-test--with-archive-setup test-file
+       org-mcp-test--content-archive-simple
+       nil
+     ,@body))
+
+(defmacro org-mcp-test--should-archive-aborted ()
+  "Assert an aborted archive left no archive file and an intact source.
+Uses `test-file' and `default-archive-file' from the enclosing fixture:
+no tool-opened archive buffer survives, the default archive file is
+absent, and the source still holds the subtree."
+  `(progn
+     (should-not (find-buffer-visiting default-archive-file))
+     (should-not (file-exists-p default-archive-file))
+     (org-mcp-test--verify-file-matches
+      test-file
+      org-mcp-test--expected-archive-simple-unchanged-source-regex)))
+
+(defmacro org-mcp-test--should-archive-moved (archive-file-regex)
+  "Assert the source was emptied and the archive holds the moved entry.
+`test-file' must match the emptied-source regex and `default-archive-file'
+must match ARCHIVE-FILE-REGEX."
+  `(progn
+     (org-mcp-test--verify-file-matches
+      test-file org-mcp-test--expected-archive-source-regex)
+     (org-mcp-test--verify-file-matches
+      default-archive-file ,archive-file-regex)))
+
+(defmacro org-mcp-test--assert-archive-task-unsaved ()
+  "Assert archiving `Task to Archive' is rejected for unsaved changes.
+Uses `test-file' from the enclosing fixture; the file stays unchanged."
+  `(org-mcp-test--assert-archive-error
+       test-file
+     (org-mcp-test--archive-task-uri test-file)
+     org-mcp-test--archive-unsaved-error-regex))
+
+(defmacro org-mcp-test--assert-archive-unsaved-dest (dest-file)
+  "With an unsaved DEST-FILE archive buffer, assert archiving errors.
+Inserts a pre-existing entry into a buffer visiting DEST-FILE, leaves it
+modified, then asserts archiving `Task to Archive' is rejected with the
+unsaved-changes error and `test-file' stays unchanged."
+  (declare (debug (form)))
+  `(org-mcp-test--with-file-buffer buffer ,dest-file
+     (with-current-buffer buffer
+       (insert org-mcp-test--content-preexisting-archive-entry)
+       (should (buffer-modified-p)))
+     (org-mcp-test--assert-archive-task-unsaved)))
+
+(defun org-mcp-test--write-region-source-stub
+    (orig source-file on-source)
+  "Return a `write-region' replacement that runs ON-SOURCE for SOURCE-FILE.
+When the write targets SOURCE-FILE (matched by absolute path), ON-SOURCE
+is called with no arguments -- it may signal to abort the write.
+Otherwise, and after ON-SOURCE returns, the original ORIG write
+proceeds."
+  (lambda (start end filename &rest args)
+    (when (string=
+           (expand-file-name filename) (expand-file-name source-file))
+      (funcall on-source))
+    (apply orig start end filename args)))
+
+(defmacro org-mcp-test--with-source-write-stub (on-source &rest body)
+  "Run BODY with `write-region' stubbed to call ON-SOURCE for `test-file'.
+ON-SOURCE is a zero-argument function invoked when the source `test-file'
+is written (it may signal to abort); writes to other files proceed
+normally."
+  (declare (indent 1) (debug (form body)))
+  `(let ((orig-write-region (symbol-function 'write-region)))
+     (cl-letf (((symbol-function 'write-region)
+                (org-mcp-test--write-region-source-stub
+                 orig-write-region test-file ,on-source)))
+       ,@body)))
+
+(defmacro org-mcp-test--assert-archive-to-custom (content suffix)
+  "Archive `Task to Archive' to a per-location custom file and check.
+CONTENT seeds the source file; SUFFIX names the custom archive file as
+`(concat test-file SUFFIX)'.  The custom file must be created and the
+default `_archive' must not."
+  (declare (debug (form form)))
+  `(org-mcp-test--with-archive-setup test-file ,content nil
+     (org-mcp-test--with-archive-file custom-archive-file
+         (concat test-file ,suffix)
+       (org-mcp-test--archive-subtree
+        (org-mcp-test--archive-task-uri
+         test-file)
+        custom-archive-file)
+       (should (file-exists-p custom-archive-file))
+       (should-not (file-exists-p default-archive-file)))))
 
 (ert-deftest org-mcp-test-archive-subtree-success ()
   "Test successful subtree archiving by headline URI.
 Archiving a headline that lacks an Org ID creates one, returns it as
 an `org-id://' URI, and the new ID travels into the archive file with
 the subtree."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (let* ((uri
-            (format "org-headline://%s#Task%%20to%%20Archive"
-                    test-file))
-           (id
-            (org-mcp-test--archive-subtree-id
-             uri default-archive-file)))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-archive-source-regex)
-      (org-mcp-test--verify-file-matches
-       default-archive-file (org-mcp-test--archive-file-regex id)))))
+  (org-mcp-test--with-archive-simple
+    (let ((id
+           (org-mcp-test--archive-subtree-id
+            (org-mcp-test--archive-task-uri test-file)
+            default-archive-file)))
+      (org-mcp-test--should-archive-moved
+       (org-mcp-test--archive-file-regex id)))))
 
 (ert-deftest org-mcp-test-archive-subtree-nested-child ()
   "Archive a nested (level-2) subtree reached via a `Parent/Child' path.
@@ -6836,12 +6705,11 @@ composition the all-top-level fixtures cannot."
   (org-mcp-test--with-archive-setup test-file
       org-mcp-test--content-archive-nested
       nil
-    (let* ((uri
+    (let ((id
+           (org-mcp-test--archive-subtree-id
             (format "org-headline://%s#Parent/Child%%20to%%20Archive"
-                    test-file))
-           (id
-            (org-mcp-test--archive-subtree-id
-             uri default-archive-file)))
+                    test-file)
+            default-archive-file)))
       (org-mcp-test--verify-file-matches
        test-file org-mcp-test--expected-archive-nested-source-regex)
       (org-mcp-test--verify-file-matches
@@ -6878,11 +6746,7 @@ same ID as the `org-id://' URI."
         (goto-char (point-max))
         (insert "\n* TODO Another Task")
         (should (buffer-modified-p)))
-      (let ((uri
-             (format "org-headline://%s#Task%%20to%%20Archive"
-                     test-file)))
-        (org-mcp-test--assert-archive-error test-file uri
-          org-mcp-test--archive-unsaved-error-regex)))))
+      (org-mcp-test--assert-archive-task-unsaved))))
 
 (ert-deftest org-mcp-test-archive-subtree-honors-archive-property ()
   "Pin that a headline `:ARCHIVE:' property selects the archive location.
@@ -6890,17 +6754,8 @@ The returned `archive_file' and the file actually written follow the
 per-headline `:ARCHIVE:' property in preference to the default
 `org-archive-location', so the default `_archive' file is never
 created."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-custom-location
-      nil
-    (org-mcp-test--with-archive-file custom-archive-file
-        (concat test-file "_custom")
-      (let ((uri
-             (format "org-headline://%s#Task%%20to%%20Archive"
-                     test-file)))
-        (org-mcp-test--archive-subtree uri custom-archive-file)
-        (should (file-exists-p custom-archive-file))
-        (should-not (file-exists-p default-archive-file))))))
+  (org-mcp-test--assert-archive-to-custom
+   org-mcp-test--content-archive-custom-location "_custom"))
 
 (ert-deftest
     org-mcp-test-archive-subtree-guard-fires-on-custom-location
@@ -6917,15 +6772,8 @@ pre-flight `org-archive--compute-location' call and the file
       nil
     (org-mcp-test--with-archive-file custom-archive-file
         (concat test-file "_custom")
-      (org-mcp-test--with-file-buffer buffer custom-archive-file
-        (with-current-buffer buffer
-          (insert org-mcp-test--content-preexisting-archive-entry)
-          (should (buffer-modified-p)))
-        (let ((uri
-               (format "org-headline://%s#Task%%20to%%20Archive"
-                       test-file)))
-          (org-mcp-test--assert-archive-error test-file uri
-            org-mcp-test--archive-unsaved-error-regex))))))
+      (org-mcp-test--assert-archive-unsaved-dest
+       custom-archive-file))))
 
 (ert-deftest org-mcp-test-archive-subtree-honors-archive-keyword ()
   "Pin that a file-level `#+ARCHIVE:' keyword selects the archive location.
@@ -6933,17 +6781,8 @@ With no per-headline `:ARCHIVE:' property, the returned `archive_file'
 and the file actually written follow the `#+ARCHIVE:' keyword in
 preference to the default `org-archive-location', so the default
 `_archive' file is never created."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-keyword-location
-      nil
-    (org-mcp-test--with-archive-file custom-archive-file
-        (concat test-file "_fromkeyword")
-      (let ((uri
-             (format "org-headline://%s#Task%%20to%%20Archive"
-                     test-file)))
-        (org-mcp-test--archive-subtree uri custom-archive-file)
-        (should (file-exists-p custom-archive-file))
-        (should-not (file-exists-p default-archive-file))))))
+  (org-mcp-test--assert-archive-to-custom
+   org-mcp-test--content-archive-keyword-location "_fromkeyword"))
 
 (ert-deftest org-mcp-test-archive-subtree-non-string-uri ()
   "Pin that non-string `uri' is rejected at the tool boundary.
@@ -6990,11 +6829,10 @@ error -- and leave the source file unchanged."
   ;; computation, before any archive logic runs.
   (org-mcp-test--with-temp-org-files
       ((test-file org-mcp-test--content-archive-malformed-location))
-    (let ((uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file)))
-      (org-mcp-test--assert-archive-error test-file uri
-        "Invalid archive location"))))
+    (org-mcp-test--assert-archive-error
+        test-file
+      (org-mcp-test--archive-task-uri test-file)
+      "Invalid archive location")))
 
 (ert-deftest org-mcp-test-archive-subtree-returned-uri-resolution ()
   "Pin resolvability of the `org-id://' URI returned by archiving.
@@ -7002,15 +6840,11 @@ After archiving, the returned `org-id://' URI is unresolvable when
 the archive file is outside `org-mcp-allowed-files', and resolves to
 the archived headline once the archive file is added to the allowed
 list."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (let* ((archive-uri
-            (format "org-headline://%s#Task%%20to%%20Archive"
-                    test-file))
-           (id
+  (org-mcp-test--with-archive-simple
+    (let* ((id
             (org-mcp-test--archive-subtree-id
-             archive-uri default-archive-file))
+             (org-mcp-test--archive-task-uri test-file)
+             default-archive-file))
            (returned-uri (concat "org-id://" id)))
       ;; Archive file not allowed: the returned URI is unresolvable.
       (org-mcp-test--read-resource-expecting-error
@@ -7036,10 +6870,9 @@ resolves via `resources/read' immediately -- with no change to
   (org-mcp-test--with-archive-setup test-file
       org-mcp-test--content-archive-infile-location
       nil
-    (let* ((uri
-            (format "org-headline://%s#Task%%20to%%20Archive"
-                    test-file))
-           (id (org-mcp-test--archive-subtree-id uri test-file))
+    (let* ((id
+            (org-mcp-test--archive-subtree-id
+             (org-mcp-test--archive-task-uri test-file) test-file))
            (returned-uri (concat "org-id://" id)))
       (org-mcp-test--verify-resource-text-matches
        returned-uri (concat ":ID:[ \t]+" (regexp-quote id)))
@@ -7054,14 +6887,10 @@ The tool itself opened it.  `org-archive-subtree' opens the archive
 file via `find-file-noselect'; the tool kills that buffer so a
 long-running server does not accumulate buffers visiting archive
 files."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (let ((uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file)))
-      (org-mcp-test--archive-subtree uri default-archive-file)
-      (should-not (find-buffer-visiting default-archive-file)))))
+  (org-mcp-test--with-archive-simple
+    (org-mcp-test--archive-subtree
+     (org-mcp-test--archive-task-uri test-file) default-archive-file)
+    (should-not (find-buffer-visiting default-archive-file))))
 
 (ert-deftest
     org-mcp-test-archive-subtree-keeps-preexisting-archive-buffer
@@ -7069,12 +6898,8 @@ files."
   "Pin that archiving preserves a user's pre-opened archive buffer.
 It kills only buffers the tool opened itself, leaving a buffer the
 user already had open on the archive file."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (let ((uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file))
+  (org-mcp-test--with-archive-simple
+    (let ((uri (org-mcp-test--archive-task-uri test-file))
           (buffer (find-file-noselect default-archive-file)))
       (org-mcp-test--archive-subtree uri default-archive-file)
       (should (buffer-live-p buffer)))))
@@ -7087,12 +6912,8 @@ Each reverts to the freshly written on-disk content, not only the one
 `org-archive-subtree' filled and the tool saved.  When two buffers
 visit the archive file, the second would otherwise keep its stale
 pre-archive content while disk holds the archived subtree."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (let ((uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file))
+  (org-mcp-test--with-archive-simple
+    (let ((uri (org-mcp-test--archive-task-uri test-file))
           (buffer-a (find-file-noselect default-archive-file))
           (buffer-b (generate-new-buffer "second-archive-visitor")))
       (with-current-buffer buffer-b
@@ -7112,18 +6933,11 @@ The guard is `org-archive-subtree-save-file-p' nil.  The tool persists
 the archive itself rather than relying on org-archive's save policy,
 so a user setting disabling org-archive's own save cannot silently
 drop the archived entry while the source is emptied."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
+  (org-mcp-test--with-archive-simple
     (let ((org-archive-subtree-save-file-p nil)
-          (uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file)))
+          (uri (org-mcp-test--archive-task-uri test-file)))
       (org-mcp-test--archive-subtree uri default-archive-file)
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-archive-source-regex)
-      (org-mcp-test--verify-file-matches
-       default-archive-file
+      (org-mcp-test--should-archive-moved
        org-mcp-test--expected-archive-simple-file-regex))))
 
 (ert-deftest
@@ -7134,18 +6948,8 @@ A visiting buffer with unsaved changes blocks archiving, mirroring the
 source-file guard.  Without this guard `org-archive-subtree' would
 force-save the archive buffer, flushing the user's unsaved edits to
 disk."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (org-mcp-test--with-file-buffer buffer default-archive-file
-      (with-current-buffer buffer
-        (insert org-mcp-test--content-preexisting-archive-entry)
-        (should (buffer-modified-p)))
-      (let ((uri
-             (format "org-headline://%s#Task%%20to%%20Archive"
-                     test-file)))
-        (org-mcp-test--assert-archive-error test-file uri
-          org-mcp-test--archive-unsaved-error-regex)))))
+  (org-mcp-test--with-archive-simple
+    (org-mcp-test--assert-archive-unsaved-dest default-archive-file)))
 
 (ert-deftest org-mcp-test-archive-subtree-ignores-default-command ()
   "Pin that archiving moves the subtree to a file in all cases.
@@ -7153,13 +6957,9 @@ This holds regardless of `org-archive-default-command'.  With the
 command customized to `org-archive-set-tag' (which would otherwise tag
 without moving it), the tool still empties the source and writes the
 archive file."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
+  (org-mcp-test--with-archive-simple
     (let ((org-archive-default-command 'org-archive-set-tag)
-          (uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file)))
+          (uri (org-mcp-test--archive-task-uri test-file)))
       (org-mcp-test--archive-subtree uri default-archive-file)
       (org-mcp-test--verify-file-matches
        test-file org-mcp-test--expected-archive-source-regex)
@@ -7173,24 +6973,14 @@ aborts before `org-id-get-create' runs, so nothing is added to the
 global `org-id-locations' for an archive that never happened.  Were
 the ID created first it would point at the source file, which on the
 aborted path never receives it on disk -- a stale location entry."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (org-mcp-test--with-file-buffer buffer default-archive-file
-      (with-current-buffer buffer
-        (insert org-mcp-test--content-preexisting-archive-entry)
-        (should (buffer-modified-p)))
-      (let ((uri
-             (format "org-headline://%s#Task%%20to%%20Archive"
-                     test-file)))
-        (org-mcp-test--assert-archive-error test-file uri
-          org-mcp-test--archive-unsaved-error-regex)
-        ;; `org-mcp-test--with-id-tracking' let-binds `org-id-locations'
-        ;; to nil; with the guard aborting before `org-id-get-create'
-        ;; nothing converts it to a populated hash table, so nil is the
-        ;; positive signal that no ID leaked.  A non-nil value here
-        ;; would mean the ID was created before the guard fired.
-        (should (null org-id-locations))))))
+  (org-mcp-test--with-archive-simple
+    (org-mcp-test--assert-archive-unsaved-dest default-archive-file)
+    ;; `org-mcp-test--with-id-tracking' let-binds `org-id-locations'
+    ;; to nil; with the guard aborting before `org-id-get-create'
+    ;; nothing converts it to a populated hash table, so nil is the
+    ;; positive signal that no ID leaked.  A non-nil value here
+    ;; would mean the ID was created before the guard fired.
+    (should (null org-id-locations))))
 
 (ert-deftest
     org-mcp-test-archive-subtree-persists-archive-before-source
@@ -7201,28 +6991,12 @@ that persists the archive.  Simulating a failure of the source write
 leaves the archive file already on disk with the entry (a recoverable
 duplicate) and the source still holding it, rather than dropping the
 entry from both files."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
+  (org-mcp-test--with-archive-simple
     (let ((org-archive-subtree-save-file-p nil)
-          (uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file))
-          (orig-write-region (symbol-function 'write-region)))
-      (cl-letf (((symbol-function 'write-region)
-                 (lambda (start end filename &rest args)
-                   (if (string=
-                        (expand-file-name filename)
-                        (expand-file-name test-file))
-                       (error "Simulated source write failure")
-                     (apply orig-write-region
-                            start
-                            end
-                            filename
-                            args)))))
-        (should
-         (alist-get
-          'error (org-mcp-test--archive-tool-response uri))))
+          (uri (org-mcp-test--archive-task-uri test-file)))
+      (org-mcp-test--with-source-write-stub
+          (lambda () (error "Simulated source write failure"))
+        (org-mcp-test--archive-tool-error uri))
       (should (file-exists-p default-archive-file))
       (org-mcp-test--verify-file-matches
        default-archive-file
@@ -7240,12 +7014,8 @@ been written -- the archive refresh runs normally first.  The tool's
 cleanup still kills the buffer it opened (no leaked buffer visiting the
 archive file), the source is emptied on disk, and the archived entry
 survives on disk in the archive file rather than being lost."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (let ((uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file))
+  (org-mcp-test--with-archive-simple
+    (let ((uri (org-mcp-test--archive-task-uri test-file))
           (orig-refresh
            (symbol-function 'org-mcp--refresh-file-buffers)))
       (cl-letf (((symbol-function 'org-mcp--refresh-file-buffers)
@@ -7255,14 +7025,9 @@ survives on disk in the archive file rather than being lost."
                         (expand-file-name test-file))
                        (error "Simulated refresh failure")
                      (apply orig-refresh file args)))))
-        (should
-         (alist-get
-          'error (org-mcp-test--archive-tool-response uri))))
+        (org-mcp-test--archive-tool-error uri))
       (should-not (find-buffer-visiting default-archive-file))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-archive-source-regex)
-      (org-mcp-test--verify-file-matches
-       default-archive-file
+      (org-mcp-test--should-archive-moved
        org-mcp-test--expected-archive-simple-file-regex))))
 
 (ert-deftest
@@ -7274,23 +7039,13 @@ save of the tool-opened archive buffer, so stubbing `save-buffer' to
 signal exercises a failure before the source is emptied on disk.  The
 cleanup still reclaims the buffer, the source file keeps the subtree,
 and no archive file is written -- so the entry is never lost."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
+  (org-mcp-test--with-archive-simple
     (let ((org-archive-subtree-save-file-p nil)
-          (uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file)))
+          (uri (org-mcp-test--archive-task-uri test-file)))
       (cl-letf (((symbol-function 'save-buffer)
                  (lambda (&rest _) (error "Simulated save failure"))))
-        (should
-         (alist-get
-          'error (org-mcp-test--archive-tool-response uri))))
-      (should-not (find-buffer-visiting default-archive-file))
-      (should-not (file-exists-p default-archive-file))
-      (org-mcp-test--verify-file-matches
-       test-file
-       org-mcp-test--expected-archive-simple-unchanged-source-regex))))
+        (org-mcp-test--archive-tool-error uri))
+      (org-mcp-test--should-archive-aborted))))
 
 (ert-deftest
     org-mcp-test-archive-subtree-tolerates-killed-archive-buffer
@@ -7301,25 +7056,12 @@ unwind cleanup runs, the liveness guard keeps `with-current-buffer'
 from erroring on a dead buffer, so the archive still succeeds.  The
 source `write-region' is stubbed to kill the archive buffer first,
 reproducing that ordering deterministically."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (let ((uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file))
-          (orig-write-region (symbol-function 'write-region)))
-      (cl-letf (((symbol-function 'write-region)
-                 (lambda (start end filename &rest args)
-                   (when (string=
-                          (expand-file-name filename)
-                          (expand-file-name test-file))
-                     (org-mcp-test--discard-buffer-visiting
-                      default-archive-file))
-                   (apply orig-write-region
-                          start
-                          end
-                          filename
-                          args))))
+  (org-mcp-test--with-archive-simple
+    (let ((uri (org-mcp-test--archive-task-uri test-file)))
+      (org-mcp-test--with-source-write-stub
+          (lambda ()
+            (org-mcp-test--discard-buffer-visiting
+             default-archive-file))
         (org-mcp-test--archive-subtree uri default-archive-file)
         (should-not (find-buffer-visiting default-archive-file))))))
 
@@ -7333,23 +7075,13 @@ reproduces a throw after the buffer is opened but before the tool's own
 persistence runs.  Cleanup must still reclaim the tool-opened archive
 buffer, leave no archive file on disk, and keep the subtree in the
 source so the entry is never lost."
-  (org-mcp-test--with-archive-setup test-file
-      org-mcp-test--content-archive-simple
-      nil
-    (let ((uri
-           (format "org-headline://%s#Task%%20to%%20Archive"
-                   test-file)))
+  (org-mcp-test--with-archive-simple
+    (let ((uri (org-mcp-test--archive-task-uri test-file)))
       (cl-letf (((symbol-function 'org-paste-subtree)
                  (lambda (&rest _)
                    (error "Simulated archive paste failure"))))
-        (should
-         (alist-get
-          'error (org-mcp-test--archive-tool-response uri))))
-      (should-not (find-buffer-visiting default-archive-file))
-      (should-not (file-exists-p default-archive-file))
-      (org-mcp-test--verify-file-matches
-       test-file
-       org-mcp-test--expected-archive-simple-unchanged-source-regex))))
+        (org-mcp-test--archive-tool-error uri))
+      (org-mcp-test--should-archive-aborted))))
 
 ;;; org-read-file tests
 
@@ -7599,13 +7331,7 @@ lookup runs."
   (org-mcp-test--with-temp-org-files
       ((test-file org-mcp-test--content-headline-resource))
     (let* ((uri (format "org-outline://%s" test-file))
-           (request
-            (mcp-server-lib-create-resources-read-request uri))
-           (response-json
-            (mcp-server-lib-process-jsonrpc
-             request mcp-server-lib-ert-server-id))
-           (response
-            (json-parse-string response-json :object-type 'alist))
+           (response (org-mcp-test--read-resource-response uri))
            (result (alist-get 'result response))
            (contents (alist-get 'contents result)))
       (when (alist-get 'error response)
@@ -7897,6 +7623,49 @@ CASE-SENSITIVE controls case matching."
                        :object-type 'alist
                        :array-type 'list)))
 
+(defun org-mcp-test--grep-groups
+    (pattern &optional file case-sensitive)
+  "Call org-grep with PATTERN (optional FILE, CASE-SENSITIVE); return groups.
+Returns the `groups' list of the parsed org-grep result."
+  (alist-get
+   'groups (org-mcp-test--call-grep pattern file case-sensitive)))
+
+(defun org-mcp-test--grep-case-sensitive-groups (file case-sensitive)
+  "Search `hello' in FILE sending CASE-SENSITIVE verbatim; return groups.
+CASE-SENSITIVE is forwarded unchanged to exercise wire-value
+normalisation of the `case_sensitive' argument."
+  (alist-get
+   'groups
+   (json-parse-string (mcp-server-lib-ert-call-tool
+                       "org-grep"
+                       `((pattern . "hello")
+                         (file . ,file)
+                         (case_sensitive . ,case-sensitive)))
+                      :object-type 'alist
+                      :array-type 'list)))
+
+(defun org-mcp-test--grep-match-lines (pattern file)
+  "Return the `line' numbers of org-grep matches for PATTERN in FILE.
+Matches are taken from the first result group."
+  (mapcar
+   (lambda (m) (alist-get 'line m))
+   (alist-get
+    'matches (car (org-mcp-test--grep-groups pattern file)))))
+
+(defun org-mcp-test--should-single-group-path (groups titles)
+  "Assert GROUPS holds exactly one group whose headline path equals TITLES."
+  (should (= (length groups) 1))
+  (should
+   (equal (org-mcp-test--headline-path-titles (car groups)) titles)))
+
+(defun org-mcp-test--should-single-group-headline-uri
+    (groups pattern-regex)
+  "Assert GROUPS has one group with an org-headline:// URI matching PATTERN-REGEX."
+  (should (= (length groups) 1))
+  (let ((uri (alist-get 'uri (car groups))))
+    (should (string-prefix-p "org-headline://" uri))
+    (should (string-match-p pattern-regex uri))))
+
 (defun org-mcp-test--headline-path-titles (group)
   "Return the list of titles from GROUP's headline_path entries."
   (mapcar
@@ -7917,8 +7686,7 @@ Regression for the `^\\*' vs `^\\*+ ' boundary-regex bug: the bare
 dropping matches that followed."
   (org-mcp-test--with-temp-org-files
       ((test-file "*bold* text\ntoken found here\n* Real Heading\n"))
-    (let* ((result (org-mcp-test--call-grep "token" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "token" test-file)))
       (should (= (length groups) 1))
       (should (equal (alist-get 'headline_path (car groups)) nil))
       (should (= (length (alist-get 'matches (car groups))) 1))
@@ -7938,13 +7706,8 @@ subsequent match."
   (org-mcp-test--with-temp-org-files
       ((test-file
         "* Section\n*bold* line\ntoken found here\n* Next\n"))
-    (let* ((result (org-mcp-test--call-grep "token" test-file))
-           (groups (alist-get 'groups result)))
-      (should (= (length groups) 1))
-      (should
-       (equal
-        (org-mcp-test--headline-path-titles (car groups))
-        '("Section")))
+    (let ((groups (org-mcp-test--grep-groups "token" test-file)))
+      (org-mcp-test--should-single-group-path groups '("Section"))
       (should (= (length (alist-get 'matches (car groups))) 1)))))
 
 (ert-deftest org-mcp-test-grep-pattern-is-literal-not-regex ()
@@ -7953,8 +7716,7 @@ A pattern containing regex metacharacters (`.', `*', `[', etc.)
 must match only lines that contain the literal characters."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Section\nno dots here\nfoo.bar on this line\n"))
-    (let* ((result (org-mcp-test--call-grep "foo.bar" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "foo.bar" test-file)))
       ;; The regex `.` would match any char; the literal should match only foo.bar
       (should (= (length groups) 1))
       (should (= (length (alist-get 'matches (car groups))) 1))
@@ -7969,8 +7731,7 @@ This holds even when the pattern appears multiple times on the same
 line."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Section\ntoken token on one line\n"))
-    (let* ((result (org-mcp-test--call-grep "token" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "token" test-file)))
       (should (= (length groups) 1))
       (should (= (length (alist-get 'matches (car groups))) 1)))))
 
@@ -7978,8 +7739,7 @@ line."
   "Pin that a heading-title match is reported in its own group."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Contains the token here\nbody text\n"))
-    (let* ((result (org-mcp-test--call-grep "token" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "token" test-file)))
       (should (= (length groups) 1))
       (let ((match (car (alist-get 'matches (car groups)))))
         (should (= (alist-get 'line match) 1))
@@ -7990,18 +7750,10 @@ line."
 Mirrors the same normalisation done for `replace_all'."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Section\nHello World content\n"))
-    (let* ((params
-            `((pattern . "hello")
-              (file . ,test-file)
-              (case_sensitive . "false")))
-           (result-json
-            (mcp-server-lib-ert-call-tool "org-grep" params))
-           (result
-            (json-parse-string result-json
-                               :object-type 'alist
-                               :array-type 'list))
-           (groups (alist-get 'groups result)))
-      (should (= (length groups) 1)))))
+    (should
+     (= (length
+         (org-mcp-test--grep-case-sensitive-groups test-file "false"))
+        1))))
 
 (ert-deftest org-mcp-test-grep-no-allowed-files-returns-empty ()
   "Pin that org-grep returns {\"groups\":[]} with no allowed files and no file."
@@ -8022,18 +7774,12 @@ Mirrors the same normalisation done for `replace_all'."
 the search is case-insensitive."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Section\nHello World content\n"))
-    (let* ((params
-            `((pattern . "hello")
-              (file . ,test-file)
-              (case_sensitive . :json-false)))
-           (result-json
-            (mcp-server-lib-ert-call-tool "org-grep" params))
-           (result
-            (json-parse-string result-json
-                               :object-type 'alist
-                               :array-type 'list))
-           (groups (alist-get 'groups result)))
-      (should (= (length groups) 1)))))
+    (should
+     (= (length
+         (org-mcp-test--grep-case-sensitive-groups
+          test-file
+          :json-false))
+        1))))
 
 (ert-deftest org-mcp-test-grep-multi-file-no-file-param ()
   "Pin that org-grep searches all allowed files when file is omitted."
@@ -8041,8 +7787,7 @@ the search is case-insensitive."
                                        "* A\ntoken in file A\n")
                                       (file-b
                                        "* B\ntoken in file B\n"))
-    (let* ((result (org-mcp-test--call-grep "token"))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "token")))
       (should (= (length groups) 2)))))
 
 (ert-deftest org-mcp-test-grep-file-param-limits-search ()
@@ -8051,8 +7796,7 @@ the search is case-insensitive."
                                        "* A\ntoken in file A\n")
                                       (file-b
                                        "* B\ntoken in file B\n"))
-    (let* ((result (org-mcp-test--call-grep "token" file-a))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "token" file-a)))
       (should (= (length groups) 1))
       (should (string= (alist-get 'file (car groups)) file-a)))))
 
@@ -8070,8 +7814,7 @@ of `org-mcp--tool-grep'."
              (concat
               temporary-file-directory "org-mcp-test-missing-")))
            (org-mcp-allowed-files (list present-file missing-file)))
-      (let* ((result (org-mcp-test--call-grep "token"))
-             (groups (alist-get 'groups result)))
+      (let ((groups (org-mcp-test--grep-groups "token")))
         (should (= (length groups) 1))
         (should
          (string= (alist-get 'file (car groups)) present-file))))))
@@ -8082,8 +7825,7 @@ of `org-mcp--tool-grep'."
       ((test-file
         (format "* Heading\n:PROPERTIES:\n:ID: %s\n:END:\nbody here\n"
                 org-mcp-test--content-with-id-id)))
-    (let* ((result (org-mcp-test--call-grep "body" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "body" test-file)))
       (should (= (length groups) 1))
       (should
        (string=
@@ -8096,15 +7838,9 @@ Spaces must appear as `%20' and `/' in titles as `%2F', so the URI
 round-trips through `url-unhex-string' back to the original title."
   (org-mcp-test--with-temp-org-files
       ((test-file "* No ID Heading\nbody here\n"))
-    (let* ((result (org-mcp-test--call-grep "body" test-file))
-           (groups (alist-get 'groups result)))
-      (should (= (length groups) 1))
-      (should
-       (string-prefix-p
-        "org-headline://" (alist-get 'uri (car groups))))
-      (should
-       (string-match-p
-        "No%20ID%20Heading" (alist-get 'uri (car groups)))))))
+    (org-mcp-test--should-single-group-headline-uri
+     (org-mcp-test--grep-groups "body" test-file)
+     "No%20ID%20Heading")))
 
 (ert-deftest org-mcp-test-grep-uri-percent-in-title-round-trips ()
   "Pin that a title containing `%' is fully encoded so it round-trips.
@@ -8112,19 +7848,14 @@ round-trips through `url-unhex-string' back to the original title."
 otherwise `url-unhex-string' in the read path would corrupt it."
   (org-mcp-test--with-temp-org-files ((test-file
                                        "* 50%20done\nbody here\n"))
-    (let* ((result (org-mcp-test--call-grep "body" test-file))
-           (groups (alist-get 'groups result))
-           (uri (alist-get 'uri (car groups))))
-      (should (= (length groups) 1))
-      (should (string-prefix-p "org-headline://" uri))
-      (should (string-match-p "50%2520done" uri)))))
+    (org-mcp-test--should-single-group-headline-uri
+     (org-mcp-test--grep-groups "body" test-file) "50%2520done")))
 
 (ert-deftest org-mcp-test-grep-case-insensitive-default ()
   "Pin that org-grep is case-insensitive by default."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Section\nHello World content\n"))
-    (let* ((result (org-mcp-test--call-grep "hello" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "hello" test-file)))
       (should (= (length groups) 1)))))
 
 (ert-deftest org-mcp-test-grep-case-sensitive-opt-in ()
@@ -8140,8 +7871,7 @@ otherwise `url-unhex-string' in the read path would corrupt it."
   (org-mcp-test--with-temp-org-files
       ((test-file
         "* Section A\ntoken here\n* Section B\ntoken here\n"))
-    (let* ((result (org-mcp-test--call-grep "token" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "token" test-file)))
       (should (= (length groups) 2))
       (should
        (equal
@@ -8157,8 +7887,7 @@ otherwise `url-unhex-string' in the read path would corrupt it."
   "Pin that consecutive matches in the same section form one group."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Section\nfirst match here\nsecond match here\n"))
-    (let* ((result (org-mcp-test--call-grep "match" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "match" test-file)))
       (should (= (length groups) 1))
       (should (= (length (alist-get 'matches (car groups))) 2)))))
 
@@ -8169,11 +7898,9 @@ past the matched line, making every match after the first report the
 first match's line number instead of its own."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Section\nfirst match here\nsecond match here\n"))
-    (let* ((result (org-mcp-test--call-grep "match" test-file))
-           (matches
-            (alist-get 'matches (car (alist-get 'groups result)))))
-      (should (= (alist-get 'line (nth 0 matches)) 2))
-      (should (= (alist-get 'line (nth 1 matches)) 3)))))
+    (should
+     (equal
+      (org-mcp-test--grep-match-lines "match" test-file) '(2 3)))))
 
 (ert-deftest org-mcp-test-grep-gapped-match-line-numbers ()
   "Pin that line numbers are absolute even when matches are not adjacent.
@@ -8182,24 +7909,18 @@ delta that would drift differently for non-consecutive matches."
   (org-mcp-test--with-temp-org-files
       ((test-file
         "* Section\nfirst match here\nskip this\nskip this too\nfifth match\n"))
-    (let* ((result (org-mcp-test--call-grep "match" test-file))
-           (matches
-            (alist-get 'matches (car (alist-get 'groups result)))))
-      (should (= (alist-get 'line (nth 0 matches)) 2))
-      (should (= (alist-get 'line (nth 1 matches)) 5)))))
+    (should
+     (equal
+      (org-mcp-test--grep-match-lines "match" test-file) '(2 5)))))
 
 (ert-deftest org-mcp-test-grep-nested-headline-path ()
   "Pin that org-grep returns the full ancestor path in headline_path.
 A match in a nested section lists all ancestor titles in order."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Parent\n** Child\ndeep content here\n"))
-    (let* ((result (org-mcp-test--call-grep "deep" test-file))
-           (groups (alist-get 'groups result)))
-      (should (= (length groups) 1))
-      (should
-       (equal
-        (org-mcp-test--headline-path-titles (car groups))
-        '("Parent" "Child"))))))
+    (let ((groups (org-mcp-test--grep-groups "deep" test-file)))
+      (org-mcp-test--should-single-group-path
+       groups '("Parent" "Child")))))
 
 (ert-deftest org-mcp-test-grep-headline-path-entries-are-objects ()
   "Pin that each org-grep headline_path entry is a metadata object.
@@ -8250,8 +7971,8 @@ Such matches appear in a group with headline_path [] and a
 file-level URI (the trailing-slash org-headline:// form)."
   (org-mcp-test--with-temp-org-files
       ((test-file "This is pre-heading content\n* My Heading\n"))
-    (let* ((result (org-mcp-test--call-grep "pre-heading" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups
+           (org-mcp-test--grep-groups "pre-heading" test-file)))
       (should (= (length groups) 1))
       (let ((group (car groups)))
         (should (equal (alist-get 'headline_path group) nil))
@@ -8267,8 +7988,7 @@ file-level URI (the trailing-slash org-headline:// form)."
 It returns the correct headline_path and match text."
   (org-mcp-test--with-temp-org-files
       ((test-file "* My Heading\nThis is some body text\n"))
-    (let* ((result (org-mcp-test--call-grep "body" test-file))
-           (groups (alist-get 'groups result)))
+    (let ((groups (org-mcp-test--grep-groups "body" test-file)))
       (should (= (length groups) 1))
       (let ((group (car groups)))
         (should
@@ -8359,13 +8079,9 @@ path must use the same raw title `org-mcp--navigate-to-headline' matches
 on, so the emitted URI round-trips through `org-read-headline'."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Tasks [1/3]\nbody token here\n"))
-    (let* ((result (org-mcp-test--call-grep "token" test-file))
-           (groups (alist-get 'groups result)))
-      (should (= (length groups) 1))
-      (should
-       (equal
-        (org-mcp-test--headline-path-titles (car groups))
-        '("Tasks [1/3]"))))))
+    (let ((groups (org-mcp-test--grep-groups "token" test-file)))
+      (org-mcp-test--should-single-group-path
+       groups '("Tasks [1/3]")))))
 
 (ert-deftest org-mcp-test-grep-headline-path-raw-for-bracket-link ()
   "Pin that headline_path contains the raw bracket-link markup.
@@ -8375,13 +8091,9 @@ the grep path must preserve raw markup so it matches
   (org-mcp-test--with-temp-org-files
       ((test-file
         "* See [[https://example.com][docs]]\nbody token here\n"))
-    (let* ((result (org-mcp-test--call-grep "token" test-file))
-           (groups (alist-get 'groups result)))
-      (should (= (length groups) 1))
-      (should
-       (equal
-        (org-mcp-test--headline-path-titles (car groups))
-        '("See [[https://example.com][docs]]"))))))
+    (let ((groups (org-mcp-test--grep-groups "token" test-file)))
+      (org-mcp-test--should-single-group-path
+       groups '("See [[https://example.com][docs]]")))))
 
 (ert-deftest org-mcp-test-grep-uri-encodes-raw-title-with-stats-cookie
     ()
@@ -8390,12 +8102,9 @@ The fragment must contain `Tasks%20%5B1%2F3%5D' (raw), not the
 stripped `Tasks', so it round-trips through `org-read-headline'."
   (org-mcp-test--with-temp-org-files
       ((test-file "* Tasks [1/3]\nbody token here\n"))
-    (let* ((result (org-mcp-test--call-grep "token" test-file))
-           (groups (alist-get 'groups result))
-           (uri (alist-get 'uri (car groups))))
-      (should (= (length groups) 1))
-      (should (string-prefix-p "org-headline://" uri))
-      (should (string-match-p "Tasks%20%5B1%2F3%5D" uri)))))
+    (org-mcp-test--should-single-group-headline-uri
+     (org-mcp-test--grep-groups "token" test-file)
+     "Tasks%20%5B1%2F3%5D")))
 
 ;;; org-refile-headline tests
 
@@ -8407,6 +8116,41 @@ flipped from t to nil in Org 9.5)."
   (let ((org-adapt-indentation nil))
     (json-read-from-string
      (mcp-server-lib-ert-call-tool "org-refile-headline" params))))
+
+(defun org-mcp-test--refile-params
+    (uri current-title target-parent-uri &optional after-uri position)
+  "Build an `org-refile-headline' parameter alist.
+URI, CURRENT-TITLE, and TARGET-PARENT-URI are always included.  AFTER-URI
+and POSITION are included only when non-nil."
+  (append
+   (list
+    (cons 'uri uri)
+    (cons 'current_title current-title)
+    (cons 'target_parent_uri target-parent-uri))
+   (when after-uri
+     (list (cons 'after_uri after-uri)))
+   (when position
+     (list (cons 'position position)))))
+
+(defun org-mcp-test--refile-and-verify
+    (test-file params expected-regex)
+  "Refile with PARAMS, assert success, and check TEST-FILE.
+TEST-FILE must match EXPECTED-REGEX after the move."
+  (let ((result (org-mcp-test--refile-headline-result params)))
+    (should (equal (alist-get 'success result) t))
+    (org-mcp-test--verify-file-matches test-file expected-regex)))
+
+(defun org-mcp-test--should-refile-noop
+    (test-file params mover-id expected-content)
+  "Assert refiling with PARAMS is a no-op of MOVER-ID, TEST-FILE intact.
+Success is reported, the returned URI is MOVER-ID's `org-id://' URI, and
+TEST-FILE still equals EXPECTED-CONTENT."
+  (let ((result (org-mcp-test--refile-headline-result params)))
+    (should (equal (alist-get 'success result) t))
+    (should
+     (equal (alist-get 'uri result) (concat "org-id://" mover-id)))
+    (should
+     (string= (org-mcp-test--read-file test-file) expected-content))))
 
 (defconst org-mcp-test--content-refile-two-tops
   "* Target\n* Mover\nBody line.\n"
@@ -8436,12 +8180,7 @@ deletion uses `delete-region', not `org-cut-subtree'."
       (kill-new "SENTINEL")
       (let* ((result
               (org-mcp-test--refile-headline-result
-               `((uri
-                  .
-                  ,(format "org-headline://%s#Mover" test-file))
-                 (current_title . "Mover")
-                 (target_parent_uri
-                  . ,(format "org-headline://%s#Target" test-file)))))
+               (org-mcp-test--same-mover-target-params test-file)))
              (uri (alist-get 'uri result)))
         (should (equal (alist-get 'success result) t))
         (should (string-match-p "\\`org-id://" uri))
@@ -8503,21 +8242,12 @@ Locks in `after_uri'-based placement among the target's children."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-after-sibling
     (list org-mcp-test--refile-sibling-id)
-    (let ((result
-           (org-mcp-test--refile-headline-result
-            `((uri
-               .
-               ,(format "org-headline://%s#Mover" test-file))
-              (current_title . "Mover")
-              (target_parent_uri
-               . ,(format "org-headline://%s#Target" test-file))
-              (after_uri
-               .
-               ,(concat
-                 "org-id://" org-mcp-test--refile-sibling-id))))))
-      (should (equal (alist-get 'success result) t))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-refile-after-sibling-regex))))
+    (org-mcp-test--refile-and-verify
+     test-file
+     (org-mcp-test--same-mover-target-params
+      test-file
+      (concat "org-id://" org-mcp-test--refile-sibling-id))
+     org-mcp-test--expected-refile-after-sibling-regex)))
 
 (defconst org-mcp-test--content-refile-nested-to-top
   "* Parent\n** Mover\nBody line.\n* Other\n"
@@ -8539,17 +8269,13 @@ fragment) and promotion of the subtree to level 1."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-nested-to-top
     '()
-    (let ((result
-           (org-mcp-test--refile-headline-result
-            `((uri
-               .
-               ,(format "org-headline://%s#Parent/Mover" test-file))
-              (current_title . "Mover")
-              (target_parent_uri
-               . ,(format "org-headline://%s/" test-file))))))
-      (should (equal (alist-get 'success result) t))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-refile-nested-to-top-regex))))
+    (org-mcp-test--refile-and-verify
+     test-file
+     (org-mcp-test--refile-params
+      (format "org-headline://%s#Parent/Mover" test-file)
+      "Mover"
+      (format "org-headline://%s/" test-file))
+     org-mcp-test--expected-refile-nested-to-top-regex)))
 
 (defconst org-mcp-test--expected-refile-empty-source-regex
   "\\`\\s-*\\'"
@@ -8563,39 +8289,104 @@ fragment) and promotion of the subtree to level 1."
    "Body line\\.\n\\'")
   "Regex: `Mover' moved under `Target' in the destination file.")
 
+(defmacro org-mcp-test--with-refile-files
+    (source-content target-content id-locations &rest body)
+  "Create `source-file' and `target-file', run BODY with ID tracking.
+SOURCE-CONTENT and TARGET-CONTENT seed the temp files; ID-LOCATIONS is
+passed to `org-mcp-test--with-id-tracking'."
+  (declare (indent 3) (debug (form form form body)))
+  `(org-mcp-test--with-temp-org-files ((source-file ,source-content)
+                                       (target-file ,target-content))
+     (org-mcp-test--with-id-tracking (list source-file target-file)
+         ,id-locations
+       ,@body)))
+
+(defun org-mcp-test--cross-mover-target-params
+    (source-file target-file &optional after-uri)
+  "Build params moving `Mover' in SOURCE-FILE under `Target' in TARGET-FILE.
+AFTER-URI, if non-nil, places the node after that sibling."
+  (org-mcp-test--refile-params
+   (format "org-headline://%s#Mover" source-file)
+   "Mover"
+   (format "org-headline://%s#Target" target-file)
+   after-uri))
+
+(defun org-mcp-test--same-mover-target-params
+    (test-file &optional after-uri position)
+  "Build params moving `Mover' under `Target', both in TEST-FILE.
+AFTER-URI and POSITION, if non-nil, are forwarded to the move."
+  (org-mcp-test--refile-params
+   (format "org-headline://%s#Mover" test-file)
+   "Mover"
+   (format "org-headline://%s#Target" test-file)
+   after-uri
+   position))
+
+(defun org-mcp-test--verify-cross-refile (source-file target-file)
+  "Assert SOURCE-FILE was emptied and TARGET-FILE got `Mover' under `Target'."
+  (org-mcp-test--verify-file-matches
+   source-file org-mcp-test--expected-refile-empty-source-regex)
+  (org-mcp-test--verify-file-matches
+   target-file org-mcp-test--expected-refile-cross-target-regex))
+
+(defun org-mcp-test--should-refile-no-id-leak
+    (target-file target-before)
+  "Assert TARGET-FILE still equals TARGET-BEFORE and no Org ID was minted."
+  (should
+   (string= (org-mcp-test--read-file target-file) target-before))
+  (should (null org-id-locations)))
+
+(defun org-mcp-test--cross-refile-and-verify (source-file target-file)
+  "Refile `Mover' from SOURCE-FILE under `Target' in TARGET-FILE; verify.
+Asserts success and the standard cross-file layout."
+  (let ((result
+         (org-mcp-test--refile-headline-result
+          (org-mcp-test--cross-mover-target-params
+           source-file target-file))))
+    (should (equal (alist-get 'success result) t))
+    (org-mcp-test--verify-cross-refile source-file target-file)))
+
+(defmacro org-mcp-test--assert-refile-no-id-leak (params error-regex)
+  "Assert refiling with PARAMS errors with ERROR-REGEX and leaks no Org ID.
+Uses `source-file' and `target-file' from the enclosing fixture;
+TARGET-FILE must stay unchanged and `org-id-locations' must stay nil."
+  (declare (debug (form form)))
+  `(let ((target-before (org-mcp-test--read-file target-file)))
+     (org-mcp-test--assert-refile-error source-file ,params
+       ,error-regex)
+     (org-mcp-test--should-refile-no-id-leak
+      target-file target-before)))
+
+(defmacro org-mcp-test--with-cross-refile-no-id-leak
+    (params error-regex)
+  "On a lone-`Mover' source and a siblings `Target', assert a clean failure.
+Refiling with PARAMS (evaluated with `source-file' and `target-file'
+bound) must error with ERROR-REGEX, mint no Org ID, and leave the
+target file unchanged."
+  (declare (debug (form form)))
+  `(org-mcp-test--with-refile-files
+       org-mcp-test--content-refile-lone-mover
+       org-mcp-test--content-refile-siblings-target
+       nil
+     (org-mcp-test--assert-refile-no-id-leak ,params ,error-regex)))
+
 (ert-deftest org-mcp-test-refile-headline-cross-file-child ()
   "Refile a headline into a heading in a different file.
 Locks in the cross-file path: the subtree leaves the source file and
 lands under the target parent in the destination file.  Also pins that
 a cross-file refile leaves the user's kill ring untouched -- the
 source-side deletion uses `delete-region', not `org-cut-subtree'."
-  (org-mcp-test--with-temp-org-files
-      ((source-file org-mcp-test--content-refile-lone-mover)
-       (target-file org-mcp-test--content-refile-lone-target))
-    (org-mcp-test--with-id-tracking (list source-file target-file) nil
-      (let ((kill-ring nil)
-            (kill-ring-yank-pointer nil)
-            (interprogram-cut-function nil)
-            (interprogram-paste-function nil))
-        (kill-new "SENTINEL")
-        (let ((result
-               (org-mcp-test--refile-headline-result
-                `((uri
-                   .
-                   ,(format "org-headline://%s#Mover" source-file))
-                  (current_title . "Mover")
-                  (target_parent_uri
-                   .
-                   ,(format "org-headline://%s#Target"
-                            target-file))))))
-          (should (equal (alist-get 'success result) t))
-          (should (equal kill-ring '("SENTINEL")))
-          (org-mcp-test--verify-file-matches
-           source-file
-           org-mcp-test--expected-refile-empty-source-regex)
-          (org-mcp-test--verify-file-matches
-           target-file
-           org-mcp-test--expected-refile-cross-target-regex))))))
+  (org-mcp-test--with-refile-files
+      org-mcp-test--content-refile-lone-mover
+      org-mcp-test--content-refile-lone-target
+      nil
+    (let ((kill-ring nil)
+          (kill-ring-yank-pointer nil)
+          (interprogram-cut-function nil)
+          (interprogram-paste-function nil))
+      (kill-new "SENTINEL")
+      (org-mcp-test--cross-refile-and-verify source-file target-file)
+      (should (equal kill-ring '("SENTINEL"))))))
 
 (ert-deftest
     org-mcp-test-refile-headline-cross-file-target-no-trailing-newline
@@ -8605,45 +8396,32 @@ The moved subtree lands on its own line below the target heading and
 the target's last line is not corrupted, even though the target file
 lacks a trailing newline (the insertion point is repaired during
 paste)."
-  (org-mcp-test--with-temp-org-files
-      ((source-file org-mcp-test--content-refile-lone-mover)
-       (target-file
-        org-mcp-test--content-refile-lone-target-no-newline))
-    (org-mcp-test--with-id-tracking (list source-file target-file) nil
-      (let ((result
-             (org-mcp-test--refile-headline-result
-              `((uri
-                 .
-                 ,(format "org-headline://%s#Mover" source-file))
-                (current_title . "Mover")
-                (target_parent_uri
-                 .
-                 ,(format "org-headline://%s#Target" target-file))))))
-        (should (equal (alist-get 'success result) t))
-        (org-mcp-test--verify-file-matches
-         source-file org-mcp-test--expected-refile-empty-source-regex)
-        (org-mcp-test--verify-file-matches
-         target-file
-         org-mcp-test--expected-refile-cross-target-regex)))))
-
-(defun org-mcp-test--refile-tool-response (params)
-  "Call the org-refile-headline tool with PARAMS; return parsed response."
-  (mcp-server-lib-process-jsonrpc-parsed
-   (mcp-server-lib-create-tools-call-request
-    "org-refile-headline" 1 params)
-   mcp-server-lib-ert-server-id))
+  (org-mcp-test--with-refile-files
+      org-mcp-test--content-refile-lone-mover
+      org-mcp-test--content-refile-lone-target-no-newline
+      nil
+    (org-mcp-test--cross-refile-and-verify source-file target-file)))
 
 (defmacro org-mcp-test--assert-refile-error
     (test-file params &optional error-regex)
   "Assert refiling with PARAMS errors and TEST-FILE stays unchanged.
 ERROR-REGEX, if non-nil, must match the signalled error's message."
   (declare (indent 1) (debug (form form &optional form)))
-  `(org-mcp-test--assert-error-and-file ,test-file
-     (let ((result
-            (mcp-server-lib-ert-process-tool-response
-             (org-mcp-test--refile-tool-response ,params))))
-       (error "Expected error but got success: %s" result))
+  `(org-mcp-test--assert-error-and-file
+       ,test-file
+     (org-mcp-test--tool-error-or-die "org-refile-headline" ,params)
      ,error-regex))
+
+(defmacro org-mcp-test--assert-same-file-refile-error
+    (content id-locations params error-regex)
+  "Set up CONTENT under `test-file' and assert refiling with PARAMS errors.
+ID-LOCATIONS registers node IDs; PARAMS is evaluated with `test-file'
+bound; ERROR-REGEX must match the signalled error and TEST-FILE must
+stay unchanged."
+  (declare (indent 2) (debug (form form form form)))
+  `(org-mcp-test--with-id-setup test-file ,content ,id-locations
+     (org-mcp-test--assert-refile-error test-file ,params
+       ,error-regex)))
 
 (defconst org-mcp-test--content-refile-parent-child
   "* Parent\n** Child\n"
@@ -8653,20 +8431,41 @@ ERROR-REGEX, if non-nil, must match the signalled error's message."
     ()
   "Refiling a node under its own child is rejected; file unchanged.
 Guards against creating a cycle (a node becoming its own descendant)."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-same-file-refile-error
       org-mcp-test--content-refile-parent-child
-    '()
-    (org-mcp-test--assert-refile-error test-file
-      `((uri . ,(format "org-headline://%s#Parent" test-file))
-        (current_title . "Parent")
-        (target_parent_uri
-         . ,(format "org-headline://%s#Parent/Child" test-file)))
-      "itself or its own subtree")))
+      '()
+    (org-mcp-test--refile-params
+     (format "org-headline://%s#Parent" test-file) "Parent"
+     (format "org-headline://%s#Parent/Child" test-file))
+    "itself or its own subtree"))
 
 (defconst org-mcp-test--refile-mover-id
   "22222222-2222-2222-2222-222222222222"
   "Stable UUID assigned to the `Mover' headline.
 Used in fixtures that need a pre-existing node ID.")
+
+(defun org-mcp-test--id-mover-target-params
+    (test-file &optional after-uri position)
+  "Build params moving the ID-addressed `Mover' under `Target' in TEST-FILE.
+The source URI is the `Mover' node's `org-id://' URI.  AFTER-URI and
+POSITION, if non-nil, are forwarded to the move."
+  (org-mcp-test--refile-params
+   (concat "org-id://" org-mcp-test--refile-mover-id)
+   "Mover"
+   (format "org-headline://%s#Target" test-file)
+   after-uri
+   position))
+
+(defmacro org-mcp-test--assert-refile-noop
+    (content id-locations params)
+  "Set up CONTENT under `test-file' and assert refiling with PARAMS is a no-op.
+ID-LOCATIONS registers the pre-existing node IDs; PARAMS is evaluated
+with `test-file' bound.  The move returns the `Mover' node's existing
+URI and CONTENT is left unchanged."
+  (declare (indent 2) (debug (form form form)))
+  `(org-mcp-test--with-id-setup test-file ,content ,id-locations
+     (org-mcp-test--should-refile-noop
+      test-file ,params org-mcp-test--refile-mover-id ,content)))
 
 (defconst org-mcp-test--content-refile-mover-with-id
   (concat
@@ -8695,69 +8494,46 @@ Used in fixtures that need a pre-existing node ID.")
   "Refiling a node already in its requested slot is a no-op.
 The node has an ID; the file content is unchanged and the node's
 existing URI is returned."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-refile-noop
       org-mcp-test--content-refile-noop
-    (list org-mcp-test--refile-mover-id)
-    (let ((result
-           (org-mcp-test--refile-headline-result
-            `((uri
-               .
-               ,(concat "org-id://" org-mcp-test--refile-mover-id))
-              (current_title . "Mover")
-              (target_parent_uri
-               . ,(format "org-headline://%s#Target" test-file))))))
-      (should (equal (alist-get 'success result) t))
-      (should
-       (equal
-        (alist-get 'uri result)
-        (concat "org-id://" org-mcp-test--refile-mover-id)))
-      (should
-       (string=
-        (org-mcp-test--read-file test-file)
-        org-mcp-test--content-refile-noop)))))
+      (list org-mcp-test--refile-mover-id)
+    (org-mcp-test--id-mover-target-params test-file)))
 
 (ert-deftest org-mcp-test-refile-headline-position-after-uri-mutex ()
   "Position and after_uri together are rejected; file unchanged."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-same-file-refile-error
       org-mcp-test--content-refile-after-sibling
-    (list org-mcp-test--refile-sibling-id)
-    (org-mcp-test--assert-refile-error test-file
-      `((uri . ,(format "org-headline://%s#Mover" test-file))
-        (current_title . "Mover")
-        (target_parent_uri
-         . ,(format "org-headline://%s#Target" test-file))
-        (after_uri
-         . ,(concat "org-id://" org-mcp-test--refile-sibling-id))
-        (position . "end"))
-      "mutually exclusive")))
+      (list org-mcp-test--refile-sibling-id)
+    (org-mcp-test--same-mover-target-params
+     test-file
+     (concat "org-id://" org-mcp-test--refile-sibling-id) "end")
+    "mutually exclusive"))
 
 (ert-deftest org-mcp-test-refile-headline-after-uri-top-level-rejected
     ()
   "After_uri combined with a top-level target is rejected."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-same-file-refile-error
       org-mcp-test--content-refile-after-sibling
-    (list org-mcp-test--refile-sibling-id)
-    (org-mcp-test--assert-refile-error test-file
-      `((uri . ,(format "org-headline://%s#Mover" test-file))
-        (current_title . "Mover")
-        (target_parent_uri . ,(format "org-headline://%s/" test-file))
-        (after_uri
-         . ,(concat "org-id://" org-mcp-test--refile-sibling-id)))
-      "top-level target_parent_uri")))
+      (list org-mcp-test--refile-sibling-id)
+    (org-mcp-test--refile-params (format "org-headline://%s#Mover"
+                                         test-file)
+                                 "Mover"
+                                 (format "org-headline://%s/"
+                                         test-file)
+                                 (concat
+                                  "org-id://"
+                                  org-mcp-test--refile-sibling-id))
+    "top-level target_parent_uri"))
 
 (ert-deftest org-mcp-test-refile-headline-after-uri-self-rejected ()
   "After_uri referring to the node being refiled is rejected."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-same-file-refile-error
       org-mcp-test--content-refile-noop
-    (list org-mcp-test--refile-mover-id)
-    (org-mcp-test--assert-refile-error test-file
-      `((uri . ,(concat "org-id://" org-mcp-test--refile-mover-id))
-        (current_title . "Mover")
-        (target_parent_uri
-         . ,(format "org-headline://%s#Target" test-file))
-        (after_uri
-         . ,(concat "org-id://" org-mcp-test--refile-mover-id)))
-      "being refiled")))
+      (list org-mcp-test--refile-mover-id)
+    (org-mcp-test--id-mover-target-params
+     test-file
+     (concat "org-id://" org-mcp-test--refile-mover-id))
+    "being refiled"))
 
 (defconst org-mcp-test--content-refile-preserve
   (concat
@@ -8800,43 +8576,35 @@ structure."
     (org-mcp-test--with-id-setup test-file
         org-mcp-test--content-refile-preserve
       (list org-mcp-test--refile-mover-id)
-      (let ((result
-             (org-mcp-test--refile-headline-result
-              `((uri
-                 .
-                 ,(concat "org-id://" org-mcp-test--refile-mover-id))
-                (current_title . "Mover")
-                (target_parent_uri
-                 .
-                 ,(format "org-headline://%s#Destination"
-                          test-file))))))
-        (should (equal (alist-get 'success result) t))
-        (org-mcp-test--verify-file-matches
-         test-file org-mcp-test--expected-refile-preserve-regex)))))
+      (org-mcp-test--refile-and-verify
+       test-file
+       (org-mcp-test--refile-params
+        (concat "org-id://" org-mcp-test--refile-mover-id)
+        "Mover"
+        (format "org-headline://%s#Destination" test-file))
+       org-mcp-test--expected-refile-preserve-regex))))
 
 (ert-deftest org-mcp-test-refile-headline-title-mismatch-rejected ()
   "Refile fails when current_title does not match; file unchanged."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-same-file-refile-error
       org-mcp-test--content-refile-two-tops
-    '()
-    (org-mcp-test--assert-refile-error test-file
-      `((uri . ,(format "org-headline://%s#Mover" test-file))
-        (current_title . "Wrong Title")
-        (target_parent_uri
-         . ,(format "org-headline://%s#Target" test-file)))
-      "Title mismatch")))
+      '()
+    (org-mcp-test--refile-params
+     (format "org-headline://%s#Mover" test-file)
+     "Wrong Title"
+     (format "org-headline://%s#Target" test-file))
+    "Title mismatch"))
 
 (ert-deftest org-mcp-test-refile-headline-whole-file-uri-rejected ()
   "A source URI identifying a whole file (no headline) is rejected."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-same-file-refile-error
       org-mcp-test--content-refile-two-tops
-    '()
-    (org-mcp-test--assert-refile-error test-file
-      `((uri . ,(format "org-headline://%s/" test-file))
-        (current_title . "Mover")
-        (target_parent_uri
-         . ,(format "org-headline://%s#Target" test-file)))
-      "not a whole file")))
+      '()
+    (org-mcp-test--refile-params
+     (format "org-headline://%s/" test-file)
+     "Mover"
+     (format "org-headline://%s#Target" test-file))
+    "not a whole file"))
 
 (defmacro org-mcp-test--assert-refile-unsaved-rejected (dirty-file)
   "Assert a Mover->Target refile errors on an unsaved DIRTY-FILE.
@@ -8853,10 +8621,9 @@ file unchanged."
          (insert "\n* Extra")
          (should (buffer-modified-p)))
        (org-mcp-test--assert-refile-error source-file
-         `((uri . ,(format "org-headline://%s#Mover" source-file))
-           (current_title . "Mover")
-           (target_parent_uri
-            . ,(format "org-headline://%s#Target" target-file)))
+         (org-mcp-test--refile-params
+          (format "org-headline://%s#Mover" source-file) "Mover"
+          (format "org-headline://%s#Target" target-file))
          "unsaved"))))
 
 (ert-deftest org-mcp-test-refile-headline-unsaved-source-rejected ()
@@ -8874,26 +8641,20 @@ Pins both that the pre-existing ID is carried across files unchanged,
 not re-minted -- the returned URI equals the original `org-id://' URI
 -- and the `org-id-locations' repair: the moved node is read back via
 that URI and yields the destination content."
-  (org-mcp-test--with-temp-org-files
-      ((source-file org-mcp-test--content-refile-mover-with-id)
-       (target-file org-mcp-test--content-refile-lone-target))
-    (org-mcp-test--with-id-tracking (list source-file target-file)
-        (list (cons org-mcp-test--refile-mover-id source-file))
-      (let ((result
-             (org-mcp-test--refile-headline-result
-              `((uri
-                 .
-                 ,(format "org-headline://%s#Mover" source-file))
-                (current_title . "Mover")
-                (target_parent_uri
-                 .
-                 ,(format "org-headline://%s#Target" target-file))))))
-        (should
-         (equal
-          (alist-get 'uri result)
-          (concat "org-id://" org-mcp-test--refile-mover-id)))
-        (org-mcp-test--call-read-by-id-and-check
-         org-mcp-test--refile-mover-id "Body line")))))
+  (org-mcp-test--with-refile-files
+      org-mcp-test--content-refile-mover-with-id
+      org-mcp-test--content-refile-lone-target
+      (list (cons org-mcp-test--refile-mover-id source-file))
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            (org-mcp-test--cross-mover-target-params
+             source-file target-file))))
+      (should
+       (equal
+        (alist-get 'uri result)
+        (concat "org-id://" org-mcp-test--refile-mover-id)))
+      (org-mcp-test--call-read-by-id-and-check
+       org-mcp-test--refile-mover-id "Body line"))))
 
 (ert-deftest
     org-mcp-test-refile-headline-cross-file-resolves-no-tracking
@@ -8908,13 +8669,8 @@ Resolution falls back to scanning the allowed files."
           (org-id-locations nil))
       (let* ((result
               (org-mcp-test--refile-headline-result
-               `((uri
-                  .
-                  ,(format "org-headline://%s#Mover" source-file))
-                 (current_title . "Mover")
-                 (target_parent_uri
-                  .
-                  ,(format "org-headline://%s#Target" target-file)))))
+               (org-mcp-test--cross-mover-target-params
+                source-file target-file)))
              (uri (alist-get 'uri result)))
         (should (string-match "\\`org-id://\\(.+\\)\\'" uri))
         (org-mcp-test--call-read-by-id-and-check
@@ -8928,21 +8684,12 @@ The source headline has no ID; the target-parent lookup fails, so this
 pins that the ID is minted only after the target is validated -- a
 rejected move leaves `org-id-locations' untouched and both files
 unchanged."
-  (org-mcp-test--with-temp-org-files
-      ((source-file org-mcp-test--content-refile-lone-mover)
-       (target-file org-mcp-test--content-refile-siblings-target))
-    (org-mcp-test--with-id-tracking (list source-file target-file) nil
-      (let ((target-before (org-mcp-test--read-file target-file)))
-        (org-mcp-test--assert-refile-error source-file
-          `((uri . ,(format "org-headline://%s#Mover" source-file))
-            (current_title . "Mover")
-            (target_parent_uri
-             . ,(format "org-headline://%s#Nonexistent" target-file)))
-          "Cannot find headline")
-        (should
-         (string=
-          (org-mcp-test--read-file target-file) target-before))
-        (should (null org-id-locations))))))
+  (org-mcp-test--with-cross-refile-no-id-leak
+   (org-mcp-test--refile-params
+    (format "org-headline://%s#Mover" source-file)
+    "Mover"
+    (format "org-headline://%s#Nonexistent" target-file))
+   "Cannot find headline"))
 
 (ert-deftest
     org-mcp-test-refile-headline-cross-file-bad-after-uri-no-id-leak
@@ -8951,23 +8698,11 @@ unchanged."
 The `after_uri' sibling is absent under the target parent, so sibling
 resolution fails before the ID is minted -- `org-id-locations' stays
 untouched and both files unchanged."
-  (org-mcp-test--with-temp-org-files
-      ((source-file org-mcp-test--content-refile-lone-mover)
-       (target-file org-mcp-test--content-refile-siblings-target))
-    (org-mcp-test--with-id-tracking (list source-file target-file) nil
-      (let ((target-before (org-mcp-test--read-file target-file)))
-        (org-mcp-test--assert-refile-error source-file
-          `((uri . ,(format "org-headline://%s#Mover" source-file))
-            (current_title . "Mover")
-            (target_parent_uri
-             . ,(format "org-headline://%s#Target" target-file))
-            (after_uri
-             . ,(concat "org-id://" org-mcp-test--refile-mover-id)))
-          "not found under parent")
-        (should
-         (string=
-          (org-mcp-test--read-file target-file) target-before))
-        (should (null org-id-locations))))))
+  (org-mcp-test--with-cross-refile-no-id-leak
+   (org-mcp-test--cross-mover-target-params
+    source-file target-file
+    (concat "org-id://" org-mcp-test--refile-mover-id))
+   "not found under parent"))
 
 (ert-deftest org-mcp-test-refile-headline-cross-file-after-sibling ()
   "Cross-file refile with `after_uri' lands node among target kids.
@@ -8975,29 +8710,21 @@ The node lands among the target's children, not the source's,
 immediately after the named sibling in the destination file, and the
 source is emptied.  Pins that `after_uri' resolves against the target
 buffer."
-  (org-mcp-test--with-temp-org-files
-      ((source-file org-mcp-test--content-refile-lone-mover)
-       (target-file org-mcp-test--content-refile-siblings-target))
-    (org-mcp-test--with-id-tracking (list source-file target-file) nil
-      (let ((result
-             (org-mcp-test--refile-headline-result
-              `((uri
-                 .
-                 ,(format "org-headline://%s#Mover" source-file))
-                (current_title . "Mover")
-                (target_parent_uri
-                 . ,(format "org-headline://%s#Target" target-file))
-                (after_uri
-                 .
-                 ,(concat
-                   "org-id://" org-mcp-test--refile-sibling-id))))))
-        (should (equal (alist-get 'success result) t))
-        (org-mcp-test--verify-file-matches
-         target-file
-         org-mcp-test--expected-refile-after-sibling-regex)
-        (org-mcp-test--verify-file-matches
-         source-file
-         org-mcp-test--expected-refile-empty-source-regex)))))
+  (org-mcp-test--with-refile-files
+      org-mcp-test--content-refile-lone-mover
+      org-mcp-test--content-refile-siblings-target
+      nil
+    (let ((result
+           (org-mcp-test--refile-headline-result
+            (org-mcp-test--cross-mover-target-params
+             source-file target-file
+             (concat "org-id://" org-mcp-test--refile-sibling-id)))))
+      (should (equal (alist-get 'success result) t))
+      (org-mcp-test--verify-file-matches
+       target-file org-mcp-test--expected-refile-after-sibling-regex)
+      (org-mcp-test--verify-file-matches
+       source-file
+       org-mcp-test--expected-refile-empty-source-regex))))
 
 (ert-deftest
     org-mcp-test-refile-headline-same-file-bad-after-uri-no-id-leak
@@ -9011,12 +8738,9 @@ unchanged."
       org-mcp-test--content-refile-after-sibling
     '()
     (org-mcp-test--assert-refile-error test-file
-      `((uri . ,(format "org-headline://%s#Mover" test-file))
-        (current_title . "Mover")
-        (target_parent_uri
-         . ,(format "org-headline://%s#Target" test-file))
-        (after_uri
-         . ,(concat "org-id://" org-mcp-test--refile-mover-id)))
+      (org-mcp-test--same-mover-target-params
+       test-file
+       (concat "org-id://" org-mcp-test--refile-mover-id))
       "not found under parent")
     (should (null org-id-locations))))
 
@@ -9043,13 +8767,7 @@ the setting to nil) do not exercise."
             (json-read-from-string
              (mcp-server-lib-ert-call-tool
               "org-refile-headline"
-              `((uri
-                 .
-                 ,(format "org-headline://%s#Mover" test-file))
-                (current_title . "Mover")
-                (target_parent_uri
-                 .
-                 ,(format "org-headline://%s#Target" test-file)))))))
+              (org-mcp-test--same-mover-target-params test-file)))))
       (should (equal (alist-get 'success result) t))
       (org-mcp-test--verify-file-matches
        test-file
@@ -9073,18 +8791,15 @@ the setting to nil) do not exercise."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-start
     '()
-    (let ((result
-           (org-mcp-test--refile-headline-result
-            `((uri
-               .
-               ,(format "org-headline://%s#Mover" test-file))
-              (current_title . "Mover")
-              (target_parent_uri
-               . ,(format "org-headline://%s#Target" test-file))
-              (position . "start")))))
-      (should (equal (alist-get 'success result) t))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-refile-start-regex))))
+    (org-mcp-test--refile-and-verify
+     test-file
+     (org-mcp-test--refile-params
+      (format "org-headline://%s#Mover" test-file)
+      "Mover"
+      (format "org-headline://%s#Target" test-file)
+      nil
+      "start")
+     org-mcp-test--expected-refile-start-regex)))
 
 (defconst org-mcp-test--content-refile-promote
   "* Top\n** Mid\n*** Mover\n**** Deep\nDeep body.\n"
@@ -9105,17 +8820,13 @@ the setting to nil) do not exercise."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-promote
     '()
-    (let ((result
-           (org-mcp-test--refile-headline-result
-            `((uri
-               .
-               ,(format "org-headline://%s#Top/Mid/Mover" test-file))
-              (current_title . "Mover")
-              (target_parent_uri
-               . ,(format "org-headline://%s/" test-file))))))
-      (should (equal (alist-get 'success result) t))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-refile-promote-regex))))
+    (org-mcp-test--refile-and-verify
+     test-file
+     (org-mcp-test--refile-params
+      (format "org-headline://%s#Top/Mid/Mover" test-file)
+      "Mover"
+      (format "org-headline://%s/" test-file))
+     org-mcp-test--expected-refile-promote-regex)))
 
 (defconst org-mcp-test--content-refile-reorder
   (concat
@@ -9151,21 +8862,14 @@ insertion point (the marker must shift back over the removed text)."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-refile-reorder
     (list org-mcp-test--refile-sibling-id)
-    (let ((result
-           (org-mcp-test--refile-headline-result
-            `((uri
-               .
-               ,(format "org-headline://%s#Parent/Mover" test-file))
-              (current_title . "Mover")
-              (target_parent_uri
-               . ,(format "org-headline://%s#Parent" test-file))
-              (after_uri
-               .
-               ,(concat
-                 "org-id://" org-mcp-test--refile-sibling-id))))))
-      (should (equal (alist-get 'success result) t))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-refile-reorder-regex))))
+    (org-mcp-test--refile-and-verify
+     test-file
+     (org-mcp-test--refile-params
+      (format "org-headline://%s#Parent/Mover" test-file)
+      "Mover"
+      (format "org-headline://%s#Parent" test-file)
+      (concat "org-id://" org-mcp-test--refile-sibling-id))
+     org-mcp-test--expected-refile-reorder-regex)))
 
 (defconst org-mcp-test--content-refile-noop-top-level
   (concat
@@ -9186,26 +8890,12 @@ The node has an ID; the file content is unchanged and the existing URI
 is returned.  Exercises the `(equal nil nil)' top-level parent branch
 of `org-mcp--refile-noop-p' that the named-parent noop test does not
 reach."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-refile-noop
       org-mcp-test--content-refile-noop-top-level
-    (list org-mcp-test--refile-mover-id)
-    (let ((result
-           (org-mcp-test--refile-headline-result
-            `((uri
-               .
-               ,(concat "org-id://" org-mcp-test--refile-mover-id))
-              (current_title . "Mover")
-              (target_parent_uri
-               . ,(format "org-headline://%s/" test-file))))))
-      (should (equal (alist-get 'success result) t))
-      (should
-       (equal
-        (alist-get 'uri result)
-        (concat "org-id://" org-mcp-test--refile-mover-id)))
-      (should
-       (string=
-        (org-mcp-test--read-file test-file)
-        org-mcp-test--content-refile-noop-top-level)))))
+      (list org-mcp-test--refile-mover-id)
+    (org-mcp-test--refile-params
+     (concat "org-id://" org-mcp-test--refile-mover-id) "Mover"
+     (format "org-headline://%s/" test-file))))
 
 (defconst org-mcp-test--content-refile-noop-after
   (concat
@@ -9229,57 +8919,22 @@ reach."
   "Refiling a node right after the `after_uri' sibling is a no-op.
 The node is already in that slot and has an ID.  Exercises the
 `after-id' branch of `org-mcp--refile-noop-p'."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-refile-noop
       org-mcp-test--content-refile-noop-after
-    (list
-     org-mcp-test--refile-sibling-id org-mcp-test--refile-mover-id)
-    (let ((result
-           (org-mcp-test--refile-headline-result
-            `((uri
-               .
-               ,(concat "org-id://" org-mcp-test--refile-mover-id))
-              (current_title . "Mover")
-              (target_parent_uri
-               . ,(format "org-headline://%s#Target" test-file))
-              (after_uri
-               .
-               ,(concat
-                 "org-id://" org-mcp-test--refile-sibling-id))))))
-      (should (equal (alist-get 'success result) t))
-      (should
-       (equal
-        (alist-get 'uri result)
-        (concat "org-id://" org-mcp-test--refile-mover-id)))
-      (should
-       (string=
-        (org-mcp-test--read-file test-file)
-        org-mcp-test--content-refile-noop-after)))))
+      (list
+       org-mcp-test--refile-sibling-id org-mcp-test--refile-mover-id)
+    (org-mcp-test--id-mover-target-params
+     test-file
+     (concat "org-id://" org-mcp-test--refile-sibling-id))))
 
 (ert-deftest org-mcp-test-refile-headline-noop-position-start ()
   "Refiling a first child with position=start is a no-op.
 The node is already the first child and has an ID.  Exercises the
 `position=start' branch of `org-mcp--refile-noop-p'."
-  (org-mcp-test--with-id-setup test-file
+  (org-mcp-test--assert-refile-noop
       org-mcp-test--content-refile-noop
-    (list org-mcp-test--refile-mover-id)
-    (let ((result
-           (org-mcp-test--refile-headline-result
-            `((uri
-               .
-               ,(concat "org-id://" org-mcp-test--refile-mover-id))
-              (current_title . "Mover")
-              (target_parent_uri
-               . ,(format "org-headline://%s#Target" test-file))
-              (position . "start")))))
-      (should (equal (alist-get 'success result) t))
-      (should
-       (equal
-        (alist-get 'uri result)
-        (concat "org-id://" org-mcp-test--refile-mover-id)))
-      (should
-       (string=
-        (org-mcp-test--read-file test-file)
-        org-mcp-test--content-refile-noop)))))
+      (list org-mcp-test--refile-mover-id)
+    (org-mcp-test--id-mover-target-params test-file nil "start")))
 
 ;;; org-set-planning tests
 
@@ -9290,6 +8945,36 @@ drawer land at column 0 regardless of the Org default."
   (let ((org-adapt-indentation nil))
     (json-read-from-string
      (mcp-server-lib-ert-call-tool "org-set-planning" params))))
+
+(defmacro org-mcp-test--with-set-planning
+    (content planning-params &rest body)
+  "Run BODY after calling org-set-planning on the bare `Task' headline.
+CONTENT is written to a temp file bound to `test-file'.  PLANNING-PARAMS
+is an alist of org-set-planning arguments without `uri' (values must be
+self-quoting); the `Task' headline URI is prepended before the call.
+BODY runs with `test-file' and the parsed `result' alist bound."
+  (declare (indent 2) (debug (form form body)))
+  `(org-mcp-test--with-temp-org-files ((test-file ,content))
+     (let* ((uri (format "org-headline://%s#Task" test-file))
+            (result
+             (org-mcp-test--set-planning-result
+              (cons (cons 'uri uri) ,planning-params))))
+       ,@body)))
+
+(defun org-mcp-test--should-planning-cleared (test-file result)
+  "Assert RESULT reports success with no planning and TEST-FILE cleared.
+Both `scheduled' and `deadline' must be null in RESULT, and TEST-FILE
+must contain only the headline and a minted ID drawer."
+  (should (equal (alist-get 'success result) t))
+  (should (null (alist-get 'scheduled result)))
+  (should (null (alist-get 'deadline result)))
+  (org-mcp-test--verify-file-matches
+   test-file org-mcp-test--expected-planning-cleared-regex))
+
+(defun org-mcp-test--should-scheduled (test-file result value regex)
+  "Assert RESULT's scheduled equals VALUE and TEST-FILE matches REGEX."
+  (should (equal (alist-get 'scheduled result) value))
+  (org-mcp-test--verify-file-matches test-file regex))
 
 (defconst org-mcp-test--content-planning-bare "* TODO Task\n"
   "Single TODO headline with no planning line, body, or properties.")
@@ -9306,20 +8991,15 @@ drawer land at column 0 regardless of the Org default."
   "Set SCHEDULED on a headline that has no planning line.
 Pins that the planning line lands directly under the heading, above the
 minted ID drawer, and that the resulting timestamp is returned."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20")))))
-      (should (= (length result) 4))
-      (should (equal (alist-get 'success result) t))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
-      (should (null (alist-get 'deadline result)))
-      (should (string-prefix-p "org-id://" (alist-get 'uri result)))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-scheduled-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20"))
+    (should (= (length result) 4))
+    (should (equal (alist-get 'success result) t))
+    (should (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+    (should (null (alist-get 'deadline result)))
+    (should (string-prefix-p "org-id://" (alist-get 'uri result)))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-scheduled-regex)))
 
 (defconst org-mcp-test--expected-planning-deadline-regex
   (concat
@@ -9332,17 +9012,13 @@ minted ID drawer, and that the resulting timestamp is returned."
 (ert-deftest org-mcp-test-set-planning-deadline ()
   "Set DEADLINE on a headline that has no planning line.
 Pins that DEADLINE alone is handled (SCHEDULED untouched and absent)."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (deadline . "2026-06-25")))))
-      (should (equal (alist-get 'success result) t))
-      (should (null (alist-get 'scheduled result)))
-      (should (equal (alist-get 'deadline result) "<2026-06-25 Thu>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-deadline-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((deadline . "2026-06-25"))
+    (should (equal (alist-get 'success result) t))
+    (should (null (alist-get 'scheduled result)))
+    (should (equal (alist-get 'deadline result) "<2026-06-25 Thu>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-deadline-regex)))
 
 (defconst org-mcp-test--expected-planning-both-regex
   (concat
@@ -9357,20 +9033,13 @@ Pins that DEADLINE alone is handled (SCHEDULED untouched and absent)."
 Pins that both keywords merge onto one planning line in Org's canonical
 DEADLINE-then-SCHEDULED order, above the ID drawer, and that both
 resulting timestamps are returned."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri)
-               (scheduled . "2026-06-20")
-               (deadline . "2026-06-25")))))
-      (should (equal (alist-get 'success result) t))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
-      (should (equal (alist-get 'deadline result) "<2026-06-25 Thu>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-both-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20") (deadline . "2026-06-25"))
+    (should (equal (alist-get 'success result) t))
+    (should (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+    (should (equal (alist-get 'deadline result) "<2026-06-25 Thu>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-both-regex)))
 
 (defconst org-mcp-test--content-planning-scheduled
   "* TODO Task\nSCHEDULED: <2026-06-20 Sat>\n"
@@ -9384,17 +9053,10 @@ resulting timestamps are returned."
   "Clear an existing SCHEDULED entry.
 Pins that clear_scheduled removes the planning line entirely and the
 returned scheduled value is null."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-scheduled))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (clear_scheduled . t)))))
-      (should (equal (alist-get 'success result) t))
-      (should (null (alist-get 'scheduled result)))
-      (should (null (alist-get 'deadline result)))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-cleared-regex))))
+  (org-mcp-test--with-set-planning
+      org-mcp-test--content-planning-scheduled
+      '((clear_scheduled . t))
+    (org-mcp-test--should-planning-cleared test-file result)))
 
 (defconst org-mcp-test--expected-planning-false-noop-regex
   (concat
@@ -9408,19 +9070,13 @@ returned scheduled value is null."
   "A JSON `false' clear_scheduled must not clear the entry.
 Elisp treats `:json-false' as truthy, so a naive `when' would wrongly
 clear; this pins the boolean normalization at the tool boundary."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-scheduled))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri)
-               (deadline . "2026-06-26")
-               (clear_scheduled . :json-false)))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
-      (should (equal (alist-get 'deadline result) "<2026-06-26 Fri>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-false-noop-regex))))
+  (org-mcp-test--with-set-planning
+      org-mcp-test--content-planning-scheduled
+      '((deadline . "2026-06-26") (clear_scheduled . :json-false))
+    (should (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+    (should (equal (alist-get 'deadline result) "<2026-06-26 Fri>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-false-noop-regex)))
 
 (defconst org-mcp-test--content-planning-both
   "* TODO Task\nDEADLINE: <2026-06-25 Thu> SCHEDULED: <2026-06-20 Sat>\n"
@@ -9431,17 +9087,12 @@ clear; this pins the boolean normalization at the tool boundary."
   "Clear DEADLINE from a shared planning line, keeping SCHEDULED.
 Pins clear_deadline and that the surviving keyword collapses onto its
 own line."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-both))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (clear_deadline . t)))))
-      (should (null (alist-get 'deadline result)))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-scheduled-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-both
+      '((clear_deadline . t))
+    (should (null (alist-get 'deadline result)))
+    (should (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-scheduled-regex)))
 
 (defconst org-mcp-test--expected-planning-by-id-regex
   (concat
@@ -9483,16 +9134,13 @@ preserved, and the returned URI is the same org-id:// URI."
   "Set SCHEDULED with a repeater cookie.
 Pins the hybrid splice: Org resolves the date, then the +1w repeater is
 spliced into the timestamp (org-read-date alone would drop it)."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 +1w")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +1w>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-repeater-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 +1w"))
+    (org-mcp-test--should-scheduled
+     test-file
+     result
+     "<2026-06-20 Sat +1w>"
+     org-mcp-test--expected-planning-repeater-regex)))
 
 (defconst org-mcp-test--expected-planning-warning-regex
   (concat
@@ -9506,16 +9154,12 @@ spliced into the timestamp (org-read-date alone would drop it)."
   "Set SCHEDULED with a warning-period cookie.
 Pins the hybrid splice: Org resolves the date, then the -3d warning is
 spliced into the timestamp (org-read-date alone would drop it)."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 -3d")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat -3d>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-warning-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 -3d"))
+    (should
+     (equal (alist-get 'scheduled result) "<2026-06-20 Sat -3d>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-warning-regex)))
 
 (defconst org-mcp-test--expected-planning-repeater-warning-regex
   (concat
@@ -9530,18 +9174,13 @@ spliced into the timestamp (org-read-date alone would drop it)."
   "Set SCHEDULED with both a repeater and a warning cookie.
 Pins Org's canonical repeater-then-warning order in the spliced
 timestamp."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 +1w -3d")))))
-      (should
-       (equal
-        (alist-get 'scheduled result) "<2026-06-20 Sat +1w -3d>"))
-      (org-mcp-test--verify-file-matches
-       test-file
-       org-mcp-test--expected-planning-repeater-warning-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 +1w -3d"))
+    (should
+     (equal (alist-get 'scheduled result) "<2026-06-20 Sat +1w -3d>"))
+    (org-mcp-test--verify-file-matches
+     test-file
+     org-mcp-test--expected-planning-repeater-warning-regex)))
 
 (defconst org-mcp-test--expected-planning-time-regex
   (concat
@@ -9553,16 +9192,12 @@ timestamp."
 
 (ert-deftest org-mcp-test-set-planning-scheduled-time-of-day ()
   "Set SCHEDULED with a time-of-day (no cookies)."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 14:00")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat 14:00>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-time-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 14:00"))
+    (should
+     (equal (alist-get 'scheduled result) "<2026-06-20 Sat 14:00>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-time-regex)))
 
 (defconst org-mcp-test--content-planning-repeating
   "* TODO Task\nSCHEDULED: <2026-06-13 Sat +1w>\n"
@@ -9573,16 +9208,14 @@ timestamp."
   "Re-scheduling without a cookie preserves an existing repeater.
 Pins that Org's repeater preservation is left intact when the client
 supplies a plain date."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-repeating))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +1w>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-repeater-regex))))
+  (org-mcp-test--with-set-planning
+      org-mcp-test--content-planning-repeating
+      '((scheduled . "2026-06-20"))
+    (org-mcp-test--should-scheduled
+     test-file
+     result
+     "<2026-06-20 Sat +1w>"
+     org-mcp-test--expected-planning-repeater-regex)))
 
 (defconst org-mcp-test--expected-planning-replaced-repeater-regex
   (concat
@@ -9596,62 +9229,57 @@ supplies a plain date."
   "Re-scheduling with a cookie replaces the existing repeater.
 Pins the strip-then-append rule: Org first preserves +1w on the new
 date, then the splice removes it and applies the requested +2w."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-repeating))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 +2w")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +2w>"))
-      (org-mcp-test--verify-file-matches
-       test-file
-       org-mcp-test--expected-planning-replaced-repeater-regex))))
+  (org-mcp-test--with-set-planning
+      org-mcp-test--content-planning-repeating
+      '((scheduled . "2026-06-20 +2w"))
+    (should
+     (equal (alist-get 'scheduled result) "<2026-06-20 Sat +2w>"))
+    (org-mcp-test--verify-file-matches
+     test-file
+     org-mcp-test--expected-planning-replaced-repeater-regex)))
 
 (defun org-mcp-test--set-planning-expecting-error
     (test-file params &optional error-message-regex)
   "Call org-set-planning with PARAMS expecting an error; file unchanged.
 TEST-FILE must remain unchanged.  ERROR-MESSAGE-REGEX, if non-nil,
 must match the signalled error's message string."
-  (org-mcp-test--assert-error-and-file test-file
-    (let* ((request
-            (mcp-server-lib-create-tools-call-request
-             "org-set-planning" 1 params))
-           (response
-            (mcp-server-lib-process-jsonrpc-parsed
-             request mcp-server-lib-ert-server-id))
-           (result
-            (mcp-server-lib-ert-process-tool-response response)))
-      (error "Expected error but got success: %s" result))
+  (org-mcp-test--assert-error-and-file
+      test-file
+    (org-mcp-test--tool-error-or-die "org-set-planning" params)
     error-message-regex))
+
+(defmacro org-mcp-test--assert-set-planning-error
+    (content extra-params &optional error-message-regex)
+  "On CONTENT, assert org-set-planning with EXTRA-PARAMS errors unchanged.
+CONTENT is written to a temp file bound to `test-file'.  EXTRA-PARAMS is
+an alist of arguments without `uri' (values self-quoting); the `Task'
+headline URI is prepended.  ERROR-MESSAGE-REGEX, if non-nil, must match
+the signalled error's message string."
+  (declare (indent 2) (debug (form form &optional form)))
+  `(org-mcp-test--with-temp-org-files ((test-file ,content))
+     (org-mcp-test--set-planning-expecting-error
+      test-file
+      (cons
+       (cons 'uri (format "org-headline://%s#Task" test-file))
+       ,extra-params)
+      ,error-message-regex)))
 
 (ert-deftest org-mcp-test-set-planning-requires-an-action ()
   "Providing none of the four planning arguments is a validation error."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (org-mcp-test--set-planning-expecting-error
-     test-file
-     `((uri . ,(format "org-headline://%s#Task" test-file))))))
+  (org-mcp-test--assert-set-planning-error
+      org-mcp-test--content-planning-bare nil))
 
 (ert-deftest org-mcp-test-set-planning-rejects-set-and-clear-conflict
     ()
   "Setting and clearing the same field in one call is a validation error."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (org-mcp-test--set-planning-expecting-error
-     test-file
-     `((uri . ,(format "org-headline://%s#Task" test-file))
-       (scheduled . "2026-06-20")
-       (clear_scheduled . t)))))
+  (org-mcp-test--assert-set-planning-error
+      org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20") (clear_scheduled . t))))
 
 (ert-deftest org-mcp-test-set-planning-rejects-empty-scheduled ()
   "An empty scheduled string is a validation error (clear_* removes)."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (org-mcp-test--set-planning-expecting-error
-     test-file
-     `((uri . ,(format "org-headline://%s#Task" test-file))
-       (scheduled . "")))))
+  (org-mcp-test--assert-set-planning-error
+      org-mcp-test--content-planning-bare '((scheduled . ""))))
 
 (ert-deftest org-mcp-test-set-planning-with-modified-buffer ()
   "Setting planning fails when a visiting buffer has unsaved changes."
@@ -9681,42 +9309,27 @@ must match the signalled error's message string."
   "Set SCHEDULED and DEADLINE, each with a cookie, in one call.
 Pins that two cookie splices on the same planning line do not disturb
 each other's timestamp."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri)
-               (scheduled . "2026-06-20 +1w")
-               (deadline . "2026-06-25 -3d")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +1w>"))
-      (should
-       (equal (alist-get 'deadline result) "<2026-06-25 Thu -3d>"))
-      (org-mcp-test--verify-file-matches
-       test-file
-       org-mcp-test--expected-planning-both-cookies-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 +1w") (deadline . "2026-06-25 -3d"))
+    (should
+     (equal (alist-get 'scheduled result) "<2026-06-20 Sat +1w>"))
+    (should
+     (equal (alist-get 'deadline result) "<2026-06-25 Thu -3d>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-both-cookies-regex)))
 
 (ert-deftest
     org-mcp-test-set-planning-rejects-deadline-and-clear-conflict
     ()
   "Setting and clearing deadline in the same call is a validation error."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (org-mcp-test--set-planning-expecting-error
-     test-file
-     `((uri . ,(format "org-headline://%s#Task" test-file))
-       (deadline . "2026-06-25")
-       (clear_deadline . t)))))
+  (org-mcp-test--assert-set-planning-error
+      org-mcp-test--content-planning-bare
+      '((deadline . "2026-06-25") (clear_deadline . t))))
 
 (ert-deftest org-mcp-test-set-planning-rejects-empty-deadline ()
   "An empty deadline string is a validation error (clear_* removes)."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (org-mcp-test--set-planning-expecting-error
-     test-file
-     `((uri . ,(format "org-headline://%s#Task" test-file))
-       (deadline . "")))))
+  (org-mcp-test--assert-set-planning-error
+      org-mcp-test--content-planning-bare '((deadline . ""))))
 
 (defconst org-mcp-test--content-planning-deadline
   "* TODO Task\nDEADLINE: <2026-06-25 Thu>\n"
@@ -9726,34 +9339,21 @@ each other's timestamp."
   "Clear a lone DEADLINE, removing the whole planning line.
 Pins that `(org-deadline (4))' on a deadline-only entry leaves no
 residual planning line."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-deadline))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (clear_deadline . t)))))
-      (should (null (alist-get 'deadline result)))
-      (should (null (alist-get 'scheduled result)))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-cleared-regex))))
+  (org-mcp-test--with-set-planning
+      org-mcp-test--content-planning-deadline
+      '((clear_deadline . t))
+    (should (null (alist-get 'deadline result)))
+    (should (null (alist-get 'scheduled result)))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-cleared-regex)))
 
 (ert-deftest org-mcp-test-set-planning-clear-both ()
   "Clear SCHEDULED and DEADLINE simultaneously from a shared line.
 Pins that the sequential org-schedule/org-deadline remove calls both
 succeed, leaving no planning line."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-both))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri)
-               (clear_scheduled . t)
-               (clear_deadline . t)))))
-      (should (equal (alist-get 'success result) t))
-      (should (null (alist-get 'scheduled result)))
-      (should (null (alist-get 'deadline result)))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-cleared-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-both
+      '((clear_scheduled . t) (clear_deadline . t))
+    (org-mcp-test--should-planning-cleared test-file result)))
 
 (ert-deftest org-mcp-test-set-planning-whole-file-uri-rejected ()
   "A URI identifying a whole file (no headline) is rejected.
@@ -9774,16 +9374,11 @@ planning change to the file's first heading."
 Pins the tightened repeater grammar: `.++1w' is not a valid Org
 repeater, so it is left in the date chunk (where Org discards it)
 instead of being spliced verbatim into the timestamp."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 .++1w")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-scheduled-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 .++1w"))
+    (should (equal (alist-get 'scheduled result) "<2026-06-20 Sat>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-scheduled-regex)))
 
 (defconst org-mcp-test--expected-planning-habit-regex
   (concat
@@ -9797,17 +9392,12 @@ instead of being spliced verbatim into the timestamp."
   "Set SCHEDULED with a habit-interval repeater cookie (`.+1d/2d').
 Pins that the `/M' habit interval is recognized as part of the repeater
 and spliced into the timestamp, not dropped along with the date chunk."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 .+1d/2d")))))
-      (should
-       (equal
-        (alist-get 'scheduled result) "<2026-06-20 Sat .+1d/2d>"))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-habit-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 .+1d/2d"))
+    (should
+     (equal (alist-get 'scheduled result) "<2026-06-20 Sat .+1d/2d>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-habit-regex)))
 
 (defconst org-mcp-test--content-planning-habit
   "* TODO Task\nSCHEDULED: <2026-06-13 Sat +1w/2w>\n"
@@ -9820,17 +9410,14 @@ and spliced into the timestamp, not dropped along with the date chunk."
 Pins that the strip step removes a `+1w/2w' habit repeater that Org
 preserves across the reschedule, so the requested `+2w' replaces it
 instead of duplicating onto it."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-habit))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 +2w")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat +2w>"))
-      (org-mcp-test--verify-file-matches
-       test-file
-       org-mcp-test--expected-planning-replaced-repeater-regex))))
+  (org-mcp-test--with-set-planning
+      org-mcp-test--content-planning-habit
+      '((scheduled . "2026-06-20 +2w"))
+    (should
+     (equal (alist-get 'scheduled result) "<2026-06-20 Sat +2w>"))
+    (org-mcp-test--verify-file-matches
+     test-file
+     org-mcp-test--expected-planning-replaced-repeater-regex)))
 
 (defconst org-mcp-test--regex-planning-relative-resolved
   (concat
@@ -9847,20 +9434,16 @@ Pins the split rule that the first whitespace token always belongs to
 the date chunk: `+1w' alone resolves to a concrete date with no
 repeater cookie spliced (a weakened guard would peel it as a repeater
 and leave today's date with a spurious cookie)."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "+1w")))))
-      (should
-       (string-match-p
-        (concat
-         "\\`<[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}"
-         " [A-Z][a-z][a-z]>\\'")
-        (alist-get 'scheduled result)))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--regex-planning-relative-resolved))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "+1w"))
+    (should
+     (string-match-p
+      (concat
+       "\\`<[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}"
+       " [A-Z][a-z][a-z]>\\'")
+      (alist-get 'scheduled result)))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--regex-planning-relative-resolved)))
 
 (defconst org-mcp-test--expected-planning-cumulative-repeater-regex
   (concat
@@ -9873,17 +9456,13 @@ and leave today's date with a spurious cookie)."
 (ert-deftest org-mcp-test-set-planning-cumulative-repeater ()
   "Set SCHEDULED with a `++N' cumulative repeater cookie.
 Pins that the doubled-plus repeater prefix is recognized and spliced."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 ++2w")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat ++2w>"))
-      (org-mcp-test--verify-file-matches
-       test-file
-       org-mcp-test--expected-planning-cumulative-repeater-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 ++2w"))
+    (should
+     (equal (alist-get 'scheduled result) "<2026-06-20 Sat ++2w>"))
+    (org-mcp-test--verify-file-matches
+     test-file
+     org-mcp-test--expected-planning-cumulative-repeater-regex)))
 
 (defconst org-mcp-test--expected-planning-restart-repeater-regex
   (concat
@@ -9896,50 +9475,30 @@ Pins that the doubled-plus repeater prefix is recognized and spliced."
 (ert-deftest org-mcp-test-set-planning-restart-repeater ()
   "Set SCHEDULED with a `.+N' restart-from-completion repeater cookie.
 Pins that the dot-plus repeater prefix is recognized and spliced."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 .+2w")))))
-      (should
-       (equal (alist-get 'scheduled result) "<2026-06-20 Sat .+2w>"))
-      (org-mcp-test--verify-file-matches
-       test-file
-       org-mcp-test--expected-planning-restart-repeater-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 .+2w"))
+    (should
+     (equal (alist-get 'scheduled result) "<2026-06-20 Sat .+2w>"))
+    (org-mcp-test--verify-file-matches
+     test-file
+     org-mcp-test--expected-planning-restart-repeater-regex)))
 
 (ert-deftest org-mcp-test-set-planning-clear-absent-scheduled ()
   "Clearing a SCHEDULED that is absent is a benign no-op success.
 Pins that `clear_scheduled' on an entry with no planning line returns
 success with a null scheduled and leaves the content intact (only the
 ID drawer is minted), rather than erroring."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (clear_scheduled . t)))))
-      (should (equal (alist-get 'success result) t))
-      (should (null (alist-get 'scheduled result)))
-      (should (null (alist-get 'deadline result)))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-cleared-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((clear_scheduled . t))
+    (org-mcp-test--should-planning-cleared test-file result)))
 
 (ert-deftest org-mcp-test-set-planning-clear-absent-deadline ()
   "Clearing a DEADLINE that is absent is a benign no-op success.
 Pins that `clear_deadline' on an entry with no planning line returns
 success with a null deadline and leaves the content intact."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (clear_deadline . t)))))
-      (should (equal (alist-get 'success result) t))
-      (should (null (alist-get 'scheduled result)))
-      (should (null (alist-get 'deadline result)))
-      (org-mcp-test--verify-file-matches
-       test-file org-mcp-test--expected-planning-cleared-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((clear_deadline . t))
+    (org-mcp-test--should-planning-cleared test-file result)))
 
 (defconst org-mcp-test--expected-planning-time-repeater-regex
   (concat
@@ -9954,18 +9513,13 @@ success with a null deadline and leaves the content intact."
 Pins that the time-of-day stays in the date chunk (the split keeps the
 first two tokens) while the +1w repeater is peeled and spliced, so the
 two do not interfere."
-  (org-mcp-test--with-temp-org-files
-      ((test-file org-mcp-test--content-planning-bare))
-    (let* ((uri (format "org-headline://%s#Task" test-file))
-           (result
-            (org-mcp-test--set-planning-result
-             `((uri . ,uri) (scheduled . "2026-06-20 14:00 +1w")))))
-      (should
-       (equal
-        (alist-get 'scheduled result) "<2026-06-20 Sat 14:00 +1w>"))
-      (org-mcp-test--verify-file-matches
-       test-file
-       org-mcp-test--expected-planning-time-repeater-regex))))
+  (org-mcp-test--with-set-planning org-mcp-test--content-planning-bare
+      '((scheduled . "2026-06-20 14:00 +1w"))
+    (should
+     (equal
+      (alist-get 'scheduled result) "<2026-06-20 Sat 14:00 +1w>"))
+    (org-mcp-test--verify-file-matches
+     test-file org-mcp-test--expected-planning-time-repeater-regex)))
 
 (provide 'org-mcp-test)
 
