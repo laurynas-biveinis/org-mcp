@@ -265,6 +265,16 @@ else
 	ERRORS=$((ERRORS + 1))
 fi
 
+# jscpd copy/paste detection, matching the super-linter CI check
+# (jscpd 5.x, threshold 0 -- any duplicate fails).
+echo -n "Running jscpd... "
+if npx --yes jscpd@5.0.10 --threshold 0 .; then
+	echo "OK!"
+else
+	echo "jscpd found duplicate code"
+	ERRORS=$((ERRORS + 1))
+fi
+
 # Final result
 if [ $ERRORS -eq 0 ]; then
 	echo "All checks passed successfully!"

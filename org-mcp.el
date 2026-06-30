@@ -486,9 +486,9 @@ cannot poison a successful resolution.
 Callers translate the status into a tool error or a resource error
 of the appropriate shape."
   (if-let* ((id-file (org-id-find-id-file id)))
-    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-      (cons :found allowed-file)
-      (cons :disallowed nil))
+      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+          (cons :found allowed-file)
+        (cons :disallowed nil))
     (if-let* ((file
                (catch 'found
                  (dolist (allowed-file org-mcp-allowed-files)
@@ -498,11 +498,11 @@ of the appropriate shape."
                          (throw 'found
                                 (expand-file-name
                                  allowed-file)))))))))
-      (progn
-        (when org-id-track-globally
-          (ignore-errors
-            (org-id-add-location id file)))
-        (cons :found file))
+        (progn
+          (when org-id-track-globally
+            (ignore-errors
+              (org-id-add-location id file)))
+          (cons :found file))
       (cons :missing nil))))
 
 (defun org-mcp--find-allowed-file-with-id (id)
@@ -532,11 +532,11 @@ Throws an error if neither prefix matches."
   `(if-let* ((id
               (org-mcp--extract-uri-suffix
                ,uri org-mcp--uri-id-prefix)))
-     ,id-body
+       ,id-body
      (if-let* ((headline
                 (org-mcp--extract-uri-suffix
                  ,uri org-mcp--uri-headline-prefix)))
-       ,headline-body
+         ,headline-body
        (org-mcp--tool-validation-error
         "Invalid resource URI format: %s"
         ,uri))))
@@ -785,7 +785,7 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
   (if is-id
       ;; ID case - headline-path contains single ID
       (if-let* ((pos (org-find-property "ID" (car headline-path))))
-        (goto-char pos)
+          (goto-char pos)
         (org-mcp--id-not-found-error (car headline-path)))
     ;; Path case - headline-path contains title hierarchy
     (unless (org-mcp--navigate-to-headline headline-path)
@@ -1143,6 +1143,17 @@ validation can ignore it."
     (goto-char (point-min))
     (while (org-mcp--skip-file-header-element))
     (point)))
+
+(defun org-mcp--goto-headline-for-modify (headline-path uri)
+  "Validate the file header, then move point to HEADLINE-PATH's line start.
+URI selects ID-based resolution when it carries the `org-id://' prefix,
+otherwise headline-path resolution.  Combines the header-integrity check
+that every modifying tool performs with navigation to the target
+heading."
+  (org-mcp--validate-and-skip-file-header)
+  (org-mcp--goto-headline-from-uri
+   headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
+  (beginning-of-line))
 
 (defun org-mcp--navigate-to-parent (parent-path parent-id)
   "Navigate point to a parent headline and return its level.
@@ -1508,13 +1519,10 @@ MCP Parameters:
     (org-mcp--modify-and-save file-path "update"
                               `((previous_state . ,current_state)
                                 (new_state . ,new_state))
-      (org-mcp--validate-and-skip-file-header)
-      (org-mcp--goto-headline-from-uri
-       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
+      (org-mcp--goto-headline-for-modify headline-path uri)
 
       ;; Treat "" and nil as the same "no TODO state":
       ;; `org-get-todo-state' returns nil; the wire protocol uses "".
-      (beginning-of-line)
       (let ((actual-state (org-get-todo-state))
             (expected-state
              (and (not (string-empty-p current_state))
@@ -1856,13 +1864,9 @@ MCP Parameters:
     (org-mcp--modify-and-save file-path "rename"
                               `((previous_title . ,current_title)
                                 (new_title . ,new_title))
-      (org-mcp--validate-and-skip-file-header)
-      ;; Navigate to the headline
-      (org-mcp--goto-headline-from-uri
-       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
+      (org-mcp--goto-headline-for-modify headline-path uri)
 
       ;; Verify current title matches
-      (beginning-of-line)
       (let ((actual-title (org-get-heading t t t t)))
         (unless (string= actual-title current_title)
           (org-mcp--state-mismatch-error
@@ -2152,10 +2156,7 @@ MCP Parameters:
                                  (cons
                                   'deadline
                                   (org-entry-get nil "DEADLINE"))))
-      (org-mcp--validate-and-skip-file-header)
-      (org-mcp--goto-headline-from-uri
-       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
-      (beginning-of-line)
+      (org-mcp--goto-headline-for-modify headline-path uri)
       ;; `org-log-reschedule'/`org-log-redeadline' set to `note' would
       ;; pop an interactive note buffer that an MCP call cannot answer,
       ;; so suppress planning-change logging for this operation.

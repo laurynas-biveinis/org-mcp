@@ -31,5 +31,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEFAULT_BRANCH: main
           VALIDATE_GIT_COMMITLINT: false
-          # Until https://github.com/kucherenko/jscpd/issues/737 is fixed
-          VALIDATE_JSCPD: false
