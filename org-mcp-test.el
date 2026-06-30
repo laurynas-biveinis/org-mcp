@@ -3133,7 +3133,7 @@ the file is left unchanged.  `test-file' is bound for the body."
   (declare (debug (form)))
   `(org-mcp-test--with-id-setup test-file
        org-mcp-test--content-with-id-repeated-text
-     (list "test-id")
+     '("test-id")
      (org-mcp-test--call-edit-body-expecting-error
       test-file "org-id://test-id" "occurrence of pattern" "REPLACED"
       ,replace-all)))
@@ -8123,14 +8123,13 @@ flipped from t to nil in Org 9.5)."
 URI, CURRENT-TITLE, and TARGET-PARENT-URI are always included.  AFTER-URI
 and POSITION are included only when non-nil."
   (append
-   (list
-    (cons 'uri uri)
-    (cons 'current_title current-title)
-    (cons 'target_parent_uri target-parent-uri))
+   `((uri . ,uri)
+     (current_title . ,current-title)
+     (target_parent_uri . ,target-parent-uri))
    (when after-uri
-     (list (cons 'after_uri after-uri)))
+     `((after_uri . ,after-uri)))
    (when position
-     (list (cons 'position position)))))
+     `((position . ,position)))))
 
 (defun org-mcp-test--refile-and-verify
     (test-file params expected-regex)
@@ -8644,7 +8643,7 @@ that URI and yields the destination content."
   (org-mcp-test--with-refile-files
       org-mcp-test--content-refile-mover-with-id
       org-mcp-test--content-refile-lone-target
-      (list (cons org-mcp-test--refile-mover-id source-file))
+      `((,org-mcp-test--refile-mover-id . ,source-file))
     (let ((result
            (org-mcp-test--refile-headline-result
             (org-mcp-test--cross-mover-target-params
