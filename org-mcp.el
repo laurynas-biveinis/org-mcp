@@ -586,6 +586,32 @@ titles from the root down to and including this heading)."
             (concat org-mcp--uri-id-prefix id)
           (org-mcp--build-headline-uri file-path title-path))))))
 
+(defun org-mcp--headline-path-nodes (file-path)
+  "Return the chain of heading nodes from root to the heading at point.
+Each node is an alist as built by `org-mcp--heading-node', ordered
+root first, the heading at point last; FILE-PATH is used to build
+`org-headline://' URIs.  Point must be on a heading line; it is not
+moved."
+  (let ((raws
+         (save-excursion
+           (let ((acc (list (org-mcp--heading-raw-fields))))
+             (while (org-up-heading-safe)
+               (push (org-mcp--heading-raw-fields) acc))
+             acc))))
+    (cl-loop
+     for
+     raw
+     in
+     raws
+     for
+     title-path
+     =
+     (list (plist-get raw :title))
+     then
+     (append title-path (list (plist-get raw :title)))
+     collect
+     (org-mcp--heading-node file-path title-path raw))))
+
 (defun org-mcp--extract-children
     (target-level parent-title-path file-path)
   "Extract children at TARGET-LEVEL until next lower level heading.
@@ -2686,26 +2712,7 @@ CASE-FOLD non-nil means case-insensitive search."
       (goto-char (point-min))
       (while (re-search-forward "^\\*+ " nil t)
         (beginning-of-line)
-        (let* ((raws
-                (save-excursion
-                  (let ((acc (list (org-mcp--heading-raw-fields))))
-                    (while (org-up-heading-safe)
-                      (push (org-mcp--heading-raw-fields) acc))
-                    acc)))
-               (nodes
-                (cl-loop
-                 for
-                 raw
-                 in
-                 raws
-                 for
-                 title-path
-                 =
-                 (list (plist-get raw :title))
-                 then
-                 (append title-path (list (plist-get raw :title)))
-                 collect
-                 (org-mcp--heading-node file-path title-path raw)))
+        (let* ((nodes (org-mcp--headline-path-nodes file-path))
                ;; The deepest node is the matched heading, so its URI
                ;; is the group URI.
                (uri (alist-get 'uri (car (last nodes))))
