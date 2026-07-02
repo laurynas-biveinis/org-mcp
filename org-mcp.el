@@ -81,7 +81,14 @@ operation; ask the user to save and retry.
 
 Read tools (org-read-file, org-read-outline, org-read-headline,
 org-read-by-id, org-grep) and all resources read the file from disk;
-unsaved changes in an Emacs buffer visiting the file are not reflected."
+unsaved changes in an Emacs buffer visiting the file are not reflected.
+
+org-read-headline, org-read-by-id, and the corresponding
+org-headline:// (with a headline path) and org-id:// resources return
+a JSON object of `headline_path' (the ancestor chain from the
+outermost ancestor down to the read headline itself, in the same node
+shape as org-grep's `headline_path') and `content' (the raw subtree
+text); whole-file org-headline:// reads return raw file content."
   "Server-level MCP `initialize' instructions for org-mcp.
 Holds the guidance that would otherwise be repeated in every
 tool and resource description.")
@@ -796,13 +803,24 @@ Point should be at the headline."
       (backward-char))
     (buffer-substring-no-properties start (point))))
 
+(defun org-mcp--headline-with-path-json (file-path)
+  "Return JSON for the headline at point in FILE-PATH.
+The JSON object carries `headline_path' (the chain of heading nodes
+from root to this headline, as in org-grep results) and `content'
+\(the raw subtree text).  Point must be on the heading line."
+  (let ((nodes (org-mcp--headline-path-nodes file-path)))
+    (json-encode
+     `((headline_path . ,(vconcat nodes))
+       (content . ,(org-mcp--extract-headline-content))))))
+
 (defun org-mcp--get-headline-content (file-path headline-path)
   "Get content for headline at HEADLINE-PATH in FILE-PATH.
 HEADLINE-PATH is a list of headline titles to traverse.
-Returns the content string or nil if not found."
+Returns a JSON string with `headline_path' and `content', or nil if
+not found."
   (org-mcp--with-org-file file-path
     (when (org-mcp--navigate-to-headline headline-path)
-      (org-mcp--extract-headline-content))))
+      (org-mcp--headline-with-path-json file-path))))
 
 (defun org-mcp--goto-headline-from-uri (headline-path is-id)
   "Navigate to headline based on HEADLINE-PATH and IS-ID flag.
@@ -819,11 +837,12 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
 
 (defun org-mcp--get-content-by-id (file-path id)
   "Get content for org node with ID in FILE-PATH.
-Returns the content string or nil if not found."
+Returns a JSON string with `headline_path' and `content', or nil if
+not found."
   (org-mcp--with-org-file file-path
     (when-let* ((pos (org-find-property "ID" id)))
       (goto-char pos)
-      (org-mcp--extract-headline-content))))
+      (org-mcp--headline-with-path-json file-path))))
 
 (defun org-mcp--validate-todo-state (state field-name)
   "Validate STATE is a valid TODO keyword.
@@ -3133,10 +3152,17 @@ null/empty semantics."
      :id "org-read-headline"
      :description
      "Read specific Org headline by hierarchical path. Returns headline
-   with TODO state, tags, properties, body text, and all nested
-   subheadings. File must be in org-mcp-allowed-files.
+with TODO state, tags, properties, body text, and all nested
+subheadings, plus the chain of its ancestors. File must be in
+org-mcp-allowed-files.
 
-Returns: Plain text content of the headline and its subtree"
+Returns JSON object:
+  headline_path - Array of node objects tracing the path from the
+                  outermost ancestor to the read headline itself
+                  (the last entry).  Same node shape as org-grep's
+                  headline_path: title, todo, priority, tags,
+                  scheduled, deadline, and uri.
+  content       - Text of the headline and its subtree"
      :read-only t)
     (list
      #'org-mcp--tool-read-by-id
@@ -3146,7 +3172,8 @@ Returns: Plain text content of the headline and its subtree"
 path-based access since IDs don't change when headlines are renamed
 or moved. File containing the ID must be in org-mcp-allowed-files.
 
-Returns: Plain text content of the headline and its subtree"
+Returns: JSON object with headline_path and content, same shape as
+org-read-headline"
      :read-only t)
     (list
      #'org-mcp--tool-grep
@@ -3270,8 +3297,8 @@ Use this resource to:
      :name "Org headline content"
      :description
      "Access content of a specific Org headline by its path in the
-file hierarchy.  Returns the headline and all its subheadings as
-plain text.
+file hierarchy.  Returns the headline and all its subheadings, plus
+the chain of its ancestors.
 
 URI format: org-headline://{filename}#{headline-path}
   filename - Absolute path (# characters must be encoded as %23)
@@ -3292,11 +3319,12 @@ Encoding limitations:
   - For such files, rename them or use org-id:// URIs instead
   - Headline paths use full URL encoding (all special chars encoded)
 
-Returns: Plain text content including:
-  - The headline itself with TODO state and tags
-  - All properties drawer content
-  - Body text
-  - All nested subheadings (complete subtree)
+Returns (with a headline path): JSON object with headline_path (the
+ancestor chain in org-grep's node shape, from the outermost ancestor
+to this headline itself) and content (the headline with TODO state,
+tags, properties drawer, body text, and all nested subheadings).
+
+Returns (no fragment): the entire file as plain text, not JSON.
 
 Example URIs:
   org-headline:///home/user/tasks.org#Project%20Alpha
@@ -3312,7 +3340,7 @@ Example URIs:
     → \"Task #5\" from file named \"file#1.org\"
 
   org-headline:///home/user/tasks.org
-    → Entire file (no fragment means whole file)
+    → Entire file as plain text (no fragment means whole file)
 
 Use this resource to:
   - Read specific sections of an Org file
@@ -3348,11 +3376,10 @@ Security and access:
   - Uses org-id database for ID-to-file lookup
   - Falls back to searching allowed files if database is stale
 
-Returns: Plain text content including:
-  - The headline itself with TODO state and tags
-  - All properties drawer content
-  - Body text
-  - All nested subheadings (complete subtree)
+Returns: JSON object with headline_path (the ancestor chain in
+org-grep's node shape, ending with this headline itself) and content
+(the headline with TODO state, tags, properties drawer, body text,
+and all nested subheadings)
 
 Example URIs:
   org-id://550e8400-e29b-41d4-a716-446655440000
@@ -3362,7 +3389,7 @@ Use this resource to:
   - Access headlines by stable identifier
   - Reference content that may be renamed or moved
   - Build cross-references between Org nodes"
-     :mime-type "text/plain"))))
+     :mime-type "application/json"))))
 
 (defun org-mcp-disable ()
   "Disable the org-mcp server."

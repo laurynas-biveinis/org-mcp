@@ -6,6 +6,15 @@ org-mcp NEWS -- history of user-visible changes
 
 *** Raised the minimum Emacs version from 27.1 to 28.2
 
+*** `org-read-headline' and `org-read-by-id' now return JSON
+    Both tools, and the corresponding org-headline:// (with a
+    headline path) and org-id:// resource reads, return a JSON object
+    of `headline_path' (the ancestor chain from the outermost
+    ancestor down to the read headline, in org-grep's node format)
+    and `content' (the subtree text previously returned bare).
+    Whole-file org-headline:// reads still return raw file content.
+    The org-id:// resource now declares mime type application/json.
+
 ** New Features
 
 *** Added `org-get-agenda' tool for day/week/month agenda views

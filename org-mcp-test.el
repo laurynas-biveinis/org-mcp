@@ -1702,21 +1702,6 @@ target's existing `:ID:' is preserved and returned as the URI.")
 and its body contains a deeper `*** Subheading content' carrying no
 `:ID:' drawer.")
 
-(defconst org-mcp-test--pattern-tool-read-headline-single
-  (concat
-   "\\`\\* Parent/Child\n"
-   "This is a single headline with a slash, not nested under Parent\\.\n"
-   "?\\'")
-  "Pattern for org-read-headline tool single-level path result.")
-
-(defconst org-mcp-test--pattern-tool-read-headline-nested
-  (concat
-   "\\`\\*\\* First Child 50% Complete\n"
-   "First child content\\.\n"
-   "It spans multiple lines\\.\n"
-   "?\\'")
-  "Pattern for org-read-headline tool nested path result.")
-
 (defconst org-mcp-test--pattern-tool-read-by-id
   (format (concat
            "\\`\\*\\* Second Child\n"
@@ -2897,19 +2882,40 @@ whole-file regex after clearing.  `org-log-done' is bound to `time'."
 
 ;; Helper functions for testing org-read-headline MCP tool
 
-(defun org-mcp--tool-read-headline-and-check
-    (initial-content headline-path expected-pattern-regex)
-  "Call org-read-headline tool via JSON-RPC and verify the result.
-INITIAL-CONTENT is the content to write to the temp file.
-HEADLINE-PATH is the slash-separated path to the headline.
-EXPECTED-PATTERN-REGEX is an anchored regex that matches the expected result."
-  (org-mcp-test--with-temp-org-files ((test-file initial-content))
-    (let* ((params
-            `((file . ,test-file) (headline_path . ,headline-path)))
-           (result-text
-            (mcp-server-lib-ert-call-tool
-             "org-read-headline" params)))
-      (should (string-match-p expected-pattern-regex result-text)))))
+(defun org-mcp-test--should-read-result
+    (result expected-content expected-titles)
+  "Assert RESULT carries EXPECTED-CONTENT and EXPECTED-TITLES.
+RESULT is a parsed read-tool or resource JSON object; its `content'
+must equal EXPECTED-CONTENT and its `headline_path' titles, root
+first, must equal EXPECTED-TITLES."
+  (should (equal (alist-get 'content result) expected-content))
+  (should
+   (equal
+    (org-mcp-test--headline-path-titles result) expected-titles)))
+
+(defun org-mcp-test--should-nested-siblings-parent-node (node)
+  "Assert NODE is the nested-siblings `Parent Task' chain entry.
+The node is keyword-less and tagless and carries the parent's
+org-id:// URI."
+  (org-mcp-test--should-node-metadata
+   node
+   :tags nil
+   :uri
+   (concat
+    "org-id://" org-mcp-test--content-nested-siblings-parent-id)))
+
+(defun org-mcp-test--parse-json-list (json)
+  "Parse JSON string into alists with arrays as lists."
+  (json-parse-string json :object-type 'alist :array-type 'list))
+
+(defun org-mcp-test--call-read-headline (file headline-path)
+  "Call org-read-headline for FILE and HEADLINE-PATH; return parsed result.
+Parses the JSON result with alists and lists, like
+`org-mcp-test--call-grep'."
+  (org-mcp-test--parse-json-list
+   (mcp-server-lib-ert-call-tool
+    "org-read-headline"
+    `((file . ,file) (headline_path . ,headline-path)))))
 
 (defmacro org-mcp-test--call-read-headline-expecting-error
     (content headline-path)
@@ -3255,11 +3261,15 @@ node; `WAIT' is registered as a TODO keyword."
 (defun org-mcp-test--call-read-by-id-and-check (uuid expected-pattern)
   "Call org-read-by-id tool via JSON-RPC and verify the result.
 UUID is the ID property of the headline to read.
-EXPECTED-PATTERN is a regex pattern the result should match."
-  (let* ((params `((uuid . ,uuid)))
-         (result-text
-          (mcp-server-lib-ert-call-tool "org-read-by-id" params)))
-    (should (string-match-p expected-pattern result-text))))
+EXPECTED-PATTERN is a regex the result's `content' field must
+match.  Returns the parsed result for further assertions."
+  (let ((result
+         (org-mcp-test--parse-json-list
+          (mcp-server-lib-ert-call-tool
+           "org-read-by-id" `((uuid . ,uuid))))))
+    (should
+     (string-match-p expected-pattern (alist-get 'content result)))
+    result))
 
 ;; Helper functions for testing MCP resources
 
@@ -3275,6 +3285,22 @@ EXPECTED-PATTERN is a regex pattern the result should match."
                        uri)
                       mcp-server-lib-ert-server-id)
                      :object-type 'alist))
+
+(defun org-mcp-test--read-json-resource (uri &optional mime-type)
+  "Read the MCP resource at URI; return its text parsed as JSON.
+Assert the read succeeds and the declared mime type is MIME-TYPE
+\(text/plain when nil).  Parses with alists and lists, like
+`org-mcp-test--call-grep'."
+  (let ((response (org-mcp-test--read-resource-response uri)))
+    (should-not (alist-get 'error response))
+    (let ((contents
+           (alist-get 'contents (alist-get 'result response))))
+      (should (= (length contents) 1))
+      (let ((content (aref contents 0)))
+        (should
+         (equal
+          (alist-get 'mimeType content) (or mime-type "text/plain")))
+        (org-mcp-test--parse-json-list (alist-get 'text content))))))
 
 (defun org-mcp-test--read-resource-expecting-error
     (uri expected-error-message)
@@ -3310,9 +3336,10 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
               (uri
                (format "org-headline://%s#Parent%%20Task" test-file)))
           (org-mcp-test--with-enabled
-            (org-mcp-test--verify-resource-read
-             uri
-             org-mcp-test--expected-parent-task-from-nested-siblings)))
+            (org-mcp-test--should-read-result
+             (org-mcp-test--read-json-resource uri)
+             org-mcp-test--expected-parent-task-from-nested-siblings
+             '("Parent Task"))))
       (delete-file test-file))))
 
 ;;; Tests
@@ -7218,29 +7245,106 @@ recovery hint surfaces as a test failure."
 org-read-file tool to read entire files")))
 
 (ert-deftest org-mcp-test-tool-read-headline-single-level ()
-  "Test org-read-headline with single-level path."
-  (org-mcp--tool-read-headline-and-check
-   org-mcp-test--content-slash-not-nested-before
-   "Parent%2FChild"
-   org-mcp-test--pattern-tool-read-headline-single))
+  "Test org-read-headline with single-level path.
+A top-level read returns a chain of length 1 -- the read headline
+itself -- whose org-headline:// URI round-trips the `%2F'-encoded
+slash of the title."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-slash-not-nested-before))
+    (let* ((result
+            (org-mcp-test--call-read-headline
+             test-file "Parent%2FChild"))
+           (path (alist-get 'headline_path result)))
+      (org-mcp-test--should-read-result
+       result
+       (concat
+        "* Parent/Child\n"
+        "This is a single headline with a slash, "
+        "not nested under Parent.")
+       '("Parent/Child"))
+      (should (= (length path) 1))
+      (org-mcp-test--should-node-metadata (nth 0 path) :tags nil)
+      (should
+       (equal
+        (alist-get 'uri (nth 0 path))
+        (format "org-headline://%s#Parent%%2FChild" test-file))))))
 
 (ert-deftest org-mcp-test-tool-read-headline-nested ()
-  "Test org-read-headline with nested path."
-  (org-mcp--tool-read-headline-and-check
-   org-mcp-test--content-nested-siblings
-   "Parent%20Task/First%20Child%2050%25%20Complete"
-   org-mcp-test--pattern-tool-read-headline-nested))
+  "Test org-read-headline with nested path.
+The chain lists the ancestors root-first, ending with the read
+headline itself; a node carries an org-id:// URI when its heading
+has an ID property and an org-headline:// URI otherwise."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-nested-siblings))
+    (let* ((result
+            (org-mcp-test--call-read-headline
+             test-file
+             "Parent%20Task/First%20Child%2050%25%20Complete"))
+           (path (alist-get 'headline_path result)))
+      (org-mcp-test--should-read-result
+       result
+       (concat
+        "** First Child 50% Complete\n"
+        "First child content.\n"
+        "It spans multiple lines.")
+       '("Parent Task" "First Child 50% Complete"))
+      (org-mcp-test--should-nested-siblings-parent-node (nth 0 path))
+      (org-mcp-test--should-node-metadata (nth 1 path) :tags nil)
+      (should
+       (equal
+        (alist-get 'uri (nth 1 path))
+        (format
+         "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
+         test-file))))))
+
+(ert-deftest org-mcp-test-read-headline-path-matches-grep ()
+  "Pin that org-read-headline's `headline_path' equals org-grep's.
+For the same nested item, the read result's chain is `equal' to the
+`headline_path' of the org-grep group matching inside that item, so
+consumers can share the \"every entry except the last is an
+ancestor\" logic across both tools; `content' carries the raw
+subtree text."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-outline-metadata))
+    (let ((org-todo-keywords '((sequence "TODO" "WAIT" "|" "DONE"))))
+      (let* ((groups
+              (org-mcp-test--grep-groups "Child body" test-file))
+             (read-result
+              (org-mcp-test--call-read-headline
+               test-file "Parent%20task/Child%20task")))
+        (should (= (length groups) 1))
+        (should
+         (equal
+          (alist-get 'headline_path read-result)
+          (alist-get 'headline_path (car groups))))
+        (should
+         (equal
+          (alist-get 'content read-result)
+          "** WAIT Child task\nChild body."))))))
 
 ;;; org-read-by-id tests
 
 (ert-deftest org-mcp-test-tool-read-by-id ()
-  "Test org-read-by-id tool returns headline content by ID."
+  "Test org-read-by-id tool returns headline content by ID.
+The chain lists the parent then the read child, both with their
+org-id:// URIs since both headings carry ID properties."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-nested-siblings
     `(,org-mcp-test--content-with-id-id)
-    (org-mcp-test--call-read-by-id-and-check
-     org-mcp-test--content-with-id-id
-     org-mcp-test--pattern-tool-read-by-id)))
+    (let* ((result
+            (org-mcp-test--call-read-by-id-and-check
+             org-mcp-test--content-with-id-id
+             org-mcp-test--pattern-tool-read-by-id))
+           (path (alist-get 'headline_path result)))
+      (should
+       (equal
+        (org-mcp-test--headline-path-titles result)
+        '("Parent Task" "Second Child")))
+      (org-mcp-test--should-nested-siblings-parent-node (nth 0 path))
+      (org-mcp-test--should-node-metadata
+       (nth 1 path)
+       :tags nil
+       :uri org-mcp-test--content-with-id-uri))))
 
 (ert-deftest
     org-mcp-test-tool-read-by-id-falls-back-to-allowed-files-scan
@@ -7263,17 +7367,25 @@ all pre-register the ID via `with-id-setup'."
           (org-mcp-allowed-files (list test-file)))
       (should-not
        (org-id-find-id-file org-mcp-test--content-with-id-id))
-      (org-mcp-test--call-read-by-id-and-check
-       org-mcp-test--content-with-id-id
-       (format (concat
-                "\\`\\* TODO Task with ID\n"
-                ":PROPERTIES:\n"
-                ":ID: +%s\n"
-                ":END:\n"
-                "First line of content\\.\n"
-                "Second line of content\\.\n"
-                "Third line of content\\.?\\'")
-               org-mcp-test--content-with-id-id)))))
+      (let* ((result
+              (org-mcp-test--call-read-by-id-and-check
+               org-mcp-test--content-with-id-id
+               (format (concat
+                        "\\`\\* TODO Task with ID\n"
+                        ":PROPERTIES:\n"
+                        ":ID: +%s\n"
+                        ":END:\n"
+                        "First line of content\\.\n"
+                        "Second line of content\\.\n"
+                        "Third line of content\\.?\\'")
+                       org-mcp-test--content-with-id-id)))
+             (path (alist-get 'headline_path result)))
+        (should (= (length path) 1))
+        (org-mcp-test--should-node-metadata
+         (nth 0 path)
+         :todo "TODO"
+         :tags nil
+         :uri org-mcp-test--content-with-id-uri)))))
 
 (ert-deftest org-mcp-test-tool-read-by-id-non-string-uuid ()
   "Pin that non-string `uuid' is rejected at the tool boundary.
@@ -7379,8 +7491,10 @@ lookup runs."
       ((test-file org-mcp-test--content-headline-resource))
     (let ((uri
            (format "org-headline://%s#First%%20Section" test-file)))
-      (org-mcp-test--verify-resource-read
-       uri org-mcp-test--expected-first-section))))
+      (org-mcp-test--should-read-result
+       (org-mcp-test--read-json-resource uri)
+       org-mcp-test--expected-first-section
+       '("First Section")))))
 
 (ert-deftest org-mcp-test-headline-resource-empty-fragment ()
   "Test that `org-headline://FILE#' returns the full file content.
@@ -7393,6 +7507,16 @@ path produced by `split-string' on the empty fragment string."
       (let ((uri (format "org-headline://%s#" test-file)))
         (org-mcp-test--verify-resource-read uri test-content)))))
 
+(ert-deftest org-mcp-test-headline-resource-no-fragment ()
+  "Test that `org-headline://FILE' returns the raw full file content.
+Pins the whole-file boundary of the read contract: only reads with a
+headline path return the {headline_path, content} JSON envelope; a
+no-fragment URI keeps returning the file text as-is."
+  (let ((test-content "* Test Heading\nThis is test content."))
+    (org-mcp-test--with-temp-org-files ((test-file test-content))
+      (let ((uri (format "org-headline://%s" test-file)))
+        (org-mcp-test--verify-resource-read uri test-content)))))
+
 (ert-deftest org-mcp-test-headline-resource-returns-nested-content ()
   "Test that headline resource returns nested headline content."
   (org-mcp-test--with-temp-org-files
@@ -7402,8 +7526,10 @@ path produced by `split-string' on the empty fragment string."
                     "org-headline://%s#"
                     "First%%20Section/Subsection%%201.1")
                    test-file)))
-      (org-mcp-test--verify-resource-read
-       uri org-mcp-test--expected-subsection-1-1))))
+      (org-mcp-test--should-read-result
+       (org-mcp-test--read-json-resource uri)
+       org-mcp-test--expected-subsection-1-1
+       '("First Section" "Subsection 1.1")))))
 
 (ert-deftest org-mcp-test-headline-resource-not-found ()
   "Test headline resource error for non-existent headline."
@@ -7425,9 +7551,10 @@ path produced by `split-string' on the empty fragment string."
           (format
            "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
            encoded-path)))
-      (org-mcp-test--verify-resource-read
-       uri
-       "** First Child 50% Complete\nFirst child content.\nIt spans multiple lines."))))
+      (org-mcp-test--should-read-result
+       (org-mcp-test--read-json-resource uri)
+       "** First Child 50% Complete\nFirst child content.\nIt spans multiple lines."
+       '("Parent Task" "First Child 50% Complete")))))
 
 (ert-deftest org-mcp-test-headline-resource-headline-with-hash ()
   "Test headline resource with # in headline title."
@@ -7439,8 +7566,10 @@ path produced by `split-string' on the empty fragment string."
             (format
              "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
              file)))
-        (org-mcp-test--verify-resource-read
-         uri "** Third Child #3")))))
+        (org-mcp-test--should-read-result
+         (org-mcp-test--read-json-resource uri)
+         "** Third Child #3"
+         '("Parent Task" "Third Child #3"))))))
 
 (ert-deftest
     org-mcp-test-headline-resource-file-and-headline-with-hash
@@ -7456,7 +7585,10 @@ path produced by `split-string' on the empty fragment string."
           (format
            "org-headline://%s#Parent%%20Task/Third%%20Child%%20%%233"
            encoded-path)))
-      (org-mcp-test--verify-resource-read uri "** Third Child #3"))))
+      (org-mcp-test--should-read-result
+       (org-mcp-test--read-json-resource uri)
+       "** Third Child #3"
+       '("Parent Task" "Third Child #3")))))
 
 (ert-deftest org-mcp-test-headline-resource-txt-extension ()
   "Test that headline resource works with .txt files, not just .org files."
@@ -7509,15 +7641,25 @@ path produced by `split-string' on the empty fragment string."
        uri "Headline not found: 'First Parent/Target Headline'"))))
 
 (ert-deftest org-mcp-test-id-resource-returns-content ()
-  "Test that ID resource returns content for valid ID."
+  "Test that ID resource returns content for valid ID.
+The resource declares mime type application/json and returns the
+same {headline_path, content} object as the org-read-by-id tool."
   (org-mcp-test--with-id-setup test-file
       org-mcp-test--content-id-resource
     `(,org-mcp-test--content-id-resource-id)
-    (let ((uri
-           (format "org-id://%s"
-                   org-mcp-test--content-id-resource-id)))
-      (org-mcp-test--verify-resource-read
-       uri org-mcp-test--content-id-resource))))
+    (let* ((uri
+            (format "org-id://%s"
+                    org-mcp-test--content-id-resource-id))
+           (result
+            (org-mcp-test--read-json-resource uri
+                                              "application/json")))
+      (org-mcp-test--should-read-result
+       result org-mcp-test--content-id-resource '("Section with ID"))
+      (should
+       (equal
+        (alist-get
+         'uri (car (alist-get 'headline_path result)))
+        uri)))))
 
 (ert-deftest org-mcp-test-id-resource-not-found ()
   "Test ID resource error for non-existent ID."
@@ -7609,19 +7751,16 @@ be a plain literal, not a value derived at load time."
   "Call org-grep tool and return the parsed JSON result as alist.
 PATTERN is the search string, FILE limits search to one file,
 CASE-SENSITIVE controls case matching."
-  (let* ((params
-          `((pattern . ,pattern)
-            ,@
-            (when file
-              `((file . ,file)))
-            ,@
-            (when case-sensitive
-              `((case_sensitive . t)))))
-         (result-json
-          (mcp-server-lib-ert-call-tool "org-grep" params)))
-    (json-parse-string result-json
-                       :object-type 'alist
-                       :array-type 'list)))
+  (let ((params
+         `((pattern . ,pattern)
+           ,@
+           (when file
+             `((file . ,file)))
+           ,@
+           (when case-sensitive
+             `((case_sensitive . t))))))
+    (org-mcp-test--parse-json-list
+     (mcp-server-lib-ert-call-tool "org-grep" params))))
 
 (defun org-mcp-test--grep-groups
     (pattern &optional file case-sensitive)
@@ -7636,13 +7775,12 @@ CASE-SENSITIVE is forwarded unchanged to exercise wire-value
 normalisation of the `case_sensitive' argument."
   (alist-get
    'groups
-   (json-parse-string (mcp-server-lib-ert-call-tool
-                       "org-grep"
-                       `((pattern . "hello")
-                         (file . ,file)
-                         (case_sensitive . ,case-sensitive)))
-                      :object-type 'alist
-                      :array-type 'list)))
+   (org-mcp-test--parse-json-list
+    (mcp-server-lib-ert-call-tool
+     "org-grep"
+     `((pattern . "hello")
+       (file . ,file)
+       (case_sensitive . ,case-sensitive))))))
 
 (defun org-mcp-test--grep-match-lines (pattern file)
   "Return the `line' numbers of org-grep matches for PATTERN in FILE.
@@ -7666,11 +7804,12 @@ Matches are taken from the first result group."
     (should (string-prefix-p "org-headline://" uri))
     (should (string-match-p pattern-regex uri))))
 
-(defun org-mcp-test--headline-path-titles (group)
-  "Return the list of titles from GROUP's headline_path entries."
+(defun org-mcp-test--headline-path-titles (result)
+  "Return the list of titles from RESULT's headline_path entries.
+RESULT is a parsed org-grep group or a read-tool/resource result."
   (mapcar
    (lambda (entry) (alist-get 'title entry))
-   (alist-get 'headline_path group)))
+   (alist-get 'headline_path result)))
 
 ;;; org-grep tests
 
@@ -7759,13 +7898,10 @@ Mirrors the same normalisation done for `replace_all'."
   "Pin that org-grep returns {\"groups\":[]} with no allowed files and no file."
   (let ((org-mcp-allowed-files nil))
     (org-mcp-test--with-enabled
-      (let* ((params '((pattern . "anything")))
-             (result-json
-              (mcp-server-lib-ert-call-tool "org-grep" params))
-             (result
-              (json-parse-string result-json
-                                 :object-type 'alist
-                                 :array-type 'list)))
+      (let ((result
+             (org-mcp-test--parse-json-list
+              (mcp-server-lib-ert-call-tool
+               "org-grep" '((pattern . "anything"))))))
         (should (equal (alist-get 'groups result) nil))))))
 
 (ert-deftest org-mcp-test-grep-case-sensitive-json-false ()

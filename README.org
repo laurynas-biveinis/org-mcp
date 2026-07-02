@@ -103,30 +103,30 @@ Returns: JSON structure like:
   - Headlines containing # must be encoded as %23 in the path
   - Trailing =/= on =filename= and empty =#= fragments are stripped (=FILE=, =FILE/=, =FILE#=, and =FILE/#= all resolve identically)
 - *Configuration:* Files must be explicitly allowed via =org-mcp-allowed-files= using absolute paths
-- *Returns:* Plain text content of the specified headline section including all subheadings
+- *Returns:* With a headline path: JSON object with =headline_path= — the ancestor chain from the outermost ancestor to the read headline itself, in the same node shape as =org-grep='s =headline_path= (see below) — and =content=, the text of the headline section including all subheadings. With no fragment: the entire file as plain text.
 - *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 Example:
 #+begin_example
 # Access a headline:
 URI: org-headline:///home/user/org/projects.org#Project%20Alpha/Requirements
-Returns: Content of "Requirements" under "Project Alpha"
+Returns: JSON with headline_path and content of "Requirements" under "Project Alpha"
 
 # Headline with # character (must be encoded as %23):
 URI: org-headline:///home/user/org/projects.org#Issue%20%2342
-Returns: Content of "Issue #42" headline
+Returns: JSON with headline_path and content of the "Issue #42" headline
 
 # Access entire file (no fragment):
 URI: org-headline:///home/user/org/projects.org
-Returns: Full content of the file
+Returns: Full content of the file as plain text
 
 # File with # in the name (must be encoded as %23):
 URI: org-headline:///home/user/org/file%231.org#Headline
-Returns: Content of "Headline" from file#1.org
+Returns: JSON for "Headline" from file#1.org
 
 # Both file and headline with # (all encoded):
 URI: org-headline:///home/user/org/file%231.org#Task%20%235
-Returns: Content of "Task #5" from file#1.org
+Returns: JSON for "Task #5" from file#1.org
 #+end_example
 
 *Encoding limitations:* File paths use minimal encoding (only =#= → =%23=) for readability.
@@ -138,7 +138,7 @@ encoding.
 - *Description:* Access Org node content by its unique ID property
 - *URI Pattern:* =org-id://{uuid}= where uuid is the value of an ID property
 - *Configuration:* The file containing the ID must be in =org-mcp-allowed-files=
-- *Returns:* Plain text content of the headline with the specified ID, including all subheadings
+- *Returns:* JSON object with =headline_path= (the ancestor chain in =org-grep='s node shape, ending with this headline itself) and =content= (text of the headline with the specified ID, including all subheadings)
 - *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
 Example:
@@ -538,7 +538,7 @@ Example:
 - *Parameters:*
   - =file= (string, required): Absolute path to an Org file
   - =headline_path= (string, required): Non-empty slash-separated path to headline. Only slashes within headline titles must be URL-encoded as =%2F= to distinguish them from path separators. Other characters (spaces, =#=, etc.) do not need encoding. To read entire files, use =org-read-file= instead
-- *Returns:* Plain text content of the headline and its subtree
+- *Returns:* JSON object with =headline_path= — array of node objects from the outermost ancestor to the read headline itself, in the same node shape as =org-grep='s =headline_path= (=title=, =todo=, =priority=, =tags=, =scheduled=, =deadline=, =uri=) — and =content=, the text of the headline and its subtree
 - *Configuration:* File must be in =org-mcp-allowed-files=
 - *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
 
@@ -546,7 +546,7 @@ Example:
 - *Description:* Read Org headline by its unique ID property
 - *Parameters:*
   - =uuid= (string, required): UUID from headline's ID property
-- *Returns:* Plain text content of the headline and its subtree
+- *Returns:* JSON object with =headline_path= and =content=, same shape as =org-read-headline=
 - *Configuration:* File containing the ID must be in =org-mcp-allowed-files=
 - *Note:* More stable than path-based access since IDs don't change when headlines are renamed or moved
 - *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
