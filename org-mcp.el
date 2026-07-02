@@ -80,8 +80,9 @@ file -- so a buffer visiting either one with unsaved changes blocks the
 operation; ask the user to save and retry.
 
 Read tools (org-read-file, org-read-outline, org-read-headline,
-org-read-by-id, org-grep) and all resources read the file from disk;
-unsaved changes in an Emacs buffer visiting the file are not reflected.
+org-read-by-id, org-grep, org-find-tagged-ancestor) and all resources
+read the file from disk; unsaved changes in an Emacs buffer visiting
+the file are not reflected.
 
 org-read-headline, org-read-by-id, and the corresponding
 org-headline:// (with a headline path) and org-id:// resources return
@@ -726,6 +727,16 @@ Validates file access and returns expanded file path."
         (setq file-path (org-mcp--find-allowed-file-with-id id))
         (setq headline-path (list id))))
     (cons file-path headline-path)))
+
+(defun org-mcp--parse-resource-uri-with-headline (uri)
+  "Parse URI like `org-mcp--parse-resource-uri', requiring a headline part.
+Returns the same (file-path . headline-path) cons; signals a tool
+validation error for a whole-file URI with no headline fragment."
+  (let ((parsed (org-mcp--parse-resource-uri uri)))
+    (unless (cdr parsed)
+      (org-mcp--tool-validation-error
+       "URI must identify a headline, not a whole file"))
+    parsed))
 
 (defun org-mcp--parse-parent-uri (parent-uri)
   "Parse PARENT-URI into a (FILE-PATH PARENT-PATH PARENT-ID) list.
@@ -2187,10 +2198,7 @@ MCP Parameters:
     (org-mcp--tool-validation-error
      "deadline is empty; use clear_deadline to remove the entry"))
   (pcase-let ((`(,file-path . ,headline-path)
-               (org-mcp--parse-resource-uri uri)))
-    (unless headline-path
-      (org-mcp--tool-validation-error
-       "URI must identify a headline, not a whole file"))
+               (org-mcp--parse-resource-uri-with-headline uri)))
     (org-mcp--modify-and-save file-path "set planning"
                               (save-excursion
                                 (org-back-to-heading t)
@@ -2798,6 +2806,44 @@ MCP Parameters:
                     files))))
       (json-encode `((groups . ,(vconcat groups)))))))
 
+(defun org-mcp--tool-find-tagged-ancestor
+    (uri tag &optional include_self)
+  "Find the nearest headline at or above URI carrying TAG as a local tag.
+INCLUDE_SELF non-nil checks the headline at URI itself before its
+ancestors; otherwise the walk starts at its parent.
+
+MCP Parameters:
+  uri - URI of the headline to start from
+        Formats:
+          - org-headline://{absolute-path}#{url-encoded-path}
+          - org-id://{uuid}
+  tag - Single tag name to test against each level's local tags
+        (non-empty)
+  include_self - When true, the headline itself is checked before
+                 its ancestors (optional, default false)"
+  (org-mcp--validate-string-field uri "uri")
+  (org-mcp--validate-string-field tag "tag")
+  (when (string-empty-p tag)
+    (org-mcp--tool-validation-error "Field tag must be non-empty"))
+  (setq include_self (org-mcp--normalize-json-boolean include_self))
+  (pcase-let ((`(,file-path . ,headline-path)
+               (org-mcp--parse-resource-uri-with-headline uri)))
+    (org-mcp--with-org-file file-path
+      (org-mcp--goto-headline-from-uri
+       headline-path (string-prefix-p org-mcp--uri-id-prefix uri))
+      (let* ((nodes (org-mcp--headline-path-nodes file-path))
+             (candidates
+              (if include_self
+                  nodes
+                (butlast nodes)))
+             (found
+              (cl-find-if
+               (lambda (node)
+                 (seq-contains-p (alist-get 'tags node) tag))
+               candidates
+               :from-end t)))
+        (json-encode `((found . ,found)))))))
+
 (defun org-mcp-enable ()
   "Enable the org-mcp server."
   (mcp-server-lib-register-server
@@ -3207,6 +3253,29 @@ One entry per source line.
 
 Returns {\"groups\": []} when no files are configured and no file
 is given, or when the pattern has no matches."
+     :read-only t)
+    (list
+     #'org-mcp--tool-find-tagged-ancestor
+     :id "org-find-tagged-ancestor"
+     :description
+     "Find the nearest enclosing headline that carries a given tag.
+Starting from the headline at uri, tests each level's own (local)
+tag list for tag -- the headline itself first when include_self is
+true, then each ancestor outward -- and returns the first level
+that declares it.  Tags a headline merely inherits from an ancestor
+or from #+FILETAGS never match, and org-tags-exclude-from-inheritance
+is deliberately ignored.  A tag declared only in #+FILETAGS has no
+declaring headline, so the result is null.  Under Org's default tag
+inheritance, a non-null result with include_self=true means the
+headline carries the tag.  File must be in org-mcp-allowed-files.
+
+Returns JSON object:
+  found - Node object of the nearest self-or-ancestor headline whose
+          own tags contain tag, or null when no enclosing headline
+          declares it.  Same node shape as org-grep's headline_path
+          entries: title, todo, priority, tags, scheduled, deadline,
+          uri (org-id:// when the headline has an ID property,
+          org-headline:// otherwise)."
      :read-only t))
    :resources
    (list

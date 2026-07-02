@@ -452,6 +452,20 @@ children.")
   "* TODO Task with Tags :work:urgent:\nTask description."
   "TODO task with tags and body.")
 
+(defconst org-mcp-test--content-tagged-levels
+  "* Grandparent :proj:top:
+** Parent :proj:
+*** Child :childtag:
+Child body."
+  "Nested headlines: `proj' on both outer levels, `top' and `childtag' local.")
+
+(defconst org-mcp-test--content-filetags-untagged-levels
+  "#+FILETAGS: :proj:
+* Alpha
+** Beta
+Beta body."
+  "File-level `proj' tag via #+FILETAGS; both headlines untagged.")
+
 (defconst org-mcp-test--content-slash-not-nested-before
   "* Parent
 ** Real Child
@@ -3270,6 +3284,61 @@ match.  Returns the parsed result for further assertions."
     (should
      (string-match-p expected-pattern (alist-get 'content result)))
     result))
+
+;; Helper functions for testing org-find-tagged-ancestor MCP tool
+
+(defun org-mcp-test--find-tagged-ancestor
+    (uri tag &optional include-self)
+  "Call org-find-tagged-ancestor with URI and TAG; return the parsed `found'.
+INCLUDE-SELF, when non-nil, is sent verbatim as `include_self' so
+tests can exercise wire-value normalization."
+  (alist-get
+   'found
+   (org-mcp-test--parse-json-list
+    (mcp-server-lib-ert-call-tool
+     "org-find-tagged-ancestor"
+     `((uri . ,uri)
+       (tag . ,tag) ,@
+       (when include-self
+         `((include_self . ,include-self))))))))
+
+(defun org-mcp-test--should-find-tagged-ancestor-title
+    (file tag include-self title)
+  "Assert the walk from `Child' in FILE finds TAG declared on TITLE.
+FILE carries `org-mcp-test--content-tagged-levels'; the walk starts
+at its `Grandparent/Parent/Child' headline.  INCLUDE-SELF is sent
+verbatim as `include_self'."
+  (should
+   (equal
+    (alist-get
+     'title
+     (org-mcp-test--find-tagged-ancestor
+      (format "org-headline://%s#Grandparent/Parent/Child" file) tag
+      include-self))
+    title)))
+
+(defun org-mcp-test--should-find-tagged-ancestor-null
+    (file tag include-self)
+  "Assert the walk from `Child' in FILE reports no headline declaring TAG.
+FILE carries `org-mcp-test--content-tagged-levels'; the walk starts
+at its `Grandparent/Parent/Child' headline.  INCLUDE-SELF is sent
+verbatim as `include_self'."
+  (should
+   (eq
+    (org-mcp-test--find-tagged-ancestor
+     (format "org-headline://%s#Grandparent/Parent/Child" file) tag
+     include-self)
+    :null)))
+
+(defun org-mcp-test--should-find-tagged-ancestor-error
+    (uri error-regex)
+  "Assert org-find-tagged-ancestor with URI signals a match of ERROR-REGEX.
+The probe tag sent alongside URI is `proj'."
+  (should
+   (string-match-p
+    error-regex
+    (org-mcp-test--tool-call-error-message
+     "org-find-tagged-ancestor" `((uri . ,uri) (tag . "proj"))))))
 
 ;; Helper functions for testing MCP resources
 
@@ -7395,6 +7464,157 @@ lookup runs."
    "org-read-by-id"
    '((uuid . 42))
    (org-mcp-test--field-non-string-regex "uuid" 42)))
+
+;;; org-find-tagged-ancestor tests
+
+(ert-deftest
+    org-mcp-test-find-tagged-ancestor-null-when-no-ancestor-tagged
+    ()
+  "Pin that `found' is null when no enclosing headline carries the tag."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-tagged-levels))
+    (org-mcp-test--should-find-tagged-ancestor-null
+     test-file "missing" nil)))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-include-self-matches ()
+  "Pin that include_self=true checks the headline at the URI first.
+`Child' declares `childtag'; with include_self the child itself is
+returned, with its org-headline:// URI since it carries no ID."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-tagged-levels))
+    (let* ((uri
+            (format "org-headline://%s#Grandparent/Parent/Child"
+                    test-file))
+           (found
+            (org-mcp-test--find-tagged-ancestor uri "childtag" t)))
+      (should (equal (alist-get 'title found) "Child"))
+      (org-mcp-test--should-node-metadata
+       found
+       :tags '("childtag")
+       :uri uri))))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-include-self-json-false
+    ()
+  "Pin that JSON false for include_self behaves like the default.
+`json.el' decodes JSON `false' to `:json-false', which is truthy in
+Elisp; without normalization the tagged `Child' itself would match."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-tagged-levels))
+    (org-mcp-test--should-find-tagged-ancestor-null
+     test-file "childtag"
+     :json-false)))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-filetags-not-considered
+    ()
+  "Pin that a tag declared only in #+FILETAGS never matches.
+File-level tags have no declaring headline to return, so even with
+include_self the result is null although both headlines inherit
+`proj' from the file."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-filetags-untagged-levels))
+    (should
+     (eq
+      (org-mcp-test--find-tagged-ancestor
+       (format "org-headline://%s#Alpha/Beta" test-file) "proj"
+       t)
+      :null))))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-whole-file-uri-rejected
+    ()
+  "Pin that a whole-file URI is a validation error, not a null result.
+Without the guard the nil headline path would silently \"navigate\"
+to the start of the file and report no match."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-tagged-levels))
+    (org-mcp-test--should-find-tagged-ancestor-error
+     (format "org-headline://%s/" test-file)
+     "URI must identify a headline, not a whole file")))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-nonexistent-headline ()
+  "Pin that navigation failure is a tool error, not a null result.
+Null is reserved for a resolved headline with no tagged ancestor; a
+URI that does not resolve errors like in the other read tools."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-tagged-levels))
+    (org-mcp-test--should-find-tagged-ancestor-error
+     (format "org-headline://%s#Missing" test-file)
+     "Cannot find headline: Missing")))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-id-uri-and-metadata ()
+  "Pin org-id:// input handling and full node metadata fidelity.
+The tagged `Parent task' matches itself under include_self; the
+returned node carries its TODO state, priority, planning, and an
+org-id:// URI since the headline has an ID property."
+  (org-mcp-test--with-id-setup test-file
+      org-mcp-test--content-outline-metadata
+    (list org-mcp-test--content-with-id-id)
+    (let ((found
+           (org-mcp-test--find-tagged-ancestor
+            org-mcp-test--content-with-id-uri "work"
+            t)))
+      (should (equal (alist-get 'title found) "Parent task"))
+      (org-mcp-test--should-node-metadata
+       found
+       :todo "TODO"
+       :priority "A"
+       :tags '("work")
+       :scheduled "<2026-06-25 Thu>"
+       :deadline "<2026-07-01 Wed>"
+       :uri org-mcp-test--content-with-id-uri))))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-skips-self-by-default
+    ()
+  "Pin that the headline at the URI itself is not checked by default.
+`Child' declares `childtag' and no ancestor does, so without
+include_self the result is null."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-tagged-levels))
+    (org-mcp-test--should-find-tagged-ancestor-null
+     test-file "childtag" nil)))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-local-tags-only ()
+  "Pin that each level is tested against its own tags, not inherited ones.
+`Parent' inherits `top' from `Grandparent' but must not match; the
+declaring `Grandparent' is returned.  Also pins that a match on the
+second tag of a multi-tag headline (`:proj:top:') counts."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-tagged-levels))
+    (org-mcp-test--should-find-tagged-ancestor-title
+     test-file "top" nil "Grandparent")))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-nearest-of-two-tagged
+    ()
+  "Pin that the innermost of two tagged ancestors wins.
+Both `Grandparent' and `Parent' declare `proj'; the nearer `Parent'
+is returned."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-tagged-levels))
+    (org-mcp-test--should-find-tagged-ancestor-title
+     test-file "proj" nil "Parent")))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-non-string-uri ()
+  "Pin that non-string `uri' is rejected at the tool boundary.
+`org-mcp--validate-string-field' fires before any URI parsing runs."
+  (org-mcp-test--assert-tool-error-message-regex
+   "org-find-tagged-ancestor"
+   '((uri . 42) (tag . "x"))
+   (org-mcp-test--field-non-string-regex "uri" 42)))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-non-string-tag ()
+  "Pin that non-string `tag' is rejected before any URI resolution."
+  (org-mcp-test--assert-tool-error-message-regex
+   "org-find-tagged-ancestor"
+   '((uri . "org-id://some-id") (tag . 42))
+   (org-mcp-test--field-non-string-regex "tag" 42)))
+
+(ert-deftest org-mcp-test-find-tagged-ancestor-empty-tag ()
+  "Pin that empty `tag' is a validation error, not a silent null.
+An empty tag can never match any headline, so it indicates a client
+bug rather than a legitimate no-match query."
+  (org-mcp-test--assert-tool-error-message-regex
+   "org-find-tagged-ancestor"
+   '((uri . "org-id://some-id") (tag . ""))
+   "Field tag must be non-empty"))
 
 ;;; Resource tests
 

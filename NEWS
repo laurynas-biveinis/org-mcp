@@ -70,6 +70,13 @@ org-mcp NEWS -- history of user-visible changes
     string to create or switch a headline to no TODO keyword.  Any
     CLOSED stamp is left to Org's own settings.
 
+*** Added `org-find-tagged-ancestor' tool for locating a tagged enclosing headline
+    Given a headline URI and a tag, returns the node metadata of the
+    nearest self-or-ancestor headline that declares the tag as its
+    own (local) tag, or null when none does.  Inherited tags,
+    `#+FILETAGS', and `org-tags-exclude-from-inheritance' are not
+    consulted.
+
 ** Bug Fixes
 
 *** Fixed `org-update-todo-state' failing on no-state heading with `current_state=""'

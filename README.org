@@ -267,6 +267,17 @@ Empty configuration returns:
 - *Configuration:* Searched files must be in =org-mcp-allowed-files=. Returns ={"groups": []}= when no files are configured and no =file= is given.
 - *Buffer behavior:* Reads files from disk; unsaved changes in Emacs buffers are not reflected.
 
+*** org-find-tagged-ancestor
+- *Description:* Find the nearest enclosing headline that carries a given tag as its own (local) tag
+- *Parameters:*
+  - =uri= (string, required): URI of the headline to start from (supports =org-headline://= or =org-id://=); must identify a headline, not a whole file
+  - =tag= (string, required): Single tag name to look for (non-empty)
+  - =include_self= (boolean, optional, default =false=): When =true=, the headline at =uri= is checked before its ancestors
+- *Returns:* JSON object with a single =found= key: the node object of the nearest self-or-ancestor headline whose own tag list contains =tag= — same node shape as =org-grep='s =headline_path= entries (=title=, =todo=, =priority=, =tags=, =scheduled=, =deadline=, =uri=; =org-id://= when the headline has an ID, =org-headline://= otherwise) — or =null= when no enclosing headline declares the tag
+- *Semantics:* Each level is tested against its local tags only. Tags a headline merely inherits from an ancestor or from =#+FILETAGS= never match (a tag declared only in =#+FILETAGS= has no declaring headline, so the result is =null=), and =org-tags-exclude-from-inheritance= is deliberately ignored. Under Org's default tag inheritance, a non-null result with =include_self= set to =true= means the headline carries the tag.
+- *Configuration:* File must be in =org-mcp-allowed-files=
+- *Buffer behavior:* Reads the file from disk; unsaved changes in an Emacs buffer visiting the file are not reflected.
+
 *** org-update-todo-state
 - *Description:* Update the TODO state of a specific headline
 - *Parameters:*
