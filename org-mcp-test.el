@@ -2179,6 +2179,67 @@ BODY is the code to execute with the buffer."
            ,@body)
        (kill-buffer ,buffer))))
 
+(defmacro org-mcp-test--asserting-no-modified-buffer-killed
+    (&rest body)
+  "Run BODY and assert its write path kills a visiting buffer, none modified.
+Advises `kill-buffer' to record every file-visiting buffer killed during
+BODY, and separately those killed while still modified.  After BODY the
+modified record must be empty -- the defect these tests guard against --
+and the file-visiting record must be non-empty, proving the guarded kill
+actually ran, so a later refactor that stops visiting the file cannot turn
+the assertion into a silent no-op.  A write tool's visiting temp buffer
+left modified when `with-temp-buffer' kills it is what a live Emacs
+surfaces as the stray modified-buffer kill prompt: it comes from the
+built-in modified-buffer save query, which batch skips as
+non-interactive and `kill-buffer-query-functions' never sees because
+`with-temp-buffer' creates its buffer with buffer hooks inhibited.  Advice
+on `kill-buffer' fires regardless, so it observes the kill directly."
+  (declare (indent 0) (debug (body)))
+  (let ((modified-killed (gensym "modified-killed"))
+        (visiting-killed (gensym "visiting-killed"))
+        (advice (gensym "advice")))
+    `(let* ((,modified-killed nil)
+            (,visiting-killed nil)
+            (,advice
+             (lambda (&optional buffer-or-name &rest _)
+               (let ((buf
+                      (get-buffer
+                       (or buffer-or-name (current-buffer)))))
+                 (when (and buf (buffer-file-name buf))
+                   (push (buffer-name buf) ,visiting-killed)
+                   (when (buffer-modified-p buf)
+                     (push (buffer-name buf) ,modified-killed)))))))
+       (advice-add 'kill-buffer :before ,advice)
+       (unwind-protect
+           (progn
+             ,@body)
+         (advice-remove 'kill-buffer ,advice))
+       (should-not ,modified-killed)
+       (should ,visiting-killed))))
+
+(defmacro org-mcp-test--asserting-edit-body-kills-no-modified-buffer
+    (&rest body)
+  "Seed the standard-ID task, open it in a clean buffer, and guard BODY.
+BODY performs an org-edit-body call against the seeded `Task with ID'
+node (by `org-id://' or `org-headline://' URI), succeeding or erroring;
+the guard asserts it leaves no modified visiting buffer for teardown to
+kill (see `org-mcp-test--asserting-no-modified-buffer-killed').
+`test-file' is bound for BODY."
+  (declare (indent 0) (debug (body)))
+  `(org-mcp-test--with-id-setup test-file
+       org-mcp-test--content-with-id-todo
+     (list org-mcp-test--content-with-id-id)
+     (org-mcp-test--with-file-buffer buf test-file
+       (org-mcp-test--asserting-no-modified-buffer-killed
+         ,@body))))
+
+(defun org-mcp-test--signal-simulated-failure (&rest _)
+  "Signal a simulated failure; a reusable hostile function stub.
+Bound in place of a function, or into a hook such as `org-mode-hook', to
+make it fail deterministically.  Accepts any arguments so it can stand in
+for any signature."
+  (error "Simulated failure"))
+
 ;; Helpers for testing org-get-todo-config MCP tool
 
 (defun org-mcp-test--check-todo-config-sequence
@@ -4098,15 +4159,20 @@ from outside the allow-list into the result."
               (should-not (string-match "On reference day" agenda))))
         (delete-directory foreign-dir t)))))
 
+(defun org-mcp-test--agenda-list-leak-buffer-then-signal (&rest _)
+  "Create the agenda tmp buffer, then signal; a hostile `org-agenda-list' stub.
+Leaves the buffer behind so the test can assert error-path cleanup kills
+it."
+  (get-buffer-create org-agenda-buffer-tmp-name)
+  (error "Simulated agenda failure"))
+
 (ert-deftest org-mcp-test-tool-get-agenda-cleans-buffer-on-error ()
   "Test `org-mcp--agenda-buffer-text' reclaims its buffer on a build error.
 Pins error-path cleanup: if `org-agenda-list' signals after creating
 the private agenda buffer, `org-mcp--agenda-buffer-text' must kill it
 rather than leak a hidden buffer."
   (cl-letf (((symbol-function 'org-agenda-list)
-             (lambda (&rest _)
-               (get-buffer-create org-agenda-buffer-tmp-name)
-               (error "Simulated agenda failure"))))
+             #'org-mcp-test--agenda-list-leak-buffer-then-signal))
     (should-error
      (org-mcp--agenda-buffer-text '("/no/such/file.org") nil 'day))
     (should-not (get-buffer org-mcp--agenda-buffer-name))))
@@ -4377,7 +4443,7 @@ time the cache write is attempted."
     (should-not
      (org-id-find-id-file org-mcp-test--content-with-id-id))
     (cl-letf (((symbol-function 'org-id-add-location)
-               (lambda (&rest _) (error "Cache write boom"))))
+               #'org-mcp-test--signal-simulated-failure))
       (org-mcp-test--update-with-id-to-done))))
 
 (ert-deftest org-mcp-test-update-todo-state-nonexistent-headline ()
@@ -6431,6 +6497,69 @@ with new multiline
 content here."
     org-mcp-test--pattern-edit-body-multiline))
 
+(ert-deftest org-mcp-test-edit-body-leaves-no-modified-visiting-buffer
+    ()
+  "A successful org-edit-body leaves no modified visiting buffer to kill.
+With the target file already open in a clean buffer, the write path's
+own visiting temp buffer must be unmodified before `with-temp-buffer'
+kills it; otherwise a live Emacs raises the stray modified-buffer kill
+prompt."
+  (org-mcp-test--asserting-edit-body-kills-no-modified-buffer
+    (org-mcp-test--call-edit-body-and-check
+     test-file
+     org-mcp-test--content-with-id-uri
+     "Second line of content."
+     "This has been replaced
+with new multiline
+content here."
+     org-mcp-test--pattern-edit-body-multiline
+     nil
+     org-mcp-test--content-with-id-id)))
+
+(ert-deftest
+    org-mcp-test-edit-body-error-leaves-no-modified-visiting-buffer
+    ()
+  "A failed org-edit-body leaves no modified visiting buffer to kill.
+The tool sets up and modifies its visiting temp buffer before it
+discovers `old_body' is absent and errors; the error-path teardown must
+still leave that buffer unmodified before `with-temp-buffer' kills it, so
+no stray modified-kill prompt fires."
+  (org-mcp-test--asserting-edit-body-kills-no-modified-buffer
+    (org-mcp-test--call-edit-body-expecting-error
+     test-file
+     org-mcp-test--content-with-id-uri
+     "No such text in body"
+     "REPLACED")))
+
+(ert-deftest
+    org-mcp-test-edit-body-setup-signal-leaves-no-modified-visiting-buffer
+    ()
+  "A setup-phase signal leaves no modified visiting buffer to kill.
+The visiting temp buffer is file-visiting and modified during setup
+\(`set-visited-file-name' + `insert-file-contents') before BODY runs, so a
+signal from that phase -- here a misconfigured `org-mode-hook' -- must still
+leave it unmodified before `with-temp-buffer' kills it (see
+`org-mcp--with-visiting-org-file').  A headline URI keeps URI resolution
+from running `org-mode' before the macro.  Guards the setup phase, which
+the BODY-path edit-body tests do not reach."
+  (org-mcp-test--asserting-edit-body-kills-no-modified-buffer
+    ;; A hostile `org-mode-hook' makes the macro's setup-phase `org-mode'
+    ;; signal; the tool surfaces it as a JSON-RPC error.
+    (let ((org-mode-hook
+           (list #'org-mcp-test--signal-simulated-failure)))
+      (should
+       (alist-get
+        'error
+        (mcp-server-lib-process-jsonrpc-parsed
+         (mcp-server-lib-create-tools-call-request
+          "org-edit-body" nil
+          `((resource_uri
+             .
+             ,(org-mcp-test--task-with-id-uri test-file))
+            (old_body . "Second line of content.")
+            (new_body . "REPLACED")))
+         mcp-server-lib-ert-server-id))))))
+
 (ert-deftest org-mcp-test-edit-body-case-sensitive-match ()
   "Test that org-edit-body matches `old_body' case-sensitively.
 The fixture body contains `hello world' (lowercase, first) and
@@ -7091,7 +7220,7 @@ entry from both files."
     (let ((org-archive-subtree-save-file-p nil)
           (uri (org-mcp-test--archive-task-uri test-file)))
       (org-mcp-test--with-source-write-stub
-          (lambda () (error "Simulated source write failure"))
+          #'org-mcp-test--signal-simulated-failure
         (org-mcp-test--archive-tool-error uri))
       (should (file-exists-p default-archive-file))
       (org-mcp-test--verify-file-matches
@@ -7139,7 +7268,7 @@ and no archive file is written -- so the entry is never lost."
     (let ((org-archive-subtree-save-file-p nil)
           (uri (org-mcp-test--archive-task-uri test-file)))
       (cl-letf (((symbol-function 'save-buffer)
-                 (lambda (&rest _) (error "Simulated save failure"))))
+                 #'org-mcp-test--signal-simulated-failure))
         (org-mcp-test--archive-tool-error uri))
       (org-mcp-test--should-archive-aborted))))
 
@@ -7174,8 +7303,7 @@ source so the entry is never lost."
   (org-mcp-test--with-archive-simple
     (let ((uri (org-mcp-test--archive-task-uri test-file)))
       (cl-letf (((symbol-function 'org-paste-subtree)
-                 (lambda (&rest _)
-                   (error "Simulated archive paste failure"))))
+                 #'org-mcp-test--signal-simulated-failure))
         (org-mcp-test--archive-tool-error uri))
       (org-mcp-test--should-archive-aborted))))
 
@@ -8756,6 +8884,27 @@ paste)."
       org-mcp-test--content-refile-lone-target-no-newline
       nil
     (org-mcp-test--cross-refile-and-verify source-file target-file)))
+
+(ert-deftest
+    org-mcp-test-refile-cross-file-leaves-no-modified-visiting-buffer
+    ()
+  "A cross-file refile leaves neither visiting temp buffer modified to kill.
+Cross-file `org-refile-headline' nests two `org-mcp--with-visiting-org-file'
+expansions (target within source), so both the source and target visiting
+temp buffers end up modified and must each be cleared before their own
+`with-temp-buffer' kill.  With both files already open in clean buffers,
+neither may be killed while modified; otherwise a live Emacs raises the
+stray modified-buffer kill prompt.  Guards the nested two-buffer
+cleanup that the single-buffer edit-body tests do not exercise."
+  (org-mcp-test--with-refile-files
+      org-mcp-test--content-refile-lone-mover
+      org-mcp-test--content-refile-lone-target
+      nil
+    (org-mcp-test--with-file-buffer src-buf source-file
+      (org-mcp-test--with-file-buffer tgt-buf target-file
+        (org-mcp-test--asserting-no-modified-buffer-killed
+          (org-mcp-test--cross-refile-and-verify
+           source-file target-file))))))
 
 (defmacro org-mcp-test--assert-refile-error
     (test-file params &optional error-regex)

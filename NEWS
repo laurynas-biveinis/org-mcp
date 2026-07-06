@@ -79,6 +79,10 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Stopped modifying tools from prompting to kill a modified buffer
+    A modifying tool run in a live Emacs could raise a stray
+    modified-buffer kill prompt.
+
 *** Fixed `org-update-todo-state' failing on no-state heading with `current_state=""'
     `string=' treats nil and `""' as distinct, so the documented
     "use empty string for no TODO state" path errored with

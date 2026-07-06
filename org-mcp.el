@@ -420,17 +420,35 @@ Validates FILE-PATH has no unsaved changes (errors via
 FILE-PATH's contents in `org-mode', `set-visited-file-name' pointing
 at FILE-PATH, and point at `point-min', and runs BODY there.  Unlike
 `org-mcp--with-org-file', the buffer visits FILE-PATH so BODY may save
-it, and the unsaved-change guard runs first."
+it, and the unsaved-change guard runs first.
+
+The visiting buffer's modified flag is cleared before `with-temp-buffer'
+kills it.  Setup (`set-visited-file-name' then `insert-file-contents',
+no VISIT arg) leaves the buffer modified before BODY runs, and BODY's own
+save (`write-region', no VISIT arg) does not clear it, so it is modified
+whenever `with-temp-buffer' kills it.  Killing a modified file-visiting
+buffer makes a live Emacs pop `Buffer FILE<2> modified; kill anyway?'.
+The `FILE<2>' name arises because the buffer `set-visited-file-name' creates
+collides with any buffer the user already has visiting FILE-PATH.  The
+`unwind-protect' spans setup and BODY, so the flag is cleared however the
+macro exits -- normal return, or a signal from setup or BODY alike -- and
+the teardown kill is silent."
   (declare (indent 2) (debug (form form body)))
-  (let ((file-var (gensym "file-path")))
+  (let ((file-var (gensym "file-path"))
+        (buf-var (gensym "buf")))
     `(let ((,file-var ,file-path))
        (org-mcp--fail-if-modified ,file-var ,operation)
        (with-temp-buffer
-         (set-visited-file-name ,file-var t)
-         (insert-file-contents ,file-var)
-         (org-mode)
-         (goto-char (point-min))
-         ,@body))))
+         (let ((,buf-var (current-buffer)))
+           (unwind-protect
+               (progn
+                 (set-visited-file-name ,file-var t)
+                 (insert-file-contents ,file-var)
+                 (org-mode)
+                 (goto-char (point-min))
+                 ,@body)
+             (with-current-buffer ,buf-var
+               (set-buffer-modified-p nil))))))))
 
 (defmacro org-mcp--modify-and-save
     (file-path operation response-alist &rest body)
