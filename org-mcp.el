@@ -39,6 +39,7 @@
 (require 'org-agenda)
 (require 'calendar)
 (require 'url-util)
+(require 'subr-x)
 
 (defcustom org-mcp-allowed-files nil
   "List of absolute paths to Org files that can be accessed via MCP."
@@ -245,62 +246,157 @@ Directory entries are excluded so they cannot be expanded by
   "Name of the private buffer `org-mcp--agenda-buffer-text' builds into.
 The leading space keeps it off `buffer-list'.")
 
-(defun org-mcp--agenda-buffer-text (agenda-files start-day span)
-  "Build `org-agenda-list' for AGENDA-FILES, period START-DAY and SPAN.
-Return a cons (TEXT . STARTING-DAY): TEXT is the agenda buffer as a
-plain string and STARTING-DAY is the absolute day number the agenda
-actually anchored on (`org-starting-day').  Binds `org-agenda-files'
-and a private agenda buffer name so the user window layout is not
-disturbed.  `org-agenda-list' mutates several global agenda bookkeeping
-variables -- most damagingly it invalidates the markers of any live
-interactive agenda via `org-agenda-reset-markers' -- so they are
-let-bound here, which restores the user's values on exit and leaves a
-concurrent interactive agenda intact.  `org-agenda-start-day' is
-bound to nil so an omitted START-DAY anchors on today rather than
-the user's global, and `org-agenda-contributing-files' is bound to
-nil so the build does not overwrite the user's live value.  Any
-active agenda restriction lock is neutralized for the build:
-`org-agenda-restrict' and `org-agenda-overriding-restriction' are
-bound to nil, and the `org-restrict' symbol property on
-`org-agenda-files' (which `org-agenda-list' honors above the dynamic
-variable) is cleared and restored, so the agenda is always built
-from AGENDA-FILES alone.  The caller must ensure AGENDA-FILES is
-non-nil."
+(defun org-mcp--agenda-node-at-marker (marker)
+  "Serialize the heading at MARKER to a bare node, or nil if unresolvable.
+Returns the deepest node of `org-mcp--headline-path-nodes' -- the same
+node shape `org-grep' emits -- for the heading MARKER points at, or nil
+when MARKER's buffer is dead, its file is not in `org-mcp-allowed-files',
+or MARKER is not on a heading.  The node's URI is built from the
+allowed-files entry's canonical path (via `org-mcp--find-allowed-file'),
+byte-identical to the URIs org-grep and the read tools emit; a heading
+in a file outside the allow-list (reachable only via a custom command
+that sets its own `org-agenda-files') is dropped from the structured
+items -- it still appears in the raw agenda text."
+  (let ((buf (marker-buffer marker)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (when-let* ((file (buffer-file-name))
+                    (allowed (org-mcp--find-allowed-file file)))
+          (save-excursion
+            (goto-char marker)
+            (when (org-at-heading-p)
+              (car
+               (last (org-mcp--headline-path-nodes allowed))))))))))
+
+(defun org-mcp--agenda-blocks ()
+  "Walk the current agenda buffer into a list of block alists.
+Each block is an alist ((header . STRING-or-nil) (items . VECTOR)).  A
+line carrying the `org-agenda-structural-header' text property opens a
+new block whose header is that line's trimmed text; a line carrying an
+`org-hd-marker' becomes an item node (via
+`org-mcp--agenda-node-at-marker') in the current block.  Items seen
+before the first structural header form an initial block with a nil
+header.  A heading that renders on several lines of one block (a
+multi-day span entry, a repeated deadline warning) is emitted once:
+item nodes are deduplicated within a block by their source-heading
+identity (the `org-hd-marker' buffer and position), since the bare node
+carries no per-line date to tell the copies apart.  Deduping on
+identity rather than `uri' keeps two distinct headings that share a
+title path (and thus an `org-headline://' URI) from collapsing.  Lines
+that resolve to no heading (date headers, diary, clock, separators)
+contribute no item but remain in the agenda text."
+  (let ((blocks '())
+        (header nil)
+        (items '())
+        (seen (make-hash-table :test 'equal))
+        (in-block nil))
+    (cl-flet
+     ((flush
+       ()
+       (when (or in-block items)
+         (push `((header . ,header)
+                 (items . ,(vconcat (nreverse items))))
+               blocks))))
+     (goto-char (point-min))
+     (while (not (eobp))
+       (let ((bol (line-beginning-position)))
+         (cond
+          ((get-text-property bol 'org-agenda-structural-header)
+           (flush)
+           (setq
+            header
+            (string-trim
+             (buffer-substring-no-properties bol (line-end-position)))
+            items nil
+            in-block t)
+           (clrhash seen))
+          ((get-text-property bol 'org-hd-marker)
+           (let* ((marker (get-text-property bol 'org-hd-marker))
+                  (key
+                   (cons
+                    (marker-buffer marker) (marker-position marker))))
+             (when-let* ((fresh (not (gethash key seen)))
+                         (node
+                          (org-mcp--agenda-node-at-marker marker)))
+               (puthash key t seen)
+               (push node items))))))
+       (forward-line 1))
+     (flush))
+    (nreverse blocks)))
+
+(defun org-mcp--agenda-collect (agenda-files build-fn)
+  "Build an agenda over AGENDA-FILES via BUILD-FN under agenda isolation.
+BUILD-FN takes no arguments and populates the private agenda buffer
+\(e.g. calls `org-agenda-list' or `org-agenda' with a dispatch key).
+Return a list (TEXT STARTING-DAY BLOCKS): TEXT is the agenda buffer as
+a plain string, STARTING-DAY is the absolute day number the agenda
+anchored on (`org-starting-day', nil for a non-dated view), and BLOCKS
+is `org-mcp--agenda-blocks'.  Binds `org-agenda-files' and a private
+agenda buffer name so the user window layout is not disturbed.
+Building the agenda mutates several global agenda bookkeeping variables
+-- most damagingly it invalidates the markers of any live interactive
+agenda via `org-agenda-reset-markers' -- so they are let-bound here,
+which restores the user's values on exit and leaves a concurrent
+interactive agenda intact.  `org-agenda-start-day' is bound to nil so
+an omitted reference day anchors on today rather than the user's
+global, and `org-agenda-contributing-files' is bound to nil so the
+build does not overwrite the user's live value.  Any active agenda
+restriction lock is neutralized for the build: `org-agenda-restrict'
+and `org-agenda-overriding-restriction' are bound to nil, and the
+`org-restrict' symbol property on `org-agenda-files' (which the agenda
+honors above the dynamic variable) is cleared and restored, so the
+agenda is always built from AGENDA-FILES alone.  The caller must ensure
+AGENDA-FILES is non-nil."
   (cl-assert agenda-files)
-  (let* ((buffer-name org-mcp--agenda-buffer-name)
-         (org-agenda-files agenda-files)
-         (org-agenda-buffer-tmp-name buffer-name)
-         (org-agenda-buffer-name org-agenda-buffer-name)
-         (org-agenda-buffer org-agenda-buffer)
-         (org-agenda-pre-window-conf nil)
-         (org-agenda-window-setup 'current-window)
-         (org-agenda-sticky nil)
-         (org-agenda-markers nil)
-         (org-agenda-this-buffer-name nil)
-         (org-agenda-last-prefix-arg nil)
-         (org-todo-keywords-for-agenda nil)
-         (org-done-keywords-for-agenda nil)
-         (org-agenda-start-day nil)
-         (org-agenda-contributing-files nil)
-         (org-agenda-restrict nil)
-         (org-agenda-overriding-restriction nil)
-         (saved-restrict (get 'org-agenda-files 'org-restrict)))
+  (let*
+      ((buffer-name org-mcp--agenda-buffer-name)
+       (org-agenda-files agenda-files)
+       (org-agenda-buffer-tmp-name buffer-name)
+       ;; Single-command dispatch names its buffer from the tmp-name
+       ;; above, but the composite path (`org-agenda-run-series')
+       ;; names it from `org-agenda-buffer-name', so bind that to the
+       ;; private name too or a composite view escapes into the
+       ;; user's real "*Org Agenda*" buffer.
+       (org-agenda-buffer-name buffer-name)
+       (org-agenda-buffer org-agenda-buffer)
+       (org-agenda-pre-window-conf nil)
+       (org-agenda-window-setup 'current-window)
+       (org-agenda-sticky nil)
+       (org-agenda-markers nil)
+       (org-agenda-this-buffer-name nil)
+       (org-agenda-last-prefix-arg nil)
+       (org-todo-keywords-for-agenda nil)
+       (org-done-keywords-for-agenda nil)
+       (org-agenda-start-day nil)
+       (org-agenda-contributing-files nil)
+       (org-agenda-restrict nil)
+       (org-agenda-overriding-restriction nil)
+       (org-agenda-compact-blocks nil)
+       (saved-restrict (get 'org-agenda-files 'org-restrict)))
     (save-window-excursion
       (unwind-protect
           (progn
             (put 'org-agenda-files 'org-restrict nil)
-            (org-agenda-list nil start-day span)
+            (funcall build-fn)
             (let ((buf (get-buffer buffer-name)))
-              (cl-assert buf)
+              (unless buf
+                (org-mcp--tool-validation-error
+                 "Agenda command produced no agenda buffer; it may build a sparse tree or prompt for input"))
               (with-current-buffer buf
-                (cl-assert org-starting-day)
-                (cons
+                (list
                  (buffer-substring-no-properties
                   (point-min) (point-max))
-                 org-starting-day))))
+                 org-starting-day (org-mcp--agenda-blocks)))))
         (put 'org-agenda-files 'org-restrict saved-restrict)
         (when-let* ((buf (get-buffer buffer-name)))
           (kill-buffer buf))))))
+
+(defun org-mcp--agenda-buffer-text (agenda-files start-day span)
+  "Build `org-agenda-list' for AGENDA-FILES, period START-DAY and SPAN.
+Thin wrapper over `org-mcp--agenda-collect'; see it for the return
+shape and the agenda-isolation guarantees."
+  (org-mcp--agenda-collect
+   agenda-files (lambda () (org-agenda-list nil start-day span))))
 
 (defun org-mcp--agenda-start-day (date span)
   "Return the `org-agenda-list' start day for DATE and SPAN.
@@ -1580,55 +1676,138 @@ traverse an improper list."
                node)))
          org-agenda-custom-commands))))))
 
+(defun org-mcp--agenda-block-unrunnable-reason (type match)
+  "Return why an agenda block of TYPE with MATCH can't run here, or nil.
+The sparse-tree types (tags-tree, todo-tree, occur-tree) build an
+in-buffer tree rather than an agenda listing; the match-requiring
+listing types (tags, tags-todo, search) would prompt when MATCH is nil
+or blank -- Org treats a whitespace-only match as absent -- so the same
+blank check as the `date' field is applied.  Match-free listing types
+\(agenda, todo, alltodo, stuck) run."
+  (cond
+   ((memq type '(tags-tree todo-tree occur-tree))
+    "builds an in-buffer sparse tree, not an agenda listing")
+   ((and (memq type '(tags tags-todo search))
+         (or (null match)
+             (and (stringp match)
+                  (org-mcp--blank-or-nbsp-only-p match))))
+    "prompts for a match that the command does not specify")))
+
+(defun org-mcp--agenda-subblock-unrunnable-reason (block)
+  "Return why composite sub-BLOCK can't run here, or nil.
+BLOCK is a (TYPE MATCH SETTINGS) list from a composite command's block
+list; delegates to `org-mcp--agenda-block-unrunnable-reason'."
+  (and (consp block)
+       (org-mcp--agenda-block-unrunnable-reason
+        (car block) (nth 1 block))))
+
+(defun org-mcp--agenda-unrunnable-reason (entry)
+  "Return why custom-command ENTRY can't run non-interactively, or nil.
+A bare prefix has no command; a sparse-tree block builds a tree, not a
+listing; a match-requiring block with no match prompts.  A composite is
+blocked by its first un-runnable sub-block.  A function command is
+opaque and assumed runnable -- if it builds no agenda buffer that is
+caught after dispatch by `org-mcp--agenda-collect'."
+  (let ((type (org-mcp--agenda-command-type entry)))
+    (cond
+     ((string= type "prefix")
+      "is a prefix key with no command to run")
+     ((string= type "composite")
+      (cl-some
+       #'org-mcp--agenda-subblock-unrunnable-reason (nth 2 entry)))
+     ((string= type "function")
+      nil)
+     (t
+      (org-mcp--agenda-block-unrunnable-reason
+       (nth 2 entry) (nth 3 entry))))))
+
+(defun org-mcp--agenda-span (view)
+  "Return the reserved span symbol for VIEW, or nil.
+VIEW is matched case-insensitively against the builtin spans \"day\",
+\"week\", and \"month\"; anything else yields nil and is treated as a
+custom-command dispatch key."
+  (let ((normalized-view (downcase view)))
+    (cond
+     ((string= normalized-view "day")
+      'day)
+     ((string= normalized-view "week")
+      'week)
+     ((string= normalized-view "month")
+      'month))))
+
+(defun org-mcp--agenda-response (view-name date result)
+  "Encode an org-get-agenda JSON response.
+VIEW-NAME is the reported `view'; DATE the user's date argument or nil;
+RESULT the `org-mcp--agenda-collect' triple (TEXT STARTING-DAY BLOCKS).
+`start_day' is the anchor day as YYYY-MM-DD, or null for a non-dated
+view."
+  (let ((starting-day (nth 1 result)))
+    (json-encode
+     `((view . ,view-name)
+       (date . ,(or date "today"))
+       (start_day
+        . ,(and starting-day (org-mcp--agenda-iso-date starting-day)))
+       (agenda . ,(nth 0 result))
+       (blocks . ,(vconcat (nth 2 result)))))))
+
 (defun org-mcp--tool-get-agenda (view &optional date)
-  "Build an `org-agenda' buffer for the given view and return its text.
-The agenda includes only non-missing files from `org-mcp-allowed-files';
-other `org-agenda-files' entries are ignored.
+  "Run agenda VIEW and return its text plus structured items.
+VIEW is a builtin span (\"day\", \"week\", or \"month\") or a dispatch
+key from `org-agenda-custom-commands'.  The agenda includes only
+non-missing files from `org-mcp-allowed-files'; other
+`org-agenda-files' entries are ignored.
 
 MCP Parameters:
-  view - Agenda span (string, required): \"day\", \"week\", or
-         \"month\" (case-insensitive), matching
+  view - Agenda view (string, required): the builtin span \"day\",
+         \"week\", or \"month\" (case-insensitive), matching
          `org-agenda-day-view', `org-agenda-week-view', and
-         `org-agenda-month-view' respectively.  A week is aligned
-         per `org-agenda-start-on-weekday' (the reference day itself
-         when that is nil)
+         `org-agenda-month-view'; or any dispatch key defined in
+         `org-agenda-custom-commands' (discover keys with
+         org-get-agenda-config).  \"day\"/\"week\"/\"month\" are
+         reserved for the builtin spans
   date - Reference day (string, optional).  A string like
          `org-read-date' accepts (e.g. \"2026-04-26\" or \"+2d\");
          how unrecognized input is treated follows the installed
          Org version.  If omitted, today is used; an empty or
-         whitespace-only string is rejected -- omit the key instead"
+         whitespace-only string is rejected -- omit the key instead.
+         Applies only to the day/week/month spans; every
+         custom-command view ignores it (a custom agenda block always
+         anchors on today)"
   (org-mcp--validate-string-field view "view")
   (org-mcp--validate-string-field date "date" t)
   (when (and date (org-mcp--blank-or-nbsp-only-p date))
     (org-mcp--tool-validation-error
      "Field date must not be empty or whitespace-only"))
-  (let*
-      ((normalized-view (downcase view))
-       (span
-        (cond
-         ((string= normalized-view "day")
-          'day)
-         ((string= normalized-view "week")
-          'week)
-         ((string= normalized-view "month")
-          'month)
-         (t
-          (org-mcp--tool-validation-error
-           "view must be \"day\", \"week\", or \"month\", got: \"%s\""
-           view))))
-       (agenda-files (org-mcp--agenda-allowed-file-list)))
+  (let ((agenda-files (org-mcp--agenda-allowed-file-list))
+        (span (org-mcp--agenda-span view)))
     (unless agenda-files
       (org-mcp--tool-validation-error
        "No existing files in org-mcp-allowed-files; cannot build agenda"))
-    (let* ((start-day (org-mcp--agenda-start-day date span))
-           (result
-            (org-mcp--agenda-buffer-text
-             agenda-files start-day span)))
-      (json-encode
-       `((view . ,(symbol-name span))
-         (date . ,(or date "today"))
-         (start_day . ,(org-mcp--agenda-iso-date (cdr result)))
-         (agenda . ,(car result)))))))
+    (if span
+        (let* ((start-day (org-mcp--agenda-start-day date span))
+               (result
+                (org-mcp--agenda-buffer-text
+                 agenda-files start-day span)))
+          (org-mcp--agenda-response (symbol-name span) date result))
+      (let ((entry (assoc view org-agenda-custom-commands)))
+        (unless entry
+          (org-mcp--tool-validation-error
+           "Unknown agenda view \"%s\"; expected \"day\", \"week\", \"month\", or an org-agenda-custom-commands key.  Available keys: %s"
+           view
+           (if org-agenda-custom-commands
+               (mapconcat (lambda (cmd) (format "%S" (car cmd)))
+                          org-agenda-custom-commands
+                          ", ")
+             "(none)")))
+        (when-let* ((reason
+                     (org-mcp--agenda-unrunnable-reason entry)))
+          (org-mcp--tool-validation-error
+           "Agenda view \"%s\" %s; only fully-specified listing custom commands are supported"
+           view reason))
+        (let ((result
+               (org-mcp--agenda-collect
+                agenda-files (lambda () (org-agenda nil view)))))
+          (org-mcp--agenda-response view date result))))))
 
 (defun org-mcp--tool-update-todo-state (uri current_state new_state)
   "Update the TODO state of a headline at URI.
@@ -3028,7 +3207,8 @@ Use cases:
      :id "org-get-agenda-config"
      :description
      "List the custom agenda commands defined in
-`org-agenda-custom-commands'.
+`org-agenda-custom-commands'.  A runnable key can be passed as
+org-get-agenda's view.
 
 Returns JSON object:
   commands (array) - One entry per custom command, each with:
@@ -3048,23 +3228,43 @@ type is reported as a fact and does not promise runnability."
      #'org-mcp--tool-get-agenda
      :id "org-get-agenda"
      :description
-     "Return the plain-text contents of a standard Org daily, weekly, or
-monthly agenda, as produced by `org-agenda-list' with span day, week, or
-month.  The agenda is built only from non-missing files in
-`org-mcp-allowed-files' (it does not use other `org-agenda-files'
-configuration).
+     "Run an Org agenda view and return both its plain text and its
+entries as structured data.  view is either a builtin span (\"day\",
+\"week\", or \"month\", as produced by `org-agenda-list') or a dispatch
+key from `org-agenda-custom-commands' (discover keys with
+org-get-agenda-config).  The agenda is built only from non-missing
+files in `org-mcp-allowed-files' (it does not use other
+`org-agenda-files' configuration).  Caveat: a custom command whose own
+settings set `org-agenda-files' or a restriction can override this and
+read files outside the allow-list.
 
 Returns JSON object:
-  view - The span name (\"day\", \"week\", or \"month\")
+  view - The span name (\"day\", \"week\", \"month\") or the custom
+         dispatch key you passed
   date - The date argument you passed, or the string \"today\"
-  start_day - The first day the agenda actually covers, as
-              YYYY-MM-DD (resolved; for a month snapped to the first
-              of the calendar month; for a week aligned per the
-              user's `org-agenda-start-on-weekday', which is the
-              reference day itself when that is nil)
-  agenda - The full agenda buffer text, including day/week/month
-           headers and lines for scheduled, deadlines, and other
-           agenda material from the allowed files"
+  start_day - For a span, the first day the agenda covers, as
+              YYYY-MM-DD (resolved; a month snapped to the first of the
+              calendar month; a week aligned per the user's
+              `org-agenda-start-on-weekday', the reference day itself
+              when that is nil).  null for a non-dated custom view
+  agenda - The full agenda buffer text, unchanged, including any lines
+           (diary, clock, informational) that have no source heading
+  blocks - Array of agenda blocks (one for a span view -- its items may
+           be empty; several for a composite custom command).  Each
+           block has:
+             header - The block's header line, or null
+             items - Array of entry nodes, each with title, todo,
+                     priority, tags, scheduled, deadline, and uri
+                     (org-id:// or org-headline://), the same node
+                     shape org-grep emits.  A heading appears at most
+                     once per block (a multi-day span entry that the
+                     text shows on several days is one item here).
+                     Lines with no source heading appear only in
+                     agenda text, not here
+
+A custom command that prompts for input (e.g. a tags or search command
+with no baked-in match, or a bare prefix key) cannot run
+non-interactively and is rejected with an error."
      :read-only t)
     (list
      #'org-mcp--tool-update-todo-state

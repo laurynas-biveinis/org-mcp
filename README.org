@@ -233,7 +233,8 @@ Empty configuration returns:
 
 *** org-get-agenda-config
 - *Description:* List the custom agenda commands defined in
-  =org-agenda-custom-commands=.
+  =org-agenda-custom-commands=. A runnable key can be passed as
+  =org-get-agenda='s =view=.
 - *Parameters:* None
 - *Returns:* JSON object with a =commands= array, one entry per
   =org-agenda-custom-commands= definition:
@@ -262,25 +263,45 @@ Example response:
 #+end_example
 
 *** org-get-agenda
-- *Description:* Get the same plain-text view Emacs shows for a standard Org
-  =org-agenda-list= in daily, weekly, or monthly span, aligned with
-  =org-agenda-day-view=, =org-agenda-week-view=, and =org-agenda-month-view=.
+- *Description:* Run an Org agenda view and return both its plain text and its
+  entries as structured data. The view is either a builtin span (=day=, =week=,
+  =month=, aligned with =org-agenda-day-view=, =org-agenda-week-view=, and
+  =org-agenda-month-view=) or a dispatch key from =org-agenda-custom-commands=.
 - *Parameters:*
-  - =view= (string, required): =day=, =week=, or =month= (case-insensitive)
+  - =view= (string, required): =day=, =week=, or =month= (case-insensitive,
+    reserved for the builtin spans), or any dispatch key defined in
+    =org-agenda-custom-commands= (discover keys with =org-get-agenda-config=)
   - =date= (string, optional): Any string =org-read-date= accepts; omit to use
     today (an empty or whitespace-only string is rejected).  Fixes which day /
     week / calendar month the agenda covers.  How unrecognized input is treated
-    follows your installed Org version.
+    follows your installed Org version.  Applies only to the day/week/month
+    spans; every custom-command view ignores it (a custom agenda block always
+    anchors on today).
 - *Scope:* The agenda is built only from =org-mcp-allowed-files= entries that
   exist on disk.  It does not pull in other =org-agenda-files= the user may have
-  configured in Emacs.
-- *Returns:* JSON with =view=, =date= (your string or the literal =today= if
-  omitted), =start_day= (the first day the agenda actually covers, as
-  =YYYY-MM-DD=; resolved, for a month snapped to the first of the calendar
-  month, and for a week aligned per your =org-agenda-start-on-weekday= — the
-  reference day itself when that is nil), and =agenda= (full agenda buffer text,
-  including headers and lines for scheduled and deadline items from the allowed
-  files).
+  configured in Emacs. *Caveat:* a custom command whose own settings set
+  =org-agenda-files= or a restriction can override this and escape the
+  allow-list.
+- *Returns:* JSON with:
+  - =view=: the span name or the custom dispatch key you passed
+  - =date=: your string, or the literal =today= if omitted
+  - =start_day=: for a span, the first day the agenda covers, as =YYYY-MM-DD=
+    (resolved; a month snapped to the first of the calendar month, a week
+    aligned per your =org-agenda-start-on-weekday= — the reference day itself
+    when that is nil); =null= for a non-dated custom view
+  - =agenda=: the full agenda buffer text, unchanged — including any lines
+    (diary, clock, informational) that have no source heading
+  - =blocks=: array of agenda blocks (one for a span view — its items may be
+    empty; several for a composite custom command). Each block has
+    =header= (the block's header line, or
+    =null=) and =items= (array of entry nodes — =title=, =todo=, =priority=,
+    =tags=, =scheduled=, =deadline=, =uri=, the same node shape =org-grep=
+    emits). A heading appears at most once per block — a multi-day span entry
+    the text shows on several days is a single item. Agenda lines with no
+    source heading appear only in =agenda= text, not in =items=.
+- *Prompting commands:* A custom command that prompts for input (a =tags= or
+  =search= command with no baked-in match, or a bare prefix key) cannot run
+  non-interactively and is rejected with an error.
 
 *** org-grep
 - *Description:* Search for a literal substring across one or all allowed Org files

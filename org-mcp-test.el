@@ -58,6 +58,45 @@ SCHEDULED: <2026-04-26>
 "
   "Two sibling TODO tasks both scheduled on 2026-04-26.")
 
+(defconst org-mcp-test--agenda-multiday-content
+  "* Conference
+<2026-04-27>--<2026-04-29>
+"
+  "A single event spanning three days via a timestamp range.")
+
+(defconst org-mcp-test--agenda-same-title-content
+  "* TODO Call plumber
+SCHEDULED: <2026-04-27>
+* TODO Call plumber
+SCHEDULED: <2026-04-28>
+"
+  "Two distinct ID-less tasks that share a title, on different days.
+They collapse to one org-headline:// URI, so keeping both proves dedup
+keys on heading identity rather than URI.")
+
+(defconst org-mcp-test--agenda-todo-mix-content
+  "* TODO Active work :work:
+* Reference note :work:
+"
+  "One TODO-state and one keyword-less heading, both tagged work.")
+
+(defconst org-mcp-test--agenda-foreign-phone-content
+  "* TODO Foreign phone :phone:
+"
+  "A single phone-tagged task, used as a file outside the allow-list.")
+
+(defconst org-mcp-test--agenda-tagged-content
+  "* TODO Phone Bob :phone:
+* TODO Email Alice :email:
+* PROJECT Roof
+:PROPERTIES:
+:ID: roof-project-id
+:END:
+** NEXT Call roofer :phone:
+"
+  "Two top-level tasks tagged phone and email, plus a PROJECT with an
+ID whose nested NEXT child is tagged phone.")
+
 (defconst org-mcp-test--content-with-id-id
   "550e8400-e29b-41d4-a716-446655440000"
   "ID value for org-mcp-test--content-with-id.")
@@ -3277,6 +3316,25 @@ FILE is the file path to read."
      mcp-server-lib-ert-server-id))
    :type 'mcp-server-lib-tool-error))
 
+(defmacro org-mcp-test--with-custom-agenda-result
+    (custom-commands view &rest body)
+  "Run org-get-agenda for VIEW over the tagged fixture with CUSTOM-COMMANDS.
+Binds GTD-style `org-todo-keywords', writes
+`org-mcp-test--agenda-tagged-content' as the sole allowed file, sets
+`org-agenda-custom-commands' to CUSTOM-COMMANDS, calls org-get-agenda
+with the dispatch key VIEW, and binds `result' and `blocks' for BODY."
+  (declare (indent 2) (debug t))
+  `(org-mcp-test--with-temp-org-files
+       ((agenda-file org-mcp-test--agenda-tagged-content))
+     (let* ((org-todo-keywords
+             '((sequence "TODO" "NEXT" "PROJECT" "|" "DONE")))
+            (org-agenda-custom-commands ,custom-commands)
+            (result
+             (org-mcp-test--call-get-agenda
+              (list (cons 'view ,view))))
+            (blocks (alist-get 'blocks result)))
+       ,@body)))
+
 (defmacro org-mcp-test--with-agenda-and-foreign-file (&rest body)
   "Run BODY with `agenda-file' allowed and a `foreign-file' outside it.
 `agenda-file' holds the basic agenda content as the sole allowed file;
@@ -3864,9 +3922,10 @@ appointment and sparse-tree variants."
 (ert-deftest org-mcp-test-tool-get-agenda-day ()
   "Test org-get-agenda with day view.
 Pins the day-view contract: the JSON echoes the input `date', reports
-`start_day' as that same resolved day, and the agenda renders the
-scheduled task.  `org-agenda-format-date' is pinned so the rendered
-date header is deterministic regardless of ambient Org configuration."
+`start_day' as that same resolved day, the agenda renders the scheduled
+task, and the single `blocks' entry carries that task as an item node.
+`org-agenda-format-date' is pinned so the rendered date header is
+deterministic regardless of ambient Org configuration."
   (org-mcp-test--with-temp-org-files
       ((agenda-file org-mcp-test--agenda-basic-content))
     (let* ((org-agenda-format-date "%Y-%m-%d")
@@ -3876,12 +3935,248 @@ date header is deterministic regardless of ambient Org configuration."
            (agenda (alist-get 'agenda result))
            (view (alist-get 'view result))
            (date (alist-get 'date result))
-           (start-day (alist-get 'start_day result)))
+           (start-day (alist-get 'start_day result))
+           (blocks (alist-get 'blocks result)))
       (should (string= view "day"))
       (should (string= date "2026-04-26"))
       (should (string= start-day "2026-04-26"))
       (should (string-match "2026-04-26" agenda))
-      (should (string-match "Test agenda line" agenda)))))
+      (should (string-match "Test agenda line" agenda))
+      (should (= (length blocks) 1))
+      (let* ((items (alist-get 'items (aref blocks 0)))
+             (item (aref items 0)))
+        (should (= (length items) 1))
+        (should (string= (alist-get 'title item) "Test agenda line"))
+        (should (string= (alist-get 'todo item) "TODO"))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-span-dedups-multiday ()
+  "A multi-day event is one item node in a span block, not one per day.
+The agenda text still renders it on each day, but the structured items
+dedup by heading since a bare node carries no per-day date."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-multiday-content))
+    (let* ((org-agenda-start-on-weekday 1)
+           (result
+            (org-mcp-test--call-get-agenda
+             '((view . "week") (date . "2026-04-27"))))
+           (blocks (alist-get 'blocks result))
+           (items (alist-get 'items (aref blocks 0)))
+           (agenda (alist-get 'agenda result)))
+      (should (= (length items) 1))
+      (should
+       (string= (alist-get 'title (aref items 0)) "Conference"))
+      (should (string-match "(1/3)" agenda))
+      (should (string-match "(3/3)" agenda)))))
+
+(ert-deftest
+    org-mcp-test-tool-get-agenda-span-keeps-distinct-same-title
+    ()
+  "Two distinct same-title headings are both kept, not collapsed by URI.
+Dedup keys on source-heading identity, so genuinely different tasks that
+share a title path (and thus an org-headline:// URI) are not merged."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-same-title-content))
+    (let* ((org-agenda-start-on-weekday 1)
+           (result
+            (org-mcp-test--call-get-agenda
+             '((view . "week") (date . "2026-04-27"))))
+           (items
+            (alist-get 'items (aref (alist-get 'blocks result) 0))))
+      (should (= (length items) 2)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-span-one-block-under-compact
+    ()
+  "A span yields one block even when the user set `org-agenda-compact-blocks'.
+The isolation neutralizes that setting so the block structure is
+deterministic; an empty span still returns exactly one empty block."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-basic-content))
+    (let* ((org-agenda-compact-blocks t)
+           (result
+            (org-mcp-test--call-get-agenda
+             '((view . "day") (date . "2027-01-01"))))
+           (blocks (alist-get 'blocks result)))
+      (should (= (length blocks) 1))
+      (should (= (length (alist-get 'items (aref blocks 0))) 0)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-uri-matches-grep ()
+  "An agenda item's uri is byte-identical to org-grep's for one heading.
+Both build the org-headline:// URI from the allowed-files entry's
+expand-file-name form, not the truename, so a client can correlate a
+heading across the agenda and grep/read tools by uri string."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-basic-content))
+    (let* ((org-agenda-format-date "%Y-%m-%d")
+           (agenda
+            (org-mcp-test--call-get-agenda
+             '((view . "day") (date . "2026-04-26"))))
+           (agenda-uri
+            (alist-get
+             'uri
+             (aref
+              (alist-get
+               'items (aref (alist-get 'blocks agenda) 0))
+              0)))
+           (grep
+            (json-read-from-string
+             (mcp-server-lib-ert-call-tool
+              "org-grep" '((pattern . "Test agenda line")))))
+           (grep-uri
+            (alist-get 'uri (aref (alist-get 'groups grep) 0))))
+      (should (string= agenda-uri grep-uri)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-custom-tags ()
+  "A custom tags dispatch key returns the tag-matching headlines as nodes.
+The `view' field echoes the key; the deep NEXT child tagged phone is
+found alongside the top-level phone task, while the email task is not."
+  (org-mcp-test--with-custom-agenda-result '(("z"
+                                              "Phone items"
+                                              tags
+                                              "phone"))
+                                           "z"
+    (should (string= (alist-get 'view result) "z"))
+    (should (null (alist-get 'start_day result)))
+    (should (vectorp blocks))
+    (should (= (length blocks) 1))
+    (should (stringp (alist-get 'header (aref blocks 0))))
+    (should (> (length (alist-get 'header (aref blocks 0))) 0))
+    (let* ((items (alist-get 'items (aref blocks 0)))
+           (titles
+            (mapcar
+             (lambda (i) (alist-get 'title i)) (append items nil))))
+      (should
+       (equal
+        (sort titles #'string<) '("Call roofer" "Phone Bob"))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-custom-composite ()
+  "A composite custom command returns one block per sub-command."
+  (org-mcp-test--with-custom-agenda-result '(("c" "Composite"
+                                              ((tags "phone")
+                                               (tags "email"))))
+                                           "c"
+    (should (string= (alist-get 'view result) "c"))
+    (should (= (length blocks) 2))
+    (let ((phone-items (alist-get 'items (aref blocks 0)))
+          (email-items (alist-get 'items (aref blocks 1))))
+      (should (= (length phone-items) 2))
+      (should (= (length email-items) 1))
+      (should
+       (string=
+        (alist-get 'title (aref email-items 0)) "Email Alice")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-custom-tags-todo ()
+  "A tags-todo custom command excludes the non-TODO tag match.
+The plain (keyword-less) tagged heading is dropped while the TODO-state
+one is returned, distinguishing tags-todo from a plain tags query."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-todo-mix-content))
+    (let* ((org-agenda-custom-commands
+            '(("M" "Work TODOs" tags-todo "work")))
+           (result (org-mcp-test--call-get-agenda '((view . "M"))))
+           (blocks (alist-get 'blocks result))
+           (items (alist-get 'items (aref blocks 0)))
+           (item (aref items 0)))
+      (should (= (length items) 1))
+      (should (string= (alist-get 'title item) "Active work"))
+      (should (string= (alist-get 'todo item) "TODO")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-custom-unknown-key ()
+  "An unknown dispatch key is rejected even when other keys are defined."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-tagged-content))
+    (let ((org-agenda-custom-commands
+           '(("z" "Phone items" tags "phone"))))
+      (org-mcp-test--get-agenda-expecting-error '((view . "q"))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-custom-prompting ()
+  "A custom command that would prompt for input is rejected, not dispatched.
+A tags command with no baked-in match cannot run non-interactively."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-tagged-content))
+    (let ((org-agenda-custom-commands '(("p" "Prompt me" tags))))
+      (org-mcp-test--get-agenda-expecting-error '((view . "p"))))))
+
+(ert-deftest
+    org-mcp-test-tool-get-agenda-custom-whitespace-match-rejected
+    ()
+  "A whitespace-only match is rejected like an absent one, not dispatched.
+Org treats a blank match as no match and prompts; the tool must reject
+it up front.  `inhibit-interaction' turns any prompt that slips through
+into a signalled error rather than a hung test."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-tagged-content))
+    (let ((org-agenda-custom-commands '(("z" "Blank" tags "  ")))
+          (inhibit-interaction t))
+      (should
+       (string-match-p
+        "prompts for a match"
+        (org-mcp-test--tool-call-error-message
+         "org-get-agenda" '((view . "z"))))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-custom-prefix-rejected ()
+  "A bare prefix key is rejected: it has no command to run."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-tagged-content))
+    (let ((org-agenda-custom-commands '(("h" "Home prefix"))))
+      (org-mcp-test--get-agenda-expecting-error '((view . "h"))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-custom-sparse-tree-rejected
+    ()
+  "A sparse-tree custom command is rejected before dispatch.
+Tree types build an in-buffer sparse tree, not an agenda listing, so the
+tool rejects them with its own message instead of letting Org signal an
+opaque \"Cannot execute Org agenda command\" error."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-tagged-content))
+    (let ((org-agenda-custom-commands
+           '(("x" "Tree" tags-tree "phone"))))
+      (should
+       (string-match-p
+        "sparse tree"
+        (org-mcp-test--tool-call-error-message
+         "org-get-agenda" '((view . "x"))))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-custom-fn-no-buffer ()
+  "A function command that builds no agenda buffer errors cleanly.
+When the dispatched command leaves no agenda buffer, the tool reports a
+tool error rather than tripping the internal buffer assertion."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-tagged-content))
+    (let ((org-agenda-custom-commands
+           '(("x" "Noop" org-mcp-test--dummy-agenda-fn))))
+      (should
+       (string-match-p
+        "no agenda buffer"
+        (org-mcp-test--tool-call-error-message
+         "org-get-agenda" '((view . "x"))))))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-custom-file-scoping ()
+  "A custom view never includes matches from files outside the allow-list."
+  (org-mcp-test--with-temp-org-files
+      ((agenda-file org-mcp-test--agenda-tagged-content))
+    (let* ((org-todo-keywords
+            '((sequence "TODO" "NEXT" "PROJECT" "|" "DONE")))
+           (foreign
+            (make-temp-file
+             "foreign"
+             nil ".org" org-mcp-test--agenda-foreign-phone-content))
+           (org-agenda-custom-commands
+            '(("z" "Phone items" tags "phone"))))
+      (unwind-protect
+          ;; Point org-agenda-files at the foreign file too; the tool
+          ;; must still read only org-mcp-allowed-files.
+          (let* ((org-agenda-files (list foreign))
+                 (result
+                  (org-mcp-test--call-get-agenda '((view . "z"))))
+                 (blocks (alist-get 'blocks result))
+                 (items (alist-get 'items (aref blocks 0)))
+                 (titles
+                  (mapcar
+                   (lambda (i) (alist-get 'title i))
+                   (append items nil))))
+            (should-not (member "Foreign phone" titles))
+            (should (member "Phone Bob" titles)))
+        (delete-file foreign)))))
 
 (ert-deftest org-mcp-test-tool-get-agenda-week ()
   "Test org-get-agenda with week view.
