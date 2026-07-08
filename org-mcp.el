@@ -1516,6 +1516,70 @@ BODY-END is the buffer position where body ends."
   "Return the list of allowed Org files."
   (json-encode `((files . ,(vconcat org-mcp-allowed-files)))))
 
+(defun org-mcp--agenda-command-type (entry)
+  "Return the type string classifying `org-agenda-custom-commands' ENTRY.
+One of \"prefix\" (a bare key group: a two-element list or the dotted
+`(KEY . DESC)' form), a builtin block-type symbol name (\"agenda\",
+\"agenda*\", \"todo\", \"todo-tree\", \"search\", \"occur-tree\",
+\"tags\", \"tags-todo\", \"tags-tree\", \"alltodo\", \"stuck\"),
+\"composite\" (a list of blocks), or \"function\" (a user function or
+lambda).  The dotted-pair check comes first so `length'/`nth' never
+traverse an improper list."
+  (cond
+   ((not (listp (cdr entry)))
+    "prefix")
+   ((< (length entry) 3)
+    "prefix")
+   (t
+    (let ((block-type (nth 2 entry)))
+      (cond
+       ((memq
+         block-type
+         '(agenda
+           agenda*
+           todo
+           todo-tree
+           search
+           occur-tree
+           tags
+           tags-todo
+           tags-tree
+           alltodo
+           stuck))
+        (symbol-name block-type))
+       ((functionp block-type)
+        "function")
+       ((listp block-type)
+        "composite")
+       (t
+        "function"))))))
+
+(defun org-mcp--tool-get-agenda-config ()
+  "Return the custom agenda commands from `org-agenda-custom-commands'."
+  (json-encode
+   `((commands
+      .
+      ,(vconcat
+        (mapcar
+         (lambda (entry)
+           (let* ((key (car entry))
+                  (type (org-mcp--agenda-command-type entry))
+                  (description
+                   (if (listp (cdr entry))
+                       (nth 1 entry)
+                     (cdr entry)))
+                  (node
+                   `((key
+                      .
+                      ,(if (characterp key)
+                           (char-to-string key)
+                         key))
+                     (description . ,description) (type . ,type))))
+             (if (string= type "function")
+                 (append node `((raw . ,(prin1-to-string entry))))
+               node)))
+         org-agenda-custom-commands))))))
+
 (defun org-mcp--tool-get-agenda (view &optional date)
   "Build an `org-agenda' buffer for the given view and return its text.
 The agenda includes only non-missing files from `org-mcp-allowed-files';
@@ -2958,6 +3022,27 @@ Use cases:
   - Access Troubleshooting: Why is my file access failing?
   - Configuration Verification: Did my org-mcp-allowed-files setting
     work correctly?"
+     :read-only t)
+    (list
+     #'org-mcp--tool-get-agenda-config
+     :id "org-get-agenda-config"
+     :description
+     "List the custom agenda commands defined in
+`org-agenda-custom-commands'.
+
+Returns JSON object:
+  commands (array) - One entry per custom command, each with:
+    key - The command's dispatch key string
+    description - The command's description
+    type - The command's kind, one of \"prefix\" (a bare key group),
+           \"agenda\", \"agenda*\", \"todo\", \"todo-tree\",
+           \"alltodo\", \"tags\", \"tags-todo\", \"tags-tree\",
+           \"search\", \"occur-tree\", \"stuck\", \"composite\" (a
+           multi-block command), or \"function\" (a user function)
+    raw - Present only for \"function\" entries: the entry's literal
+          Elisp, as a fallback for a client that wants to inspect it
+
+type is reported as a fact and does not promise runnability."
      :read-only t)
     (list
      #'org-mcp--tool-get-agenda

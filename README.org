@@ -231,6 +231,36 @@ Empty configuration returns:
 }
 #+end_example
 
+*** org-get-agenda-config
+- *Description:* List the custom agenda commands defined in
+  =org-agenda-custom-commands=.
+- *Parameters:* None
+- *Returns:* JSON object with a =commands= array, one entry per
+  =org-agenda-custom-commands= definition:
+  - =key=: the command's dispatch key string
+  - =description=: the command's description
+  - =type=: the command's kind, one of =prefix= (a bare key group), =agenda=,
+    =agenda*=, =todo=, =todo-tree=, =alltodo=, =tags=, =tags-todo=,
+    =tags-tree=, =search=, =occur-tree=, =stuck=, =composite= (a multi-block
+    command), or =function= (a user function)
+  - =raw=: present only for =function= entries — the entry's literal Elisp, as
+    a fallback for a client that wants to inspect it
+- *Note:* =type= is reported as a fact and does not promise runnability.
+
+Example response:
+#+begin_example
+{
+  "commands": [
+    {"key": "p", "description": "Projects", "type": "tags-todo"},
+    {"key": "n", "description": "Next actions", "type": "todo"},
+    {"key": "h", "description": "Home", "type": "prefix"},
+    {"key": "r", "description": "Weekly review", "type": "composite"},
+    {"key": "x", "description": "Custom", "type": "function",
+     "raw": "(\"x\" \"Custom\" my-agenda-fn)"}
+  ]
+}
+#+end_example
+
 *** org-get-agenda
 - *Description:* Get the same plain-text view Emacs shows for a standard Org
   =org-agenda-list= in daily, weekly, or monthly span, aligned with

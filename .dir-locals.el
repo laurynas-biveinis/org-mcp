@@ -16,6 +16,7 @@
                                                  (org-mcp-test--with-outline-metadata-nodes . 0)
                                                  (org-mcp-test--with-file-buffer . 2)
                                                  (org-mcp-test--with-get-todo-config-result . 1)
+                                                 (org-mcp-test--with-get-agenda-config-result . 1)
                                                  (org-mcp-test--call-read-headline-expecting-error . 0)
                                                  (org-mcp-test--with-add-todo-setup . 2)
                                                  (org-mcp-test--with-id-tracking . 2)

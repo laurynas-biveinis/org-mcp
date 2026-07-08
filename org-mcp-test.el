@@ -2292,6 +2292,23 @@ and binds `sequences' and `semantics' from the result for use in BODY."
                (semantics (cdr (assoc 'semantics result))))
            ,@body)))))
 
+(defmacro org-mcp-test--with-get-agenda-config-result
+    (custom-commands &rest body)
+  "Call get-agenda-config tool with CUSTOM-COMMANDS; run BODY with `commands'.
+Sets `org-agenda-custom-commands' to CUSTOM-COMMANDS, calls the
+get-agenda-config MCP tool, and binds `commands' from the result for
+use in BODY."
+  (declare (indent 1) (debug t))
+  `(let ((org-agenda-custom-commands ,custom-commands))
+     (org-mcp-test--with-enabled
+       (let ((result
+              (json-read-from-string
+               (mcp-server-lib-ert-call-tool
+                "org-get-agenda-config" nil))))
+         (should (= (length result) 1))
+         (let ((commands (cdr (assoc 'commands result))))
+           ,@body)))))
+
 ;; Helpers for testing org-get-tag-config MCP tool
 
 (defmacro org-mcp-test--get-tag-config-and-check
@@ -3712,6 +3729,135 @@ EXTENSION can be a string like \".txt\" or nil for no extension."
    '("/home/user/tasks.org"
      "/home/user/projects.org"
      "/home/user/notes.org")))
+
+;; org-get-agenda-config tests
+
+(defun org-mcp-test--dummy-agenda-fn (_match)
+  "A bound function usable in the `org-agenda-custom-commands' type slot."
+  nil)
+
+(ert-deftest org-mcp-test-tool-get-agenda-config-single-tags ()
+  "get-agenda-config reports a tags command's key, description, and type."
+  (org-mcp-test--with-get-agenda-config-result '(("t"
+                                                  "Tagged items"
+                                                  tags
+                                                  "sometag"))
+    (should (= (length commands) 1))
+    (let ((cmd (aref commands 0)))
+      (should (string= (alist-get 'key cmd) "t"))
+      (should (string= (alist-get 'description cmd) "Tagged items"))
+      (should (string= (alist-get 'type cmd) "tags")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-config-prefix ()
+  "A two-element key group is reported as the non-runnable \"prefix\" type."
+  (org-mcp-test--with-get-agenda-config-result '(("h" "Home"))
+    (should (= (length commands) 1))
+    (let ((cmd (aref commands 0)))
+      (should (string= (alist-get 'key cmd) "h"))
+      (should (string= (alist-get 'description cmd) "Home"))
+      (should (string= (alist-get 'type cmd) "prefix")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-config-prefix-dotted ()
+  "The documented dotted-pair `(key . desc)' prefix form is \"prefix\".
+Its description is taken from the pair's cdr, not `nth' 1."
+  (org-mcp-test--with-get-agenda-config-result
+      '(("h" . "Home tag searches"))
+    (should (= (length commands) 1))
+    (let ((cmd (aref commands 0)))
+      (should (string= (alist-get 'key cmd) "h"))
+      (should
+       (string= (alist-get 'description cmd) "Home tag searches"))
+      (should (string= (alist-get 'type cmd) "prefix")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-config-composite ()
+  "A command whose block spec is a list is reported as \"composite\"."
+  (org-mcp-test--with-get-agenda-config-result '(("r" "Weekly review"
+                                                  ((tags "a")
+                                                   (todo "TODO"))))
+    (should (= (length commands) 1))
+    (should
+     (string= (alist-get 'type (aref commands 0)) "composite"))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-config-function ()
+  "A function command is \"function\" and carries the entry's literal `raw'.
+A non-function command carries no `raw' key."
+  (org-mcp-test--with-get-agenda-config-result
+      '(("x" "Custom" org-mcp-test--dummy-agenda-fn)
+        ("t" "Tagged" tags "a"))
+    (let ((fn-cmd (aref commands 0))
+          (tags-cmd (aref commands 1)))
+      (should (string= (alist-get 'type fn-cmd) "function"))
+      (should
+       (string=
+        (alist-get 'raw fn-cmd)
+        (prin1-to-string
+         '("x" "Custom" org-mcp-test--dummy-agenda-fn))))
+      (should (string= (alist-get 'type tags-cmd) "tags"))
+      (should-not (assoc 'raw tags-cmd)))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-config-builtin-types ()
+  "Each builtin block-type symbol maps to its own type string.
+Covers all eleven types Org recognizes in the type slot, including the
+appointment and sparse-tree variants."
+  (org-mcp-test--with-get-agenda-config-result '(("a" "A" agenda "")
+                                                 ("A" "A*" agenda* "")
+                                                 ("t" "T" todo "TODO")
+                                                 ("T"
+                                                  "TT"
+                                                  todo-tree
+                                                  "TODO")
+                                                 ("l" "L" alltodo "")
+                                                 ("m" "M" tags "x")
+                                                 ("M"
+                                                  "MM"
+                                                  tags-todo
+                                                  "x")
+                                                 ("y"
+                                                  "YY"
+                                                  tags-tree
+                                                  "x")
+                                                 ("s"
+                                                  "S"
+                                                  search
+                                                  "word")
+                                                 ("o"
+                                                  "O"
+                                                  occur-tree
+                                                  "word")
+                                                 ("#" "H" stuck ""))
+    (should
+     (equal
+      (mapcar (lambda (c) (alist-get 'type c)) commands)
+      '("agenda"
+        "agenda*"
+        "todo"
+        "todo-tree"
+        "alltodo"
+        "tags"
+        "tags-todo"
+        "tags-tree"
+        "search"
+        "occur-tree"
+        "stuck")))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-config-empty ()
+  "An empty `org-agenda-custom-commands' yields an empty `commands' array."
+  (org-mcp-test--with-get-agenda-config-result nil
+    (should (equal commands []))))
+
+(ert-deftest org-mcp-test-tool-get-agenda-config-multiple-order ()
+  "Multiple commands are returned in definition order, keys as strings."
+  (org-mcp-test--with-get-agenda-config-result '(("p"
+                                                  "Projects"
+                                                  tags-todo
+                                                  "project")
+                                                 ("n"
+                                                  "Next"
+                                                  todo
+                                                  "NEXT"))
+    (should (= (length commands) 2))
+    (should (string= (alist-get 'key (aref commands 0)) "p"))
+    (should (string= (alist-get 'key (aref commands 1)) "n"))))
 
 ;; org-get-agenda tests
 
