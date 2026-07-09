@@ -13,6 +13,7 @@
                                                  (org-mcp-test--assert-refile-error . 1)
                                                  (org-mcp-test--with-enabled . defun)
                                                  (org-mcp-test--with-temp-org-files . 1)
+                                                 (org-mcp-test--with-edit-headline-env . 3)
                                                  (org-mcp-test--with-outline-metadata-nodes . 0)
                                                  (org-mcp-test--with-file-buffer . 2)
                                                  (org-mcp-test--with-get-todo-config-result . 1)

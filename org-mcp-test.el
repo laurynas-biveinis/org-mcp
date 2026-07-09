@@ -1450,6 +1450,108 @@ above the new heading and must not become the heading's section body.")
    "Task description\\.\\'")
   "Pattern for renamed TODO task preserving tags.")
 
+(defconst org-mcp-test--regex-edit-headline-added-tag
+  (concat
+   "\\`\\* TODO Original Task[ \t]+:work:\n"
+   org-mcp-test--regex-id-drawer
+   "First line of body\\.\n"
+   "Second line of body\\.\n"
+   "Third line of body\\.\\'")
+  "Simple TODO with a single `work' local tag added, title unchanged.")
+
+(defconst org-mcp-test--regex-edit-headline-added-home
+  (concat
+   "\\`\\* TODO Original Task[ \t]+:@home:\n"
+   org-mcp-test--regex-id-drawer
+   "First line of body\\.\n"
+   "Second line of body\\.\n"
+   "Third line of body\\.\\'")
+  "Simple TODO with a single `@home' local tag added, title unchanged.")
+
+(defconst org-mcp-test--regex-edit-headline-removed-tag
+  (concat
+   "\\`\\* TODO Task with Tags[ \t]+:work:\n"
+   org-mcp-test--regex-id-drawer
+   "Task description\\.\\'")
+  "TODO with tags after `urgent' is removed, `work' retained.")
+
+(defconst org-mcp-test--regex-edit-headline-title-and-tag
+  (concat
+   "\\`\\* TODO Renamed Task[ \t]+:work:\n"
+   org-mcp-test--regex-id-drawer
+   "First line of body\\.\n"
+   "Second line of body\\.\n"
+   "Third line of body\\.\\'")
+  "Simple TODO after retitling and adding the `work' tag in one call.")
+
+(defconst org-mcp-test--regex-edit-headline-tags-with-id
+  (concat
+   "\\`\\* TODO Task with Tags[ \t]+:work:urgent:\n"
+   org-mcp-test--regex-id-drawer
+   "Task description\\.\\'")
+  "TODO with tags unchanged after an idempotent add, ID created.")
+
+(defconst org-mcp-test--regex-edit-headline-simple-with-id
+  (concat
+   "\\`\\* TODO Original Task\n"
+   org-mcp-test--regex-id-drawer
+   "First line of body\\.\n"
+   "Second line of body\\.\n"
+   "Third line of body\\.\\'")
+  "Simple TODO unchanged except a created ID (idempotent tag no-op).")
+
+(defconst org-mcp-test--content-todo-legacy-tag
+  "* TODO Old Task :legacy:\nBody."
+  "TODO with a `legacy' tag absent from a restricted tag alist.")
+
+(defconst org-mcp-test--regex-edit-headline-legacy-removed
+  (concat
+   "\\`\\* TODO Old Task\n"
+   org-mcp-test--regex-id-drawer
+   "Body\\.\\'")
+  "TODO after removing the alist-absent `legacy' tag.")
+
+(defconst org-mcp-test--regex-edit-headline-inherited-noop
+  (concat
+   "\\`\\* Grandparent[ \t]+:proj:top:\n"
+   "\\*\\* Parent[ \t]+:proj:\n"
+   "\\*\\*\\* Child[ \t]+:childtag:\n"
+   org-mcp-test--regex-id-drawer
+   "Child body\\.\\'")
+  "Tagged levels after a no-op remove of inherited `proj' on Child.")
+
+(defconst org-mcp-test--content-todo-context-home
+  "* TODO Buy milk :@home:\nBody."
+  "TODO with a single @home context tag.")
+
+(defconst org-mcp-test--regex-edit-headline-swapped-context
+  (concat
+   "\\`\\* TODO Buy milk[ \t]+:@office:\n"
+   org-mcp-test--regex-id-drawer
+   "Body\\.\\'")
+  "TODO after swapping @home for @office within a mutex group.")
+
+(defconst org-mcp-test--regex-edit-headline-add-keep-context
+  (concat
+   "\\`\\* TODO Buy milk[ \t]+:@home:@office:\n"
+   org-mcp-test--regex-id-drawer
+   "Body\\.\\'")
+  "TODO keeping @home and adding @office; resulting-set mutex not enforced.")
+
+(defconst org-mcp-test--content-full-metadata
+  "* TODO [#A] Plan trip :work:
+SCHEDULED: <2026-06-25 Thu> DEADLINE: <2026-07-01 Wed>
+Trip body."
+  "Keyworded, prioritised, planned, tagged TODO for full-node checks.")
+
+(defconst org-mcp-test--regex-edit-headline-full-metadata
+  (concat
+   "\\`\\* TODO \\[#A\\] Renamed trip[ \t]+:work:\n"
+   "SCHEDULED: <2026-06-25 Thu> DEADLINE: <2026-07-01 Wed>\n"
+   org-mcp-test--regex-id-drawer
+   "Trip body\\.\\'")
+  "Full-metadata TODO after retitling, with an ID drawer created.")
+
 (defconst org-mcp-test--pattern-renamed-headline-no-todo
   (format
    (concat
@@ -3069,102 +3171,161 @@ HEADLINE-PATH is the headline path string."
        ;; If we get here, the tool succeeded when we expected failure
        (error "Expected error but got success: %s" result))))
 
-;; Helper functions for testing org-rename-headline MCP tool
+;; Helper functions for testing org-edit-headline MCP tool
 
-(defun org-mcp-test--call-rename-headline-and-check
-    (initial-content
-     headline-path-or-uri
-     current-title
-     new-title
-     expected-content-regex
-     &optional
-     ids-to-register)
-  "Call org-rename-headline tool via JSON-RPC and verify the result.
+(defmacro org-mcp-test--with-edit-headline-env
+    (todo-keywords tag-alist initial-content &rest body)
+  "Bind the tag environment and run BODY in a temp Org file.
+`org-todo-keywords' is bound to TODO-KEYWORDS and `org-tag-alist' to
+TAG-ALIST; INITIAL-CONTENT is written to a temp file bound to
+`test-file'."
+  (declare (indent 3))
+  `(let ((org-todo-keywords ,todo-keywords)
+         (org-tag-alist ,tag-alist))
+     (org-mcp-test--with-temp-org-files ((test-file ,initial-content))
+       ,@body)))
+
+(defun org-mcp-test--edit-headline-params
+    (uri current-title new-title add-tags remove-tags)
+  "Build an org-edit-headline params alist.
+URI and CURRENT-TITLE are always included.  NEW-TITLE, ADD-TAGS, and
+REMOVE-TAGS are included only when non-nil, so a caller omits an
+optional field by passing nil.  ADD-TAGS/REMOVE-TAGS are passed
+through verbatim (a string or a vector)."
+  (let ((params `((uri . ,uri) (current_title . ,current-title))))
+    (when new-title
+      (setq params (append params `((new_title . ,new-title)))))
+    (when add-tags
+      (setq params (append params `((add_tags . ,add-tags)))))
+    (when remove-tags
+      (setq params (append params `((remove_tags . ,remove-tags)))))
+    params))
+
+(cl-defun
+ org-mcp-test--call-edit-headline-and-check
+ (initial-content
+  headline-path-or-uri
+  current-title
+  new-title
+  expected-content-regex
+  &key
+  ids-to-register
+  add-tags
+  remove-tags
+  (expected-tags [])
+  (expected-todo :null)
+  (expected-priority :null)
+  (expected-scheduled :null)
+  (expected-deadline :null)
+  (todo-keywords org-todo-keywords)
+  (tag-alist org-tag-alist))
+ "Call org-edit-headline tool via JSON-RPC and verify the result.
 INITIAL-CONTENT is the initial Org file content.
 HEADLINE-PATH-OR-URI is either a headline path fragment or full URI.
 CURRENT-TITLE is the expected current title.
-NEW-TITLE is the new title to set.
+NEW-TITLE is the new title to set, or nil to leave the title unchanged.
 EXPECTED-CONTENT-REGEX is an anchored regex that matches the complete buffer.
-IDS-TO-REGISTER is optional list of IDs to register for the temp file."
-  (org-mcp-test--with-temp-org-files ((test-file initial-content))
-    (when ids-to-register
-      (let ((org-id-track-globally t)
-            (org-id-locations-file nil)
-            (org-id-locations nil))
-        (dolist (id ids-to-register)
-          (org-id-add-location id test-file))))
-    (let* ((uri
-            (if (string-prefix-p "org-" headline-path-or-uri)
-                headline-path-or-uri
-              (format "org-headline://%s#%s"
-                      test-file
-                      headline-path-or-uri)))
-           (params
-            `((uri . ,uri)
-              (current_title . ,current-title)
-              (new_title . ,new-title)))
-           (result-text
-            (mcp-server-lib-ert-call-tool
-             "org-rename-headline" params))
-           (result (json-read-from-string result-text))
-           (result-uri (alist-get 'uri result)))
-      (should (= (length result) 4))
-      (should (equal (alist-get 'success result) t))
-      (should
-       (equal (alist-get 'previous_title result) current-title))
-      (should (equal (alist-get 'new_title result) new-title))
-      (should (stringp result-uri))
-      (should (string-prefix-p "org-id://" result-uri))
-      ;; If input URI was ID-based, result URI should remain ID-based
-      (when (string-prefix-p "org-id://" uri)
-        (should (equal result-uri uri)))
-      (org-mcp-test--verify-file-matches
-       test-file expected-content-regex))))
+IDS-TO-REGISTER is a list of IDs to register for the temp file.
+ADD-TAGS/REMOVE-TAGS are the tag deltas to send (a string or vector).
+EXPECTED-TAGS is the resulting local-tags vector in the returned node.
+EXPECTED-TODO/EXPECTED-PRIORITY/EXPECTED-SCHEDULED/EXPECTED-DEADLINE are
+the resulting node's keyword, priority, and planning values (`:null'
+when absent).
+TODO-KEYWORDS and TAG-ALIST bind `org-todo-keywords'/`org-tag-alist'
+for the call."
+ (org-mcp-test--with-edit-headline-env todo-keywords tag-alist
+                                       initial-content
+   (when ids-to-register
+     (let ((org-id-track-globally t)
+           (org-id-locations-file nil)
+           (org-id-locations nil))
+       (dolist (id ids-to-register)
+         (org-id-add-location id test-file))))
+   (let* ((uri
+           (if (string-prefix-p "org-" headline-path-or-uri)
+               headline-path-or-uri
+             (format "org-headline://%s#%s"
+                     test-file
+                     headline-path-or-uri)))
+          (params
+           (org-mcp-test--edit-headline-params
+            uri current-title new-title add-tags remove-tags))
+          (result-text
+           (mcp-server-lib-ert-call-tool "org-edit-headline" params))
+          (result (json-parse-string result-text :object-type 'alist))
+          (result-uri (alist-get 'uri result)))
+     (should (= (length result) 8))
+     (should (equal (alist-get 'success result) t))
+     (should
+      (equal (alist-get 'title result) (or new-title current-title)))
+     (org-mcp-test--should-node-metadata
+      result
+      :todo expected-todo
+      :priority expected-priority
+      :tags expected-tags
+      :scheduled expected-scheduled
+      :deadline expected-deadline)
+     (should (stringp result-uri))
+     (should (string-prefix-p "org-id://" result-uri))
+     ;; If input URI was ID-based, result URI should remain ID-based
+     (when (string-prefix-p "org-id://" uri)
+       (should (equal result-uri uri)))
+     (org-mcp-test--verify-file-matches
+      test-file expected-content-regex))))
 
-(defun org-mcp-test--assert-rename-headline-rejected
+(defun org-mcp-test--assert-edit-headline-rejected
     (initial-content headline-title new-title)
-  "Assert renaming headline to NEW-TITLE is rejected.
+  "Assert editing headline title to NEW-TITLE is rejected.
 INITIAL-CONTENT is the Org content to test with.
-HEADLINE-TITLE is the current headline to rename.
+HEADLINE-TITLE is the current headline to edit.
 NEW-TITLE is the invalid new title that should be rejected."
-  (org-mcp-test--call-rename-headline-expecting-error
+  (org-mcp-test--call-edit-headline-expecting-error
    initial-content
    (url-hexify-string headline-title)
    headline-title
    new-title))
 
-(defun org-mcp-test--call-rename-headline-expecting-error
-    (initial-content
-     headline-path-or-uri
-     current-title
-     new-title
-     &optional
-     error-message-regex)
-  "Call org-rename-headline tool expecting an error and verify file unchanged.
+(cl-defun
+ org-mcp-test--call-edit-headline-expecting-error
+ (initial-content
+  headline-path-or-uri
+  current-title
+  new-title
+  &key
+  error-message-regex
+  add-tags
+  remove-tags
+  (todo-keywords org-todo-keywords)
+  (tag-alist org-tag-alist))
+ "Call org-edit-headline tool expecting an error and verify file unchanged.
 INITIAL-CONTENT is the initial Org file content.
 HEADLINE-PATH-OR-URI is either a headline path fragment, full URI,
 or any non-string value (passed through verbatim for type-error tests).
 CURRENT-TITLE is the current title for validation.
-NEW-TITLE is the new title to set.
+NEW-TITLE is the new title to set, or nil to omit it.
 ERROR-MESSAGE-REGEX, if non-nil, must match the signalled error's
-message string."
-  (org-mcp-test--with-temp-org-files ((test-file initial-content))
-    (let ((uri
-           (cond
-            ((not (stringp headline-path-or-uri))
-             headline-path-or-uri)
-            ((string-prefix-p "org-" headline-path-or-uri)
-             headline-path-or-uri)
-            (t
-             (format "org-headline://%s#%s"
-                     test-file
-                     headline-path-or-uri)))))
-      (org-mcp-test--assert-error-and-file test-file
-        (org-mcp-test--tool-error-or-die
-         "org-rename-headline"
-         `((uri . ,uri)
-           (current_title . ,current-title) (new_title . ,new-title)))
-        error-message-regex))))
+message string.
+ADD-TAGS/REMOVE-TAGS are the tag deltas to send (a string or vector).
+TODO-KEYWORDS and TAG-ALIST bind `org-todo-keywords'/`org-tag-alist'
+for the call."
+ (org-mcp-test--with-edit-headline-env todo-keywords tag-alist
+                                       initial-content
+   (let ((uri
+          (cond
+           ((not (stringp headline-path-or-uri))
+            headline-path-or-uri)
+           ((string-prefix-p "org-" headline-path-or-uri)
+            headline-path-or-uri)
+           (t
+            (format "org-headline://%s#%s"
+                    test-file
+                    headline-path-or-uri)))))
+     (org-mcp-test--assert-error-and-file test-file
+       (org-mcp-test--tool-error-or-die
+        "org-edit-headline"
+        (org-mcp-test--edit-headline-params
+         uri current-title new-title add-tags remove-tags))
+       error-message-regex))))
 
 ;; Helper functions for testing org-edit-body MCP tool
 
@@ -6702,59 +6863,65 @@ would be indistinguishable from a nil that defaulted to it."
    (file-name-nondirectory test-file)
    org-mcp-test--regex-todo-without-tags))
 
-;;; org-rename-headline tests
+;;; org-edit-headline tests
 
-(ert-deftest org-mcp-test-rename-headline-simple ()
+(ert-deftest org-mcp-test-edit-headline-simple ()
   "Test renaming a simple TODO headline."
-  (let ((org-todo-keywords
-         '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
-    (org-mcp-test--call-rename-headline-and-check
-     org-mcp-test--content-simple-todo
-     "Original%20Task"
-     "Original Task"
-     "Updated Task"
-     org-mcp-test--pattern-renamed-simple-todo)))
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   "Updated Task"
+   org-mcp-test--pattern-renamed-simple-todo
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "IN-PROGRESS" "|" "DONE"))))
 
-(ert-deftest org-mcp-test-rename-headline-title-mismatch ()
+(ert-deftest org-mcp-test-edit-headline-title-mismatch ()
   "Test that rename fails when current title doesn't match."
-  (let ((org-todo-keywords '((sequence "TODO" "|" "DONE"))))
-    (org-mcp-test--call-rename-headline-expecting-error
-     org-mcp-test--content-simple-todo
-     "Original%20Task"
-     "Wrong Title"
-     "Updated Task")))
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Wrong Title"
+   "Updated Task"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))))
 
-(ert-deftest org-mcp-test-rename-headline-unterminated-drawer ()
-  "Test that `org-rename-headline' validates the file header.
+(ert-deftest org-mcp-test-edit-headline-unterminated-drawer ()
+  "Test that `org-edit-headline' validates the file header.
 A rename targeting a heading in a file whose own header block contains
 a malformed `:PROPERTIES:' drawer is rejected before any modification."
-  (org-mcp-test--call-rename-headline-expecting-error
+  (org-mcp-test--call-edit-headline-expecting-error
    org-mcp-test--content-malformed-header-with-todo-and-body
    "Existing%20Heading"
    "Existing Heading"
    "Renamed Heading"))
 
-(ert-deftest org-mcp-test-rename-headline-preserve-tags ()
+(ert-deftest org-mcp-test-edit-headline-preserve-tags ()
   "Test that renaming preserves tags."
-  (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
-        (org-tag-alist '("work" "urgent" "personal")))
-    (org-mcp-test--call-rename-headline-and-check
-     org-mcp-test--content-todo-with-tags
-     "Task%20with%20Tags"
-     "Task with Tags"
-     "Renamed Task"
-     org-mcp-test--pattern-renamed-todo-with-tags)))
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-todo-with-tags
+   "Task%20with%20Tags"
+   "Task with Tags"
+   "Renamed Task"
+   org-mcp-test--pattern-renamed-todo-with-tags
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '("work" "urgent" "personal")
+   :expected-tags ["work" "urgent"]))
 
-(ert-deftest org-mcp-test-rename-headline-no-todo ()
+(ert-deftest org-mcp-test-edit-headline-no-todo ()
   "Test renaming a regular headline without TODO state."
-  (org-mcp-test--call-rename-headline-and-check
+  (org-mcp-test--call-edit-headline-and-check
    org-mcp-test--content-nested-siblings
    "Parent%20Task/First%20Child%2050%25%20Complete"
    "First Child 50% Complete"
    "Updated Child"
    org-mcp-test--pattern-renamed-headline-no-todo))
 
-(ert-deftest org-mcp-test-rename-headline-nested-path-navigation ()
+(ert-deftest org-mcp-test-edit-headline-nested-path-navigation ()
   "Test correct headline path navigation in nested structures.
 Verifies that the implementation correctly navigates nested headline
 paths and only matches headlines at the appropriate hierarchy level."
@@ -6763,133 +6930,129 @@ paths and only matches headlines at the appropriate hierarchy level."
   ;; The function should fail, but it might incorrectly
   ;; find Third Parent's Target Headline
   ;; This should throw an error because First Parent has no Target Headline
-  (org-mcp-test--call-rename-headline-expecting-error
+  (org-mcp-test--call-edit-headline-expecting-error
    org-mcp-test--content-wrong-levels
    "First%20Parent/Target%20Headline"
    "Target Headline"
    "Renamed Target Headline"))
 
-(ert-deftest org-mcp-test-rename-headline-by-id ()
+(ert-deftest org-mcp-test-edit-headline-by-id ()
   "Test renaming a headline accessed by org-id URI."
-  (org-mcp-test--call-rename-headline-and-check
+  (org-mcp-test--call-edit-headline-and-check
    org-mcp-test--content-nested-siblings
    org-mcp-test--content-with-id-uri
    "Second Child"
    "Renamed Second Child"
    org-mcp-test--expected-regex-renamed-second-child
-   `(,org-mcp-test--content-with-id-id)))
+   :ids-to-register `(,org-mcp-test--content-with-id-id)))
 
-(ert-deftest org-mcp-test-rename-headline-non-string-new-title ()
+(ert-deftest org-mcp-test-edit-headline-non-string-new-title ()
   "Pin that non-string `new_title' is rejected at the tool boundary.
 `org-mcp--validate-string-field' fires before
 `org-mcp--validate-headline-title' would signal `wrong-type-argument'
 through its `string-empty-p' or `string-match-p' calls."
-  (org-mcp-test--call-rename-headline-expecting-error
-   org-mcp-test--content-nested-siblings
-   "Parent%20Task"
-   "Parent Task"
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-nested-siblings "Parent%20Task" "Parent Task"
    42 ; non-string new_title
-   (org-mcp-test--field-non-string-regex "new_title" 42)))
+   :error-message-regex (org-mcp-test--field-non-string-regex "new_title" 42)))
 
-(ert-deftest org-mcp-test-rename-headline-non-string-current-title ()
+(ert-deftest org-mcp-test-edit-headline-non-string-current-title ()
   "Pin that non-string `current_title' is rejected at the tool boundary.
 `org-mcp--validate-string-field' fires before the internal `string='
 title-match comparison would signal `wrong-type-argument'."
-  (org-mcp-test--call-rename-headline-expecting-error
-   org-mcp-test--content-nested-siblings
-   "Parent%20Task"
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-nested-siblings "Parent%20Task"
    42 ; non-string current_title
    "Should Fail"
-   (org-mcp-test--field-non-string-regex "current_title" 42)))
+   :error-message-regex (org-mcp-test--field-non-string-regex "current_title" 42)))
 
-(ert-deftest org-mcp-test-rename-headline-non-string-uri ()
+(ert-deftest org-mcp-test-edit-headline-non-string-uri ()
   "Pin that non-string `uri' is rejected at the tool boundary.
 `org-mcp--validate-string-field' fires before any downstream URI
 parsing runs."
-  (org-mcp-test--call-rename-headline-expecting-error
+  (org-mcp-test--call-edit-headline-expecting-error
    org-mcp-test--content-nested-siblings
    42 ; non-string uri
-   "Whatever"
-   "Should Fail"
-   (org-mcp-test--field-non-string-regex "uri" 42)))
+   "Whatever" "Should Fail"
+   :error-message-regex (org-mcp-test--field-non-string-regex "uri" 42)))
 
-(ert-deftest org-mcp-test-rename-headline-id-not-found ()
+(ert-deftest org-mcp-test-edit-headline-id-not-found ()
   "Test error when ID doesn't exist."
   (let ((org-id-track-globally nil)
         (org-id-locations-file nil))
-    (org-mcp-test--call-rename-headline-expecting-error
+    (org-mcp-test--call-edit-headline-expecting-error
      org-mcp-test--content-nested-siblings
      "org-id://non-existent-id-12345"
      "Whatever"
      "Should Fail")))
 
-(ert-deftest org-mcp-test-rename-headline-with-slash ()
+(ert-deftest org-mcp-test-edit-headline-with-slash ()
   "Test renaming a headline containing a slash character.
 Slashes must be properly URL-encoded to avoid path confusion."
-  (org-mcp-test--call-rename-headline-and-check
+  (org-mcp-test--call-edit-headline-and-check
    org-mcp-test--content-slash-not-nested-before
    "Parent%2FChild"
    "Parent/Child"
    "Parent/Child Renamed"
    org-mcp-test--pattern-renamed-slash-headline))
 
-(ert-deftest org-mcp-test-rename-headline-slash-not-nested ()
+(ert-deftest org-mcp-test-edit-headline-slash-not-nested ()
   "Test that headline with slash is not treated as nested path.
 Verifies that 'Parent/Child' is treated as a single headline,
 not as Child under Parent."
-  (org-mcp-test--call-rename-headline-and-check
+  (org-mcp-test--call-edit-headline-and-check
    org-mcp-test--content-slash-not-nested-before
    "Parent%2FChild"
    "Parent/Child"
    "Parent-Child Renamed"
    org-mcp-test--regex-slash-not-nested-after))
 
-(ert-deftest org-mcp-test-rename-headline-with-percent ()
+(ert-deftest org-mcp-test-edit-headline-with-percent ()
   "Test renaming a headline containing a percent sign.
 Percent signs must be properly URL-encoded to avoid double-encoding issues."
-  (org-mcp-test--call-rename-headline-and-check
+  (org-mcp-test--call-edit-headline-and-check
    org-mcp-test--content-nested-siblings
    "Parent%20Task/First%20Child%2050%25%20Complete"
    "First Child 50% Complete"
    "First Child 75% Complete"
    org-mcp-test--regex-percent-after))
 
-(ert-deftest org-mcp-test-rename-headline-reject-empty-string ()
+(ert-deftest org-mcp-test-edit-headline-reject-empty-string ()
   "Test that renaming to an empty string is rejected."
-  (org-mcp-test--assert-rename-headline-rejected
+  (org-mcp-test--assert-edit-headline-rejected
    "* Important Task
 This task has content."
    "Important Task" ""))
 
-(ert-deftest org-mcp-test-rename-headline-reject-whitespace-only ()
+(ert-deftest org-mcp-test-edit-headline-reject-whitespace-only ()
   "Test that renaming to whitespace-only is rejected."
-  (org-mcp-test--assert-rename-headline-rejected
+  (org-mcp-test--assert-edit-headline-rejected
    "* Another Task
 More content."
    "Another Task" "   "))
 
-(ert-deftest org-mcp-test-rename-headline-reject-newline ()
+(ert-deftest org-mcp-test-edit-headline-reject-newline ()
   "Test that renaming to a title with embedded newline is rejected."
-  (org-mcp-test--assert-rename-headline-rejected
+  (org-mcp-test--assert-edit-headline-rejected
    org-mcp-test--content-nested-siblings
    "Parent Task/First Child 50% Complete"
    "First Line\nSecond Line"))
 
-(ert-deftest org-mcp-test-rename-headline-duplicate-first-match ()
+(ert-deftest org-mcp-test-edit-headline-duplicate-first-match ()
   "Test that when multiple headlines have the same name, first match is renamed.
 This test documents the first-match behavior when duplicate headlines exist."
-  (org-mcp-test--call-rename-headline-and-check
+  (org-mcp-test--call-edit-headline-and-check
    org-mcp-test--content-duplicate-headlines-before
    "Project%20Review"
    "Project Review"
    "Q1 Review"
    org-mcp-test--regex-duplicate-first-renamed))
 
-(ert-deftest org-mcp-test-rename-headline-creates-id ()
+(ert-deftest org-mcp-test-edit-headline-creates-id ()
   "Test that renaming a headline creates an Org ID and returns it."
   (let ((org-id-track-globally t)
         (org-id-locations-file (make-temp-file "test-org-id")))
-    (org-mcp-test--call-rename-headline-and-check
+    (org-mcp-test--call-edit-headline-and-check
      org-mcp-test--content-nested-siblings
      "Parent%20Task/Third%20Child%20%233"
      "Third Child #3"
@@ -6897,26 +7060,343 @@ This test documents the first-match behavior when duplicate headlines exist."
      org-mcp-test--pattern-renamed-headline-with-id)))
 
 
-(ert-deftest org-mcp-test-rename-headline-hierarchy ()
+(ert-deftest org-mcp-test-edit-headline-hierarchy ()
   "Test that headline hierarchy is correctly navigated.
 Ensures that when searching for nested headlines, the function
 correctly restricts search to the parent's subtree."
-  (org-mcp-test--call-rename-headline-and-check
+  (org-mcp-test--call-edit-headline-and-check
    org-mcp-test--content-hierarchy-before
    "Second%20Section/Target"
    "Target"
    "Renamed Target"
    org-mcp-test--regex-hierarchy-second-target-renamed))
 
-(ert-deftest org-mcp-test-rename-headline-with-todo-keyword ()
+(ert-deftest org-mcp-test-edit-headline-with-todo-keyword ()
   "Test that headlines with TODO keywords can be renamed.
 The navigation function should find headlines even when they have TODO keywords."
-  (org-mcp-test--call-rename-headline-and-check
+  (org-mcp-test--call-edit-headline-and-check
    org-mcp-test--content-todo-keywords-before
    "Project%20Management/Review%20Documents"
    "Review Documents"
    "Q1 Planning Review"
-   org-mcp-test--regex-todo-keywords-after))
+   org-mcp-test--regex-todo-keywords-after
+   :expected-todo "TODO"))
+
+(defun org-mcp-test--assert-edit-headline-adds-work (add-tags)
+  "Assert ADD-TAGS applied to the simple TODO yields a single `work' tag.
+ADD-TAGS is the `add_tags' value to send (a string or a vector)."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   nil
+   org-mcp-test--regex-edit-headline-added-tag
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '("work" "urgent" "personal")
+   :add-tags add-tags
+   :expected-tags ["work"]))
+
+(ert-deftest org-mcp-test-edit-headline-add-tag ()
+  "Adding a local tag via `add_tags' sets it and leaves the title unchanged."
+  (org-mcp-test--assert-edit-headline-adds-work ["work"]))
+
+(ert-deftest org-mcp-test-edit-headline-add-tag-string-form ()
+  "`add_tags' accepts a bare string (not just an array) as documented."
+  (org-mcp-test--assert-edit-headline-adds-work "work"))
+
+(ert-deftest org-mcp-test-edit-headline-add-duplicate-tags-collapse ()
+  "Duplicate entries within `add_tags' collapse to a single tag.
+Guards against a malformed `:tag:tag:' write."
+  (org-mcp-test--assert-edit-headline-adds-work ["work" "work"]))
+
+(ert-deftest
+    org-mcp-test-edit-headline-add-duplicate-group-tag-collapses
+    ()
+  "A repeated `add_tags' entry in a mutex group of 3+ members collapses.
+The mutual-exclusion check must run on the de-duplicated list; otherwise
+`cl-intersection' double-counts the repeat (the add-list being the shorter
+operand) and spuriously reports the tag as mutually exclusive with itself."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   nil
+   org-mcp-test--regex-edit-headline-added-home
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '(:startgroup
+     ("@home" . ?h) ("@work" . ?w) ("@errand" . ?e)
+     :endgroup)
+   :add-tags ["@home" "@home"]
+   :expected-tags ["@home"]))
+
+(ert-deftest org-mcp-test-edit-headline-remove-tag ()
+  "Removing a local tag via `remove_tags' drops it and keeps the rest."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-todo-with-tags
+   "Task%20with%20Tags"
+   "Task with Tags"
+   nil
+   org-mcp-test--regex-edit-headline-removed-tag
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '("work" "urgent" "personal")
+   :remove-tags ["urgent"]
+   :expected-tags ["work"]))
+
+(ert-deftest org-mcp-test-edit-headline-swap-context-tag ()
+  "A remove+add in one call applies both, swapping one group member for another.
+Removing @home and adding @office in the same call leaves @office as the
+sole local tag."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-todo-context-home
+   "Buy%20milk"
+   "Buy milk"
+   nil
+   org-mcp-test--regex-edit-headline-swapped-context
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '(:startgroup ("@home" . ?h) ("@office" . ?o) :endgroup)
+   :add-tags ["@office"]
+   :remove-tags ["@home"]
+   :expected-tags ["@office"]))
+
+(ert-deftest
+    org-mcp-test-edit-headline-add-mutex-member-keeping-existing
+    ()
+  "Adding a group member while keeping an existing one writes both.
+Pins the documented contract that mutual-exclusion groups are not
+auto-enforced across the resulting local-tag set."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-todo-context-home
+   "Buy%20milk"
+   "Buy milk"
+   nil
+   org-mcp-test--regex-edit-headline-add-keep-context
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '(:startgroup ("@home" . ?h) ("@office" . ?o) :endgroup)
+   :add-tags ["@office"]
+   :expected-tags ["@home" "@office"]))
+
+(ert-deftest org-mcp-test-edit-headline-add-mutex-members-rejected ()
+  "`add_tags' may not itself contain two members of one mutex group.
+The delta is not enforced across the resulting set, but a single call
+that adds two same-group tags is rejected up front."
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   nil
+   :error-message-regex "mutually exclusive"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '(:startgroup ("@home" . ?h) ("@office" . ?o) :endgroup)
+   :add-tags
+   ["@home" "@office"]))
+
+(ert-deftest org-mcp-test-edit-headline-returns-full-node ()
+  "The returned node carries the headline's todo, priority, tags, and planning."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-full-metadata
+   "Plan%20trip"
+   "Plan trip"
+   "Renamed trip"
+   org-mcp-test--regex-edit-headline-full-metadata
+   :expected-todo "TODO"
+   :expected-priority "A"
+   :expected-tags ["work"]
+   :expected-scheduled "<2026-06-25 Thu>"
+   :expected-deadline "<2026-07-01 Wed>"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist '("work")))
+
+(ert-deftest org-mcp-test-edit-headline-title-and-tags ()
+  "Editing the title and adding a tag in one call applies both."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   "Renamed Task"
+   org-mcp-test--regex-edit-headline-title-and-tag
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '("work" "urgent" "personal")
+   :add-tags ["work"]
+   :expected-tags ["work"]))
+
+(ert-deftest org-mcp-test-edit-headline-idempotent-add ()
+  "Adding an already-present tag is a no-op, not an error."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-todo-with-tags
+   "Task%20with%20Tags"
+   "Task with Tags"
+   nil
+   org-mcp-test--regex-edit-headline-tags-with-id
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '("work" "urgent" "personal")
+   :add-tags ["work"]
+   :expected-tags ["work" "urgent"]))
+
+(ert-deftest org-mcp-test-edit-headline-idempotent-remove ()
+  "Removing an absent tag is a no-op, not an error."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   nil
+   org-mcp-test--regex-edit-headline-simple-with-id
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '("work" "urgent" "personal")
+   :remove-tags ["work"]
+   :expected-tags []))
+
+(ert-deftest org-mcp-test-edit-headline-add-remove-overlap-rejected ()
+  "A tag in both `add_tags' and `remove_tags' is rejected; file unchanged."
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-todo-with-tags
+   "Task%20with%20Tags"
+   "Task with Tags"
+   nil
+   :error-message-regex "both add_tags and remove_tags"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '("work" "urgent" "personal")
+   :add-tags ["work"]
+   :remove-tags ["work"]))
+
+(ert-deftest org-mcp-test-edit-headline-requires-a-field ()
+  "Omitting new_title, add_tags, and remove_tags is rejected; file unchanged."
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   nil
+   :error-message-regex "at least one"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))))
+
+(ert-deftest org-mcp-test-edit-headline-add-invalid-tag-rejected ()
+  "A syntactically invalid `add_tags' entry is rejected; file unchanged."
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   nil
+   :error-message-regex "Invalid tag name"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :add-tags ["bad tag!"]))
+
+(ert-deftest org-mcp-test-edit-headline-add-tag-with-newline-rejected
+    ()
+  "A newline-bearing `add_tags' entry is rejected; the file is unchanged.
+Pins the whole-string charset anchoring: `org-set-tags' would otherwise
+write the newline into the tag region and split the heading line, so a
+line-anchored charset check that admits the value would corrupt the file."
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   nil
+   :error-message-regex "Invalid tag name"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :add-tags ["a\nb"]))
+
+(ert-deftest
+    org-mcp-test-edit-headline-non-string-tag-element-rejected
+    ()
+  "A non-string tag array element yields a clean tool error, not a raw crash.
+Without a per-element type check the integer would reach `string-match-p'
+and surface a raw `wrong-type-argument' instead of a tool validation error."
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-todo-with-tags
+   "Task%20with%20Tags"
+   "Task with Tags"
+   nil
+   :error-message-regex "Tag must be a string"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :remove-tags [42]))
+
+(ert-deftest org-mcp-test-edit-headline-add-unknown-tag-rejected ()
+  "With a configured tag alist, an unknown `add_tags' entry is rejected."
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-simple-todo
+   "Original%20Task"
+   "Original Task"
+   nil
+   :error-message-regex "not in configured tag alist"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist
+   '("work" "urgent" "personal")
+   :add-tags ["unknown"]))
+
+(ert-deftest org-mcp-test-edit-headline-remove-unknown-tag-allowed ()
+  "`remove_tags' is lenient: an alist-absent tag can still be dropped."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-todo-legacy-tag
+   "Old%20Task"
+   "Old Task"
+   nil
+   org-mcp-test--regex-edit-headline-legacy-removed
+   :expected-todo "TODO"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :tag-alist '("work" "urgent")
+   :remove-tags ["legacy"]
+   :expected-tags []))
+
+(ert-deftest org-mcp-test-edit-headline-inherited-tag-remove-noop ()
+  "Removing an inherited tag no-ops on local tags; a refile is needed to shed it.
+`proj' is inherited on Child structurally (it is local on the Grandparent
+and Parent ancestors), so remove_tags cannot drop it here; only the local
+`childtag' is a candidate and it is untouched.  The tool reads local tags
+only, so tag inheritance settings do not affect this outcome."
+  (org-mcp-test--call-edit-headline-and-check
+   org-mcp-test--content-tagged-levels
+   "Grandparent/Parent/Child"
+   "Child"
+   nil
+   org-mcp-test--regex-edit-headline-inherited-noop
+   :remove-tags ["proj"]
+   :expected-tags ["childtag"]))
+
+(ert-deftest org-mcp-test-edit-headline-remove-invalid-tag-rejected ()
+  "A syntactically invalid `remove_tags' entry is rejected; file unchanged."
+  (org-mcp-test--call-edit-headline-expecting-error
+   org-mcp-test--content-todo-with-tags
+   "Task%20with%20Tags"
+   "Task with Tags"
+   nil
+   :error-message-regex "Invalid tag name"
+   :todo-keywords
+   '((sequence "TODO" "|" "DONE"))
+   :remove-tags ["bad tag!"]))
 
 ;;; org-edit-body tests
 

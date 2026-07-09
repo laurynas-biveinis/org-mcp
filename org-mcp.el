@@ -62,7 +62,7 @@
   "Cross-cutting behavior shared by org-mcp's tools and resources.
 
 File-modifying tools (org-add-todo, org-update-todo-state,
-org-rename-headline, org-edit-body, org-refile-headline) modify the
+org-edit-headline, org-edit-body, org-refile-headline) modify the
 file on disk; they fail if an Emacs buffer visiting the file has
 unsaved changes; ask the user to save the buffer and retry.  They
 validate the file's leading header block on every call; any `:NAME:'
@@ -689,6 +689,18 @@ Keys: :title :todo :priority :tags (local tags only) :scheduled
       :deadline ,(org-entry-get nil "DEADLINE")
       :id ,(org-entry-get nil "ID"))))
 
+(defun org-mcp--heading-node-fields (raw)
+  "Return the JSON node field alist for RAW, without `uri'.
+RAW is a plist as returned by `org-mcp--heading-raw-fields'.  Keys:
+`title', `todo', `priority', `tags' (local only), `scheduled',
+`deadline'."
+  `((title . ,(plist-get raw :title))
+    (todo . ,(plist-get raw :todo))
+    (priority . ,(plist-get raw :priority))
+    (tags . ,(vconcat (plist-get raw :tags)))
+    (scheduled . ,(plist-get raw :scheduled))
+    (deadline . ,(plist-get raw :deadline))))
+
 (defun org-mcp--heading-node (file-path title-path raw)
   "Build a JSON node alist from RAW.
 RAW is a plist as returned by `org-mcp--heading-raw-fields'.  The
@@ -696,17 +708,13 @@ RAW is a plist as returned by `org-mcp--heading-raw-fields'.  The
 `org-headline://' URI for FILE-PATH and TITLE-PATH (the ancestor
 titles from the root down to and including this heading)."
   (let ((id (plist-get raw :id)))
-    `((title . ,(plist-get raw :title))
-      (todo . ,(plist-get raw :todo))
-      (priority . ,(plist-get raw :priority))
-      (tags . ,(vconcat (plist-get raw :tags)))
-      (scheduled . ,(plist-get raw :scheduled))
-      (deadline . ,(plist-get raw :deadline))
-      (uri
-       .
-       ,(if id
-            (concat org-mcp--uri-id-prefix id)
-          (org-mcp--build-headline-uri file-path title-path))))))
+    (append
+     (org-mcp--heading-node-fields raw)
+     `((uri
+        .
+        ,(if id
+             (concat org-mcp--uri-id-prefix id)
+           (org-mcp--build-headline-uri file-path title-path)))))))
 
 (defun org-mcp--headline-path-nodes (file-path)
   "Return the chain of heading nodes from root to the heading at point.
@@ -990,6 +998,15 @@ to fix."
          (mapconcat #'identity valid-states ", ")
          state)))))
 
+(defun org-mcp--validate-tag-charset (tag-list)
+  "Signal a tool error if any tag in TAG-LIST violates Org's name charset.
+Org tag names allow only alphanumerics, underscore, and at-sign."
+  (dolist (tag tag-list)
+    (unless (string-match-p "\\`[[:alnum:]_@]+\\'" tag)
+      (org-mcp--tool-validation-error
+       "Invalid tag name (must be alphanumeric, _, or @): %s"
+       tag))))
+
 (defun org-mcp--validate-and-normalize-tags (tags)
   "Validate TAGS and return a normalized list of tag strings.
 TAGS is the JSON-decoded `tags' value: nil, a string, or a vector
@@ -999,8 +1016,10 @@ Validates:
 - Tags are in `org-tag-alist' or `org-tag-persistent-alist'
   (if either is configured)
 - Tags don't violate mutual exclusivity groups in either alist
+Duplicate tags are collapsed so the caller never writes `:tag:tag:'.
 Signals error for invalid tags."
-  (let ((tag-list (org-mcp--normalize-tags-to-list tags))
+  (let ((tag-list
+         (delete-dups (org-mcp--normalize-tags-to-list tags)))
         (allowed-tags
          (append
           (mapcar
@@ -1020,11 +1039,7 @@ Signals error for invalid tags."
            "Tag not in configured tag alist: %s"
            tag))))
     ;; Always validate tag names follow Org's rules
-    (dolist (tag tag-list)
-      (unless (string-match "^[[:alnum:]_@]+$" tag)
-        (org-mcp--tool-validation-error
-         "Invalid tag name (must be alphanumeric, _, or @): %s"
-         tag)))
+    (org-mcp--validate-tag-charset tag-list)
     ;; Validate mutual exclusivity if tag-alist is configured
     (when org-tag-alist
       (org-mcp--validate-mutex-tag-groups tag-list org-tag-alist))
@@ -1173,12 +1188,19 @@ The MCP wire layer feeds `tags' as one of:
 - nil (JSON `null' or absent field) -> returns nil
 - vector (JSON array)               -> converts to list
 - string (JSON string)              -> wraps in singleton list
-Throws error for any other type."
+Throws a tool error for any other type, or when an array element is
+not a string."
   (cond
    ((null tags)
     nil)
    ((vectorp tags)
-    (append tags nil))
+    (let ((tag-list (append tags nil)))
+      (dolist (tag tag-list)
+        (unless (stringp tag)
+          (org-mcp--tool-validation-error
+           "Tag must be a string, got: %S (type: %s)"
+           tag (type-of tag))))
+      tag-list))
    ((stringp tags)
     (list tags))
    (t
@@ -2152,44 +2174,76 @@ file resolves even when `org-id-locations' has no record of it."
         (:disallowed (org-mcp--resource-id-disallowed-error id))
         (:missing (org-mcp--resource-not-found-error "ID" id))))))
 
-(defun org-mcp--tool-rename-headline (uri current_title new_title)
-  "Rename headline title at URI from CURRENT_TITLE to NEW_TITLE.
-Preserves the current TODO state and tags, creates an Org ID for the
-headline if one doesn't exist.
-Returns the ID-based URI for the renamed headline.
+(defun org-mcp--tool-edit-headline
+    (uri current_title &optional new_title add_tags remove_tags)
+  "Edit the title and/or local tags of the headline at URI.
+CURRENT_TITLE must match the headline's actual title or the tool
+errors.  Supply at least one of NEW_TITLE, ADD_TAGS, REMOVE_TAGS.
+The TODO state, planning, properties, and body are preserved; an Org
+ID is created if one doesn't exist.  Returns the updated node.
 
 MCP Parameters:
-  uri - URI of the headline to rename
+  uri - URI of the headline to edit
         Formats:
           - org-headline://{absolute-path}#{url-encoded-path}
           - org-id://{uuid}
   current_title - Expected current title without TODO state or tags
                   Must match actual title or tool will error
                   Used to prevent race conditions
-  new_title - New title without TODO state or tags
+  new_title - New title without TODO state or tags (optional)
               Cannot be empty or whitespace-only
-              Cannot contain newlines"
+              Cannot contain newlines
+  add_tags - Local tags to add (optional; single string or array)
+             Validated against the globally configured tag alist;
+             a file's own #+TAGS: additions are not honored.
+             Duplicates within add_tags are collapsed.
+  remove_tags - Local tags to remove (optional; single string or array)
+                A tag may not appear in both add_tags and remove_tags"
   (org-mcp--validate-string-field uri "uri")
   (org-mcp--validate-string-field current_title "current_title")
-  (org-mcp--validate-string-field new_title "new_title")
-  (org-mcp--validate-headline-title new_title)
+  (org-mcp--validate-string-field new_title "new_title" t)
+  (when new_title
+    (org-mcp--validate-headline-title new_title))
+  (let ((add-list (org-mcp--validate-and-normalize-tags add_tags))
+        (remove-list (org-mcp--normalize-tags-to-list remove_tags)))
+    (org-mcp--validate-tag-charset remove-list)
+    (unless (or new_title add-list remove-list)
+      (org-mcp--tool-validation-error
+       "Provide at least one of new_title, add_tags, remove_tags"))
+    (when-let* ((dup
+                 (cl-intersection
+                  add-list
+                  remove-list
+                  :test #'string=)))
+      (org-mcp--tool-validation-error
+       "Tags cannot be in both add_tags and remove_tags: %s"
+       (mapconcat #'identity dup ", ")))
+    (pcase-let ((`(,file-path . ,headline-path)
+                 (org-mcp--parse-resource-uri uri)))
+      (org-mcp--modify-and-save file-path "edit headline"
+                                (org-mcp--heading-node-fields
+                                 (org-mcp--heading-raw-fields))
+        (org-mcp--goto-headline-for-modify headline-path uri)
 
-  (pcase-let ((`(,file-path . ,headline-path)
-               (org-mcp--parse-resource-uri uri)))
+        ;; Verify current title matches
+        (let ((actual-title (org-get-heading t t t t)))
+          (unless (string= actual-title current_title)
+            (org-mcp--state-mismatch-error
+             current_title actual-title "Title")))
 
-    ;; Rename the headline in the file
-    (org-mcp--modify-and-save file-path "rename"
-                              `((previous_title . ,current_title)
-                                (new_title . ,new_title))
-      (org-mcp--goto-headline-for-modify headline-path uri)
-
-      ;; Verify current title matches
-      (let ((actual-title (org-get-heading t t t t)))
-        (unless (string= actual-title current_title)
-          (org-mcp--state-mismatch-error
-           current_title actual-title "Title")))
-
-      (org-edit-headline new_title))))
+        (when new_title
+          (org-edit-headline new_title))
+        (when (or add-list remove-list)
+          (let* ((current (org-get-tags nil t))
+                 (kept
+                  (cl-remove-if
+                   (lambda (tag) (member tag remove-list)) current))
+                 (final
+                  (append
+                   kept
+                   (cl-remove-if
+                    (lambda (tag) (member tag kept)) add-list))))
+            (org-set-tags final)))))))
 
 (defun org-mcp--tool-edit-body
     (resource_uri old_body new_body &optional replace_all)
@@ -3351,18 +3405,35 @@ entirely to use after_uri-based placement), nor with a top-level
 parent_uri (which has no sibling slot)."
      :read-only nil)
     (list
-     #'org-mcp--tool-rename-headline
-     :id "org-rename-headline"
+     #'org-mcp--tool-edit-headline
+     :id "org-edit-headline"
      :description
-     "Rename an Org headline's title while preserving its TODO state,
-tags, properties, and body content.  Creates an Org ID property for
-the headline if one doesn't exist.
+     "Edit an Org headline's title and/or local tags, preserving its
+TODO state, planning, properties, and body content.  Supply at least
+one of new_title, add_tags, remove_tags; a tag may not appear in both
+add_tags and remove_tags.  Tag edits are a delta over the headline's
+own (local) tags and are idempotent -- adding a present tag or
+removing an absent one is a no-op, and duplicates within add_tags are
+collapsed.  add_tags are validated against the globally configured tag
+alist (a file's own #+TAGS: additions are not honored); remove_tags
+accept any syntactically valid tag.  Local tags only: an inherited tag
+cannot be shed here (refile the headline out of the tagged subtree
+instead), mutual-exclusion groups are not auto-enforced across the
+result (swap within a group by removing the old tag and adding the new
+one in one call; a single add_tags list may not itself hold two members
+of one group), and the crypt tag is treated as a plain tag (no
+org-crypt encryption).
+Creates an Org ID property for the headline if one doesn't exist.
 
 Returns JSON object:
   success - Always true on success (boolean)
-  previous_title - The previous headline title (string)
-  new_title - The new title that was set (string)
-  uri - ID-based URI (org-id://{uuid}) for the renamed headline"
+  title - The resulting headline title (string)
+  todo - The TODO keyword, or null
+  priority - The priority cookie letter, or null
+  tags - The resulting local tags (array of strings)
+  scheduled - The SCHEDULED timestamp, or null
+  deadline - The DEADLINE timestamp, or null
+  uri - ID-based URI (org-id://{uuid}) for the headline"
      :read-only nil)
     (list
      #'org-mcp--tool-edit-body

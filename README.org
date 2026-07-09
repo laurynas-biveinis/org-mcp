@@ -361,29 +361,44 @@ Example:
 }
 #+end_example
 
-*** org-rename-headline
-- *Description:* Rename the title of an existing headline while preserving its TODO state, tags, and properties
+*** org-edit-headline
+- *Description:* Edit an existing headline's title and/or local tags, preserving its TODO state, planning, properties, and body
 - *Parameters:*
   - =uri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
   - =current_title= (string, required): Current headline title (without TODO state or tags) - must match actual title
-  - =new_title= (string, required): New headline title (without TODO state or tags)
-- *Returns:* Success status with previous and new titles
+  - =new_title= (string, optional): New headline title (without TODO state or tags)
+  - =add_tags= (string or array, optional): Local tags to add (e.g., "@office" or ["work", "urgent"])
+  - =remove_tags= (string or array, optional): Local tags to remove
+  - At least one of =new_title=, =add_tags=, =remove_tags= must be supplied; a tag cannot appear in both =add_tags= and =remove_tags=
+- *Returns:* The updated node: =success=, =title=, =todo=, =priority=, =tags= (resulting local tags), =scheduled=, =deadline=, =uri=
 - *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
+- *Tag semantics:*
+  - Tag edits are a delta over the headline's *own (local)* tags and are idempotent: adding a present tag or removing an absent one is a no-op.
+  - =add_tags= are validated against the globally configured =org-tag-alist= / =org-tag-persistent-alist= (rejected if unknown); a file's own =#+TAGS:= additions are *not* honored, so a file-local tag not in the global alist is rejected. =remove_tags= accept any syntactically valid tag so a tag no longer in the alist can still be dropped.
+  - Local tags only: an *inherited* tag (e.g. one applied by a container heading or =#+FILETAGS=) cannot be shed here; move the headline out of the tagged subtree with =org-refile-headline= instead.
+  - Mutual-exclusion groups are not auto-enforced across the resulting set (adding a group member to a headline that already carries another keeps both); swap within a group by passing the old tag in =remove_tags= and the new one in =add_tags= in the same call. A single =add_tags= list may not itself contain two members of the same group.
+  - Adding or removing the =crypt= tag changes only the tag; it does not trigger org-crypt encryption or decryption.
 
 Example:
 #+begin_example
-# Request:
+# Request (swap context tag and retitle in one call):
 {
-  "uri": "org-headline:///home/user/org/projects.org/Original%20Task",
-  "current_title": "Original Task",
-  "new_title": "Updated Task Name"
+  "uri": "org-headline:///home/user/org/projects.org/Buy%20milk",
+  "current_title": "Buy milk",
+  "new_title": "Buy oat milk",
+  "add_tags": ["@office"],
+  "remove_tags": ["@home"]
 }
 
 # Success response:
 {
   "success": true,
-  "previous_title": "Original Task",
-  "new_title": "Updated Task Name",
+  "title": "Buy oat milk",
+  "todo": "TODO",
+  "priority": null,
+  "tags": ["@office"],
+  "scheduled": null,
+  "deadline": null,
   "uri": "org-id://550e8400-e29b-41d4-a716-446655440002"
 }
 

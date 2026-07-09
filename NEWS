@@ -4,6 +4,14 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Incompatible Changes
 
+*** `org-rename-headline' renamed to `org-edit-headline'
+    The tool now also edits a headline's local tags via `add_tags'
+    and `remove_tags' in addition to its title, and returns the
+    updated node (`title', `todo', `priority', `tags', `scheduled',
+    `deadline', `uri') instead of the previous title pair.  `new_title'
+    is now optional; supply at least one of `new_title', `add_tags',
+    `remove_tags'.
+
 *** Raised the minimum Emacs version from 27.1 to 28.2
 
 *** `org-read-headline' and `org-read-by-id' now return JSON
