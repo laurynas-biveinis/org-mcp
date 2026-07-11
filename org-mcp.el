@@ -1336,6 +1336,38 @@ validation can ignore it."
     (while (org-mcp--skip-file-header-element))
     (point)))
 
+(defun org-mcp--org-todo-checked (state)
+  "Set the current entry's TODO keyword to STATE, erroring on a silent veto.
+Point must be on the entry's heading.  A member of `org-blocker-hook'
+can veto the transition; non-interactive `org-todo' then fails silently,
+leaving the buffer unchanged.  Detect that no-op via
+`buffer-chars-modified-tick' and raise a tool error, naming the blocking
+entry when `org-block-entry-blocking' records one and falling back
+otherwise (e.g. a checkbox block leaves it nil).
+
+On a `COMMENT'-prefixed heading `org-todo' strips the COMMENT before it
+consults `org-blocker-hook' and, on a veto, throws without restoring it --
+a buffer change that would mask the veto from the tick guard.  Strip the
+COMMENT here first so `org-todo' sees a plain heading, then restore it
+either way, leaving the tick to reflect only the transition."
+  (let ((recomment (org-in-commented-heading-p t)))
+    (when recomment
+      (org-toggle-comment))
+    (let ((org-block-entry-blocking nil)
+          (tick (buffer-chars-modified-tick)))
+      (org-todo state)
+      (let ((blocked (= tick (buffer-chars-modified-tick))))
+        (when recomment
+          (org-toggle-comment))
+        (when blocked
+          (mcp-server-lib-tool-throw
+           (format
+            "TODO state change to %s blocked%s"
+            state
+            (if org-block-entry-blocking
+                (format " by \"%s\"" org-block-entry-blocking)
+              " (checkbox or other org-blocker-hook member)"))))))))
+
 (defun org-mcp--goto-headline-for-modify (headline-path uri)
   "Validate the file header, then move point to HEADLINE-PATH's line start.
 URI selects ID-based resolution when it carries the `org-id://' prefix,
@@ -1855,9 +1887,16 @@ MCP Parameters:
   (pcase-let ((`(,file-path . ,headline-path)
                (org-mcp--parse-resource-uri uri)))
     (org-mcp--validate-todo-state new_state "new_state")
-    (org-mcp--modify-and-save file-path "update"
-                              `((previous_state . ,current_state)
-                                (new_state . ,new_state))
+    (org-mcp--modify-and-save file-path
+        "update"
+        ;; Report the actual post-`org-todo' state,
+        ;; not the request: a repeating entry marked
+        ;; DONE is reset back to its not-done keyword
+        ;; by `org-auto-repeat-maybe'.  The macro
+        ;; evaluates this alist after BODY, with point
+        ;; still on the heading.
+        `((previous_state . ,current_state)
+          (new_state . ,(or (org-get-todo-state) "")))
       (org-mcp--goto-headline-for-modify headline-path uri)
 
       ;; Treat "" and nil as the same "no TODO state":
@@ -1873,8 +1912,8 @@ MCP Parameters:
              current_state)
            (or actual-state "(no state)") "State")))
 
-      ;; Update the state
-      (org-todo new_state))))
+      ;; Update the state, erroring if org-blocker-hook silently vetoes it.
+      (org-mcp--org-todo-checked new_state))))
 
 (defun org-mcp--validate-after-uri (after-uri)
   "Validate AFTER-URI at the tool boundary, returning the parsed ID.
@@ -2095,7 +2134,7 @@ MCP Parameters:
             ;; inserted heading already has none, so skip the no-op
             ;; `org-todo' call and its state-change machinery.
             (unless (string-empty-p todo_state)
-              (org-todo todo_state))
+              (org-mcp--org-todo-checked todo_state))
 
             (when tag-list
               (org-set-tags tag-list))
@@ -3331,8 +3370,9 @@ Creates an Org ID property for the headline if one doesn't exist.
 Returns JSON object:
   success - Always true on success (boolean)
   previous_state - The previous TODO state (string, empty for none)
-  new_state - The new TODO state that was set (string, empty if
-              cleared)
+  new_state - The actual resulting TODO state, which may differ from
+              the request -- e.g. a repeating entry marked done is
+              reset to its not-done keyword (string, empty if cleared)
   uri - ID-based URI (org-id://{uuid}) for the updated headline"
      :read-only nil)
     (list

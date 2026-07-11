@@ -398,6 +398,70 @@ Third line of content."
    org-mcp-test--content-with-id-id)
   "Task with an Org ID property, TODO state, and multiline content.")
 
+(defconst org-mcp-test--content-blocked-parent-child
+  "* TODO Parent
+** TODO Open child
+"
+  "Parent TODO whose open child blocks a not-done to done transition.")
+
+(defconst org-mcp-test--content-blocked-checkbox
+  "* TODO Task
+- [ ] step
+"
+  "TODO with an unchecked checkbox in its body, blocking a done transition.")
+
+(defconst org-mcp-test--content-blocked-comment-parent-child
+  "* TODO COMMENT Parent
+** TODO Open child
+"
+  "Commented parent TODO whose open child blocks a done transition.")
+
+(defconst org-mcp-test--content-comment-heading
+  "* TODO COMMENT Solo
+"
+  "Commented TODO heading with no blocker.")
+
+(defconst org-mcp-test--expected-regex-comment-done
+  (concat
+   "\\`"
+   "\\* DONE COMMENT Solo\n"
+   ":PROPERTIES:\n"
+   ":ID: +[-0-9A-Za-z]+\n"
+   ":END:\n"
+   "\\'")
+  "Whole-file image after `Solo' is marked DONE: keyword changed,
+COMMENT preserved, and a fresh ID stamped.")
+
+(defconst org-mcp-test--content-ordered-parent
+  "* TODO Project
+:PROPERTIES:
+:ORDERED:  t
+:END:
+** TODO First
+"
+  "Ordered parent with one open child; a new done child is blocked.")
+
+(defconst org-mcp-test--content-repeater-scheduled
+  "* TODO Task
+SCHEDULED: <2020-01-01 Wed +1d>
+"
+  "TODO with a daily repeater; marking it DONE resets it back to TODO.")
+
+(defconst org-mcp-test--expected-regex-repeater-reset
+  (concat
+   "\\`"
+   "\\* TODO Task\n"
+   "SCHEDULED: <2020-01-02 Thu \\+1d>\n"
+   ":PROPERTIES:\n"
+   ":LAST_REPEAT: \\[[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\} "
+   "[A-Za-z]+ [0-9]\\{2\\}:[0-9]\\{2\\}\\]\n"
+   ":ID: +[-0-9A-Za-z]+\n"
+   ":END:\n"
+   "\\'")
+  "Whole-file image after the repeating `TODO Task' is marked `DONE'.
+The keyword resets to TODO, SCHEDULED shifts one day, and Org stamps
+a LAST_REPEAT (today, matched by pattern) and a fresh ID.")
+
 (defconst org-mcp-test--content-done-closed-id
   (format
    "* DONE Finished task
@@ -3034,6 +3098,25 @@ body."
       ,new-state
       ,error-regex)))
 
+(defmacro org-mcp-test--assert-blocked-update
+    (content hook enforce-var uri-suffix error-regex)
+  "On CONTENT, assert a TODO->DONE update on URI-SUFFIX is vetoed.
+HOOK is the `org-blocker-hook' member (an unquoted function symbol) to
+install; ENFORCE-VAR is the Org enforcement variable (unquoted) to
+enable; URI-SUFFIX is the headline path after `#'; ERROR-REGEX must
+match the signalled blocked-transition error.  Asserts the file is
+left unchanged."
+  (declare (debug (form symbolp symbolp form form)))
+  `(org-mcp-test--with-temp-org-files ((test-file ,content))
+     (let ((org-blocker-hook (list ',hook))
+           (,enforce-var t))
+       (org-mcp-test--call-update-todo-state-expecting-error
+        test-file
+        (format "org-headline://%s#%s" test-file ,uri-suffix)
+        "TODO"
+        "DONE"
+        ,error-regex))))
+
 (defun org-mcp-test--update-todo-state-and-check
     (resource-uri
      old-state new-state test-file expected-content-regex)
@@ -4838,6 +4921,83 @@ set; with either condition unmet the stamp is kept."
   "Test TODO state update fails on state mismatch."
   (org-mcp-test--assert-update-todo-error "IN-PROGRESS" "DONE"))
 
+(ert-deftest org-mcp-test-update-todo-state-blocked-by-child ()
+  "An `org-blocker-hook' veto errors, leaving the file unchanged.
+`org-todo' fails silently when a blocker vetoes a not-done to done
+change, so the tool must detect the no-op transition and error
+rather than write the file back and report a false success."
+  (org-mcp-test--assert-blocked-update
+   org-mcp-test--content-blocked-parent-child
+   org-block-todo-from-children-or-siblings-or-parent
+   org-enforce-todo-dependencies
+   "Parent"
+   "blocked by .*Open child"))
+
+(ert-deftest org-mcp-test-update-todo-state-blocked-by-checkbox ()
+  "A checkbox veto errors with the unnamed-blocker fallback message.
+`org-block-todo-from-checkboxes' does not set `org-block-entry-blocking',
+so the error names no entry and uses the generic phrasing instead."
+  (org-mcp-test--assert-blocked-update
+   org-mcp-test--content-blocked-checkbox
+   org-block-todo-from-checkboxes
+   org-enforce-todo-checkbox-dependencies
+   "Task"
+   "checkbox or other org-blocker-hook member"))
+
+(ert-deftest org-mcp-test-update-todo-state-blocked-comment-heading ()
+  "A veto on a COMMENT heading errors without stripping the COMMENT.
+`org-todo' un-comments the heading before consulting `org-blocker-hook'
+and does not restore it when the blocker throws, so a naive buffer-tick
+guard would miss the veto -- reporting success while silently
+de-commenting the heading on disk.  The tool must error and leave the
+file byte-for-byte intact."
+  (org-mcp-test--assert-blocked-update
+   org-mcp-test--content-blocked-comment-parent-child
+   org-block-todo-from-children-or-siblings-or-parent
+   org-enforce-todo-dependencies
+   "Parent"
+   "blocked by .*Open child"))
+
+(ert-deftest org-mcp-test-update-todo-state-comment-heading-preserved
+    ()
+  "A non-blocked transition on a COMMENT heading keeps the COMMENT.
+The veto-hardening strips and restores the COMMENT around `org-todo';
+this locks that a successful transition still updates the keyword and
+leaves the COMMENT marker intact."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-comment-heading))
+    (let ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
+          (org-log-done nil))
+      (org-mcp-test--update-todo-state-and-check
+       (format "org-headline://%s#Solo" test-file)
+       "TODO"
+       "DONE"
+       test-file
+       org-mcp-test--expected-regex-comment-done))))
+
+(ert-deftest org-mcp-test-update-todo-state-repeater-reports-reset ()
+  "A repeating entry marked DONE reports its post-repeat reset state.
+`org-auto-repeat-maybe' resets a repeater from DONE back to the
+not-done keyword, so the tool must return the actual resulting state
+\(TODO) rather than the requested DONE, and must not misread the
+legitimate keyword change as a blocker veto."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-repeater-scheduled))
+    (let* ((org-todo-keywords '((sequence "TODO" "|" "DONE")))
+           (org-log-repeat 'time)
+           (params
+            `((uri . ,(format "org-headline://%s#Task" test-file))
+              (current_state . "TODO") (new_state . "DONE")))
+           (result
+            (json-read-from-string
+             (mcp-server-lib-ert-call-tool
+              "org-update-todo-state" params))))
+      (should (equal (alist-get 'success result) t))
+      (should (equal (alist-get 'previous_state result) "TODO"))
+      (should (equal (alist-get 'new_state result) "TODO"))
+      (org-mcp-test--verify-file-matches
+       test-file org-mcp-test--expected-regex-repeater-reset))))
+
 (ert-deftest org-mcp-test-update-todo-state-empty-on-no-state-heading
     ()
   "Test that `current_state=\"\"' matches a heading with no TODO state.
@@ -5414,6 +5574,24 @@ drawer."
    org-mcp-test--content-empty "New Task"
    "INVALID-STATE" ; Not in org-todo-keywords
    '("work") nil (format "org-headline://%s#" test-file)))
+
+(ert-deftest org-mcp-test-add-todo-blocked-done-state ()
+  "Adding a DONE child vetoed by an ORDERED parent errors, file intact.
+The bare `org-todo' in `org-add-todo' is silently vetoed by
+`org-blocker-hook' for a done initial state under an ORDERED parent
+whose earlier sibling is still open, so the tool must error rather
+than leave a keyword-less heading and report success."
+  (let ((org-blocker-hook
+         '(org-block-todo-from-children-or-siblings-or-parent))
+        (org-enforce-todo-dependencies t))
+    (org-mcp-test--call-add-todo-expecting-error
+     org-mcp-test--content-ordered-parent
+     "Second"
+     "DONE"
+     nil
+     nil
+     (format "org-headline://%s#Project" test-file)
+     :error-message-regex "blocked by .*First")))
 
 (ert-deftest org-mcp-test-add-todo-empty-title ()
   "Test that adding TODO with empty title throws error."

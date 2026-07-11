@@ -87,6 +87,14 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Reported `org-blocker-hook' vetoes instead of a false success
+    `org-update-todo-state' and `org-add-todo' now error when a
+    member of `org-blocker-hook' (e.g. a TODO-dependency or
+    unchecked-checkbox blocker) silently vetoes the state change,
+    rather than reporting success with the file unchanged.
+    `org-update-todo-state' also returns the actual resulting state,
+    so a repeater reset back to the not-done keyword is visible.
+
 *** Stopped modifying tools from prompting to kill a modified buffer
     A modifying tool run in a live Emacs could raise a stray
     modified-buffer kill prompt.

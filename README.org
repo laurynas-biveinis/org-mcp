@@ -335,8 +335,9 @@ Example response:
   - =uri= (string, required): URI of the headline (supports =org-headline://= or =org-id://=)
   - =current_state= (string, required): Current TODO state (empty string "" for no state) - must match actual state
   - =new_state= (string, required): New TODO state (must be valid in org-todo-keywords, or empty string "" to clear to no keyword)
-- *Returns:* Success status with previous and new states, and ID-based URI of the updated headline
+- *Returns:* Success status with previous and new states, and ID-based URI of the updated headline. =new_state= is the actual resulting state, which may differ from the request (e.g. a repeating entry marked done is reset to its not-done keyword)
 - *Buffer behavior:* Modifies the file on disk; fails if an Emacs buffer visiting the file has unsaved changes; ask the user to save the buffer and retry.
+- *Blocked transitions:* If a member of =org-blocker-hook= (e.g. a TODO-dependency or unchecked-checkbox blocker) vetoes the change, the tool returns an error and leaves the file unchanged, rather than reporting success.
 
 Example:
 #+begin_example

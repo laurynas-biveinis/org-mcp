@@ -50,6 +50,7 @@
                                                  (org-mcp-test--with-id-fallback-scan . 1)
                                                  (org-mcp-test--assert-clear-done-closed . 1)
                                                  (org-mcp-test--assert-update-todo-error . 1)
+                                                 (org-mcp-test--assert-blocked-update . 1)
                                                  (org-mcp-test--add-new-task-and-check . 3)
                                                  (org-mcp-test--add-child-task-and-check . 2)
                                                  (org-mcp-test--add-review-after-sibling . 1)
