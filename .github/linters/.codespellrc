@@ -1,0 +1,4 @@
+[codespell]
+# "Caf" is a percent-encoding fragment of "Café" (Caf%C3%A9) in the
+# non-ASCII org-headline URI tests; codespell misreads it as "Calf".
+ignore-words-list = caf
