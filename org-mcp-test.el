@@ -8506,6 +8506,45 @@ with the URL-encoded ancestor path as the fragment."
     (should
      (string-suffix-p "#Plain%20heading" (alist-get 'uri plain)))))
 
+(defconst org-mcp-test--content-setupfile-keyword
+  "#+TODO: TODO FROB | DONE\n"
+  "A setup file defining a custom in-progress TODO keyword FROB.")
+
+(defconst org-mcp-test--content-relative-setupfile
+  "#+SETUPFILE: setup.org\n* FROB do a thing\n"
+  "An Org file whose custom TODO keyword comes from a sibling `#+SETUPFILE'
+named by a bare relative name.")
+
+(ert-deftest org-mcp-test-outline-relative-setupfile ()
+  "org-read-outline follows a relative #+SETUPFILE from the file's own dir.
+The heading uses FROB, a TODO keyword defined only in the relative
+`#+SETUPFILE'; it must parse as the FROB keyword even when the caller's
+`default-directory' is a directory that does not contain the setup file.
+Locks in the fix for relative in-buffer file references misresolving
+against the temp buffer's inherited `default-directory'."
+  (let* ((org-dir (make-temp-file "org-mcp-setup-org" t))
+         (cwd-dir (make-temp-file "org-mcp-setup-cwd" t))
+         (setup-file (expand-file-name "setup.org" org-dir))
+         (org-file (expand-file-name "main.org" org-dir)))
+    (unwind-protect
+        (progn
+          (with-temp-file setup-file
+            (insert org-mcp-test--content-setupfile-keyword))
+          (with-temp-file org-file
+            (insert org-mcp-test--content-relative-setupfile))
+          (let ((org-mcp-allowed-files (list org-file))
+                (default-directory cwd-dir)
+                (org-todo-keywords '((sequence "TODO" "|" "DONE"))))
+            (org-mcp-test--with-enabled
+              (let* ((result
+                      (org-mcp-test--call-read-outline org-file))
+                     (node (aref (alist-get 'headings result) 0)))
+                (should (equal (alist-get 'todo node) "FROB"))
+                (should
+                 (equal (alist-get 'title node) "do a thing"))))))
+      (delete-directory org-dir t)
+      (delete-directory cwd-dir t))))
+
 ;;; org-read-headline tests
 
 (ert-deftest org-mcp-test-tool-read-headline-non-string-file ()

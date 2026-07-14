@@ -87,6 +87,14 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Resolved relative `#+SETUPFILE' in Org-parsing read tools
+    `org-read-outline', `org-read-headline', `org-read-by-id',
+    `org-grep', and `org-find-tagged-ancestor', and the corresponding
+    `org-outline://', `org-headline://', and `org-id://' resource
+    reads, resolved a relative `#+SETUPFILE' against the caller's
+    `default-directory' rather than the Org file's own directory, so
+    custom TODO keywords defined there could be missed.
+
 *** Reported `org-blocker-hook' vetoes instead of a false success
     `org-update-todo-state' and `org-add-todo' now error when a
     member of `org-blocker-hook' (e.g. a TODO-dependency or

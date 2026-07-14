@@ -498,13 +498,20 @@ OPERATION is a string describing the operation for error messages."
          operation)))))
 
 (defmacro org-mcp--with-org-file (file-path &rest body)
-  "Execute BODY in a temp Org buffer with file at FILE-PATH."
+  "Execute BODY in a temp Org buffer with file at FILE-PATH.
+`default-directory' is set to FILE-PATH's directory so a relative
+`#+SETUPFILE' resolves against the file's own directory during
+`org-mode' setup, as when Emacs visits the file."
   (declare (indent 1) (debug (form body)))
-  `(with-temp-buffer
-     (insert-file-contents ,file-path)
-     (org-mode)
-     (goto-char (point-min))
-     ,@body))
+  (let ((file-var (gensym "file-path")))
+    `(let ((,file-var ,file-path))
+       (with-temp-buffer
+         (insert-file-contents ,file-var)
+         (setq default-directory
+               (file-name-directory (expand-file-name ,file-var)))
+         (org-mode)
+         (goto-char (point-min))
+         ,@body))))
 
 (defmacro org-mcp--with-visiting-org-file
     (file-path operation &rest body)
@@ -614,12 +621,11 @@ of the appropriate shape."
     (if-let* ((file
                (catch 'found
                  (dolist (allowed-file org-mcp-allowed-files)
-                   (when (file-exists-p allowed-file)
-                     (org-mcp--with-org-file allowed-file
-                       (when (org-find-property "ID" id)
-                         (throw 'found
-                                (expand-file-name
-                                 allowed-file)))))))))
+                   (let ((abs (expand-file-name allowed-file)))
+                     (when (file-exists-p abs)
+                       (org-mcp--with-org-file abs
+                         (when (org-find-property "ID" id)
+                           (throw 'found abs)))))))))
         (progn
           (when org-id-track-globally
             (ignore-errors
