@@ -615,9 +615,9 @@ cannot poison a successful resolution.
 Callers translate the status into a tool error or a resource error
 of the appropriate shape."
   (if-let* ((id-file (org-id-find-id-file id)))
-      (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
-          (cons :found allowed-file)
-        (cons :disallowed nil))
+    (if-let* ((allowed-file (org-mcp--find-allowed-file id-file)))
+      (cons :found allowed-file)
+      (cons :disallowed nil))
     (if-let* ((file
                (catch 'found
                  (dolist (allowed-file org-mcp-allowed-files)
@@ -626,11 +626,11 @@ of the appropriate shape."
                        (org-mcp--with-org-file abs
                          (when (org-find-property "ID" id)
                            (throw 'found abs)))))))))
-        (progn
-          (when org-id-track-globally
-            (ignore-errors
-              (org-id-add-location id file)))
-          (cons :found file))
+      (progn
+        (when org-id-track-globally
+          (ignore-errors
+            (org-id-add-location id file)))
+        (cons :found file))
       (cons :missing nil))))
 
 (defun org-mcp--find-allowed-file-with-id (id)
@@ -660,11 +660,11 @@ Throws an error if neither prefix matches."
   `(if-let* ((id
               (org-mcp--extract-uri-suffix
                ,uri org-mcp--uri-id-prefix)))
-       ,id-body
+     ,id-body
      (if-let* ((headline
                 (org-mcp--extract-uri-suffix
                  ,uri org-mcp--uri-headline-prefix)))
-         ,headline-body
+       ,headline-body
        (org-mcp--tool-validation-error
         "Invalid resource URI format: %s"
         ,uri))))
@@ -832,6 +832,12 @@ resolve to equivalent (FILE . HEADLINE) pairs."
                  (and (> (length fragment) 0) fragment)))))
     (cons file headline)))
 
+(defun org-mcp--unhex-path-segment (segment)
+  "Percent-decode SEGMENT and decode the result as UTF-8.
+`url-unhex-string' returns unibyte raw bytes; the UTF-8 decode is
+required so a non-ASCII title round-trips against multibyte Org text."
+  (decode-coding-string (url-unhex-string segment) 'utf-8))
+
 (defun org-mcp--parse-resource-uri (uri)
   "Parse URI and return (file-path . headline-path).
 Validates file access and returns expanded file path."
@@ -848,7 +854,7 @@ Validates file access and returns expanded file path."
         (setq headline-path
               (when headline-path-str
                 (mapcar
-                 #'url-unhex-string
+                 #'org-mcp--unhex-path-segment
                  (split-string headline-path-str "/")))))
       ;; Handle org-id:// URIs
       (progn
@@ -891,7 +897,8 @@ file is not in the allowed list."
         (when path-str
           (setq parent-path
                 (mapcar
-                 #'url-unhex-string (split-string path-str "/")))))
+                 #'org-mcp--unhex-path-segment
+                 (split-string path-str "/")))))
       ;; Handle org-id:// URIs
       (progn
         (setq file-path (org-mcp--find-allowed-file-with-id id))
@@ -968,7 +975,7 @@ Otherwise, navigates using HEADLINE-PATH as title hierarchy."
   (if is-id
       ;; ID case - headline-path contains single ID
       (if-let* ((pos (org-find-property "ID" (car headline-path))))
-          (goto-char pos)
+        (goto-char pos)
         (org-mcp--id-not-found-error (car headline-path)))
     ;; Path case - headline-path contains title hierarchy
     (unless (org-mcp--navigate-to-headline headline-path)
@@ -2193,7 +2200,7 @@ The filename parameter includes both file and headline path."
          (headline-path
           (when headline-path-str
             (mapcar
-             #'url-unhex-string
+             #'org-mcp--unhex-path-segment
              (split-string headline-path-str "/")))))
     (if headline-path
         (let ((content

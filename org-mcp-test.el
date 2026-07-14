@@ -141,6 +141,10 @@ Carries two `%s' slots: the parent ID and the `Second Child' ID.")
            org-mcp-test--content-with-id-id))
   "Parent with multiple child tasks and doc file header.")
 
+(defconst org-mcp-test--content-non-ascii-titles
+  "* Café\n** Naïve\nBody line.\n"
+  "Nested headlines whose titles carry non-ASCII UTF-8 characters.")
+
 (defconst org-mcp-test--content-outline-metadata
   (format
    "* TODO [#A] Parent task :work:
@@ -8631,6 +8635,29 @@ has an ID property and an org-headline:// URI otherwise."
         (format
          "org-headline://%s#Parent%%20Task/First%%20Child%%2050%%25%%20Complete"
          test-file))))))
+
+(ert-deftest org-mcp-test-tool-read-headline-non-ascii-path ()
+  "Pin that a percent-encoded UTF-8 `headline_path' resolves.
+Each path segment's percent-escapes decode as UTF-8 before matching
+the multibyte headline text, so a non-ASCII title under a non-ASCII
+ancestor resolves rather than erroring; regression for comparing raw
+undecoded bytes against multibyte Org text."
+  (org-mcp-test--with-temp-org-files
+      ((test-file org-mcp-test--content-non-ascii-titles))
+    (let* ((result
+            (org-mcp-test--call-read-headline
+             test-file "Caf%C3%A9/Na%C3%AFve"))
+           (path (alist-get 'headline_path result)))
+      (org-mcp-test--should-read-result
+       result "** Naïve\nBody line." '("Café" "Naïve"))
+      (should (= (length path) 2))
+      (org-mcp-test--should-node-metadata (nth 0 path) :tags nil)
+      (org-mcp-test--should-node-metadata (nth 1 path) :tags nil)
+      (should
+       (equal
+        (alist-get 'uri (nth 1 path))
+        (format "org-headline://%s#Caf%%C3%%A9/Na%%C3%%AFve"
+                test-file))))))
 
 (ert-deftest org-mcp-test-read-headline-path-matches-grep ()
   "Pin that org-read-headline's `headline_path' equals org-grep's.

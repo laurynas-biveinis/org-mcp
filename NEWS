@@ -87,6 +87,13 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Fixed `org-headline://' path resolution for non-ASCII titles
+    Resolving a headline by an `org-headline://' URI or `headline_path'
+    failed when a path segment held a non-ASCII (percent-encoded UTF-8)
+    character, because the decoded bytes were not decoded as UTF-8
+    before matching the headline text.  Affected every path-based
+    read/modify tool; `org-id://' resolution was unaffected.
+
 *** Resolved relative `#+SETUPFILE' in Org-parsing read tools
     `org-read-outline', `org-read-headline', `org-read-by-id',
     `org-grep', and `org-find-tagged-ancestor', and the corresponding
