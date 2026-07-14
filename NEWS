@@ -87,6 +87,13 @@ org-mcp NEWS -- history of user-visible changes
 
 ** Bug Fixes
 
+*** Fixed `org-edit-body' on a drawer-only node before another heading
+    Adding a first paragraph with an empty `old_body' to a headline
+    whose only content is drawers (`:PROPERTIES:'/`:LOGBOOK:') failed
+    with "Cannot use empty old_body with non-empty body" when the
+    headline was followed by another heading, because the body region
+    ran past the node into the next heading.
+
 *** Fixed `org-headline://' path resolution for non-ASCII titles
     Resolving a headline by an `org-headline://' URI or `headline_path'
     failed when a path segment held a non-ASCII (percent-encoded UTF-8)

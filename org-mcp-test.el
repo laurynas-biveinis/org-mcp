@@ -500,6 +500,32 @@ Task content."
    org-mcp-test--timestamp-id)
   "Task with an ID property but no body content.")
 
+(defconst org-mcp-test--content-with-id-drawers-before-heading
+  (format
+   "* TODO Task with drawers but no body
+:PROPERTIES:
+:ID:       %s
+:END:
+:LOGBOOK:
+- Refiled on [2024-01-01 Mon 09:00]
+:END:
+* Second task"
+   org-mcp-test--timestamp-id)
+  "Drawer-only ID node (`:PROPERTIES:'/`:LOGBOOK:', no prose) before a sibling.")
+
+(defconst org-mcp-test--content-with-id-drawers-before-child
+  (format
+   "* TODO Task with drawers but no body
+:PROPERTIES:
+:ID:       %s
+:END:
+:LOGBOOK:
+- Refiled on [2024-01-01 Mon 09:00]
+:END:
+** Child task"
+   org-mcp-test--timestamp-id)
+  "Drawer-only ID node (`:PROPERTIES:'/`:LOGBOOK:', no prose) before a child.")
+
 (defconst org-mcp-test--body-text-multiline
   (concat
    "This is the body text.\n"
@@ -1885,6 +1911,38 @@ on its own line after `:END:'; the file ends with a trailing newline.")
   "Whole-file regex for a heading with only `:ID:' drawer metadata.
 New body content is on its own line after `:END:'; the file ends with
 a trailing newline.")
+
+(defconst org-mcp-test--pattern-edit-body-drawers-before-heading
+  (format (concat
+           "\\`\\* TODO Task with drawers but no body\n"
+           " *:PROPERTIES:\n"
+           " *:ID: +%s\n"
+           " *:END:\n"
+           " *:LOGBOOK:\n"
+           " *- Refiled on \\[2024-01-01 Mon 09:00\\]\n"
+           " *:END:\n"
+           "Some note\\.\n"
+           "\\* Second task\n?\\'")
+          org-mcp-test--timestamp-id)
+  "Whole-file regex for an empty-add to a drawer-only node before a sibling.
+The new prose sits after the last `:END:' and before `* Second task';
+both the `:PROPERTIES:' and `:LOGBOOK:' drawers survive intact.")
+
+(defconst org-mcp-test--pattern-edit-body-drawers-before-child
+  (format (concat
+           "\\`\\* TODO Task with drawers but no body\n"
+           " *:PROPERTIES:\n"
+           " *:ID: +%s\n"
+           " *:END:\n"
+           " *:LOGBOOK:\n"
+           " *- Refiled on \\[2024-01-01 Mon 09:00\\]\n"
+           " *:END:\n"
+           "Some note\\.\n"
+           "\\*\\* Child task\n?\\'")
+          org-mcp-test--timestamp-id)
+  "Whole-file regex for an empty-add to a drawer-only node before a child.
+The new prose sits after the last `:END:' and before `** Child task';
+both the `:PROPERTIES:' and `:LOGBOOK:' drawers survive intact.")
 
 (defconst org-mcp-test--pattern-edit-body-empty-with-deeper-heading
   (format (concat
@@ -3524,13 +3582,14 @@ the file is left unchanged.  `test-file' is bound for the body."
       ,replace-all)))
 
 (defmacro org-mcp-test--assert-edit-body-empty-timestamp
-    (new-body pattern)
-  "On an empty-body node with a timestamp ID, assert adding NEW-BODY.
-The file must match PATTERN afterwards and the timestamp ID is
-preserved.  `test-file' is bound for the body."
-  (declare (debug (form form)))
-  `(org-mcp-test--with-id-setup test-file
-       org-mcp-test--content-with-id-no-body
+    (content new-body pattern)
+  "On the empty-body timestamp-ID node in CONTENT, assert adding NEW-BODY.
+CONTENT seeds a temp file whose target heading carries
+`org-mcp-test--timestamp-id' and an empty body.  The file must match
+PATTERN afterwards and the timestamp ID is preserved.  `test-file' is
+bound for the body."
+  (declare (debug (form form form)))
+  `(org-mcp-test--with-id-setup test-file ,content
      (list org-mcp-test--timestamp-id)
      (org-mcp-test--call-edit-body-and-check
       test-file
@@ -7805,8 +7864,32 @@ The pre-existing `:ID:' drawer is preserved verbatim across the
 edit -- no orphaned-ID cascade attaches a fresh `:ID:' to the
 inserted content."
   (org-mcp-test--assert-edit-body-empty-timestamp
+   org-mcp-test--content-with-id-no-body
    "Content added after properties."
    org-mcp-test--pattern-edit-body-empty-with-props))
+
+(ert-deftest org-mcp-test-edit-body-drawers-before-heading ()
+  "Empty-add to a drawer-only node that precedes a sibling heading.
+Regression for issue #22: the body region ran past the node into the
+next heading, so the empty-`old_body' add was rejected as
+\"non-empty body\".  The new prose must land after the last `:END:'
+and before the sibling, leaving the `:LOGBOOK:' drawer intact."
+  (org-mcp-test--assert-edit-body-empty-timestamp
+   org-mcp-test--content-with-id-drawers-before-heading
+   "Some note."
+   org-mcp-test--pattern-edit-body-drawers-before-heading))
+
+(ert-deftest org-mcp-test-edit-body-drawers-before-child ()
+  "Empty-add to a drawer-only node that precedes a deeper child heading.
+Regression for issue #22, the `org-goto-first-child'-returns-t branch:
+`org-end-of-meta-data' left point on the child, so the body region
+captured the child subtree and the empty-`old_body' add was rejected
+as \"non-empty body\".  The new prose must land after the last `:END:'
+and before the child, leaving both drawers and the child intact."
+  (org-mcp-test--assert-edit-body-empty-timestamp
+   org-mcp-test--content-with-id-drawers-before-child
+   "Some note."
+   org-mcp-test--pattern-edit-body-drawers-before-child))
 
 (ert-deftest
     org-mcp-test-edit-body-empty-with-deeper-heading-returns-target-uri
@@ -7821,6 +7904,7 @@ deeper-heading flavor of the URI-return bug, this exercises a code
 path neither `edit-body-empty' (no deeper heading in body) nor
 `edit-body-accept-lower-level-headline' (non-empty body) hits."
   (org-mcp-test--assert-edit-body-empty-timestamp
+   org-mcp-test--content-with-id-no-body
    "intro text\n** Sub heading"
    org-mcp-test--pattern-edit-body-empty-with-deeper-heading))
 

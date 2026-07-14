@@ -2343,23 +2343,28 @@ MCP Parameters:
         (org-mcp--validate-body-no-headlines
          new_body (org-current-level))
 
-        ;; Skip past headline and properties
-        (org-end-of-meta-data t)
-
-        ;; Get body boundaries
-        (let ((body-begin (point))
-              (body-end nil)
+        ;; Compute the node's own section end from its heading BEFORE
+        ;; `org-end-of-meta-data' moves point: for a drawer-only node
+        ;; followed by another heading it leaves point on that heading,
+        ;; so deriving `body-end' afterwards would capture the sibling.
+        (let ((body-end
+               (save-excursion
+                 (if (org-goto-first-child)
+                     ;; Has children - body ends before first child
+                     (point)
+                   ;; No children - body extends to end of subtree
+                   (org-end-of-subtree t)
+                   (point))))
               (body-content nil)
-              (occurrence-count 0))
+              (occurrence-count 0)
+              body-begin)
 
-          ;; Find end of body (before next headline or end of subtree)
-          (save-excursion
-            (if (org-goto-first-child)
-                ;; Has children - body ends before first child
-                (setq body-end (point))
-              ;; No children - body extends to end of subtree
-              (org-end-of-subtree t)
-              (setq body-end (point))))
+          ;; Skip past headline and its planning/drawers
+          (org-end-of-meta-data t)
+
+          ;; Clamp so a drawer-only section never spills past its own
+          ;; end into the next heading.
+          (setq body-begin (min (point) body-end))
 
           ;; Extract body content
           (setq body-content
@@ -2410,15 +2415,18 @@ MCP Parameters:
              occurrence-count)))
 
           ;; Perform replacement.
-          ;; `save-excursion' keeps point inside the edit target's
-          ;; entry so `org-id-get-create' (in `complete-and-save')
-          ;; resolves to the edit target.  Without it, body
-          ;; insertion lands point in a different entry -- the
-          ;; parent's first child (when the target has children) or
-          ;; a strictly-deeper heading inside the new body
-          ;; (permitted by `validate-body-no-headlines') -- and
-          ;; `org-back-to-heading' inside `org-id-get-create'
-          ;; would resolve to that entry.
+          ;; Anchor point at `body-begin', which is always within the
+          ;; edit target's own section (`org-end-of-meta-data' can leave
+          ;; point on the next heading for a drawer-only node).
+          ;; `save-excursion' then keeps point inside the target entry so
+          ;; `org-id-get-create' (in `complete-and-save') resolves to the
+          ;; edit target.  Without it, body insertion lands point in a
+          ;; different entry -- the parent's first child (when the target
+          ;; has children) or a strictly-deeper heading inside the new
+          ;; body (permitted by `validate-body-no-headlines') -- and
+          ;; `org-back-to-heading' inside `org-id-get-create' would
+          ;; resolve to that entry.
+          (goto-char body-begin)
           (save-excursion
             (org-mcp--replace-body-content
              old_body
