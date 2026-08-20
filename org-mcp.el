@@ -4,7 +4,7 @@
 
 ;; Author: Laurynas Biveinis <laurynas.biveinis@gmail.com>
 ;; Keywords: convenience, files, matching, outlines
-;; Version: 0.10.0
+;; Version: 1.0.0
 ;; Package-Requires: ((emacs "28.2") (mcp-server-lib "0.4.0"))
 ;; Homepage: https://github.com/laurynas-biveinis/org-mcp
 
@@ -49,7 +49,7 @@
 (defconst org-mcp--server-id "org-mcp"
   "Server ID for org-mcp MCP server registration.")
 
-(defconst org-mcp--version "0.10.0"
+(defconst org-mcp--version "1.0.0"
   "Version reported as `serverInfo.version' in the MCP `initialize' result.")
 
 (defconst org-mcp--uri-headline-prefix "org-headline://"
